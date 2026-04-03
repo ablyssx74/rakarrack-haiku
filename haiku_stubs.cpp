@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <SupportDefs.h>
+#include <OS.h>
 
 // Planar buffers for Rakarrack to write into
 float input_buffer_L[4096];
@@ -36,28 +38,29 @@ jack_port_t* jack_port_register(jack_client_t*, const char* name, const char*, u
 }
 
     // Return 96000 consistently
-    uint32_t jack_get_sample_rate(jack_client_t) { return 44100; }
-    jack_nframes_t jack_get_buffer_size(jack_client_t) { return 1024; }
+    uint32_t jack_get_sample_rate(jack_client_t) { return 96000; }
+    jack_nframes_t jack_get_buffer_size(jack_client_t) { return 512; }
 
 void* jack_port_get_buffer(jack_port_t port, jack_nframes_t nframes) {
     const char* name = jack_port_name(port);
-    
-    // Safety Fallback: Use temp_buffer_L instead of current_haiku_buffer if NULL
-    void* safe_out = current_haiku_buffer ? (void*)current_haiku_buffer : (void*)temp_buffer_L;
+    if (!name) return (void*)temp_buffer_L;
 
-    if (!name) return safe_out;
-	if (strstr(name, "aux")) return (void*)input_buffer_L; // Or a silent buffer
-    if (strstr(name, "in") && strstr(name, "1")) return (void*)input_buffer_L;
-    if (strstr(name, "in") && strstr(name, "2")) return (void*)input_buffer_R;
+    // INPUTS: Points Rakarrack to the data captured in HaikuRecordCallback
+    if (strstr(name, "in")) {
+        if (strstr(name, "1")) return (void*)input_buffer_L;
+        if (strstr(name, "2")) return (void*)input_buffer_R;
+    }
     
-    if (strstr(name, "out") && strstr(name, "1")) return safe_out;
-    if (strstr(name, "out") && strstr(name, "2")) {
-        return current_haiku_buffer ? (void*)(current_haiku_buffer + nframes) : (void*)temp_buffer_R;
+    // OUTPUTS: Points Rakarrack to temp buffers
+    // DO NOT return current_haiku_buffer here. 
+    // Let the AudioCallback handle the interleaving later.
+    if (strstr(name, "out")) {
+        if (strstr(name, "1")) return (void*)temp_buffer_L;
+        if (strstr(name, "2")) return (void*)temp_buffer_R;
     }
 
-    return safe_out;
+    return (void*)temp_buffer_L; 
 }
-
 
 
     // --- JACK Stubs ---
@@ -81,7 +84,7 @@ const char* jack_port_name(jack_port_t port) {
 
     void jack_client_close(jack_client_t) {}
     int jack_transport_query(jack_client_t, jack_position_t*) { return 0; }
-
+/*
 const char** jack_get_ports(jack_client_t client, const char* name_pattern, const char* type_pattern, unsigned long flags) {
     // Allocate space for the array AND the strings in one or two blocks
     char** ports = (char**)malloc(3 * sizeof(char*));
@@ -90,6 +93,24 @@ const char** jack_get_ports(jack_client_t client, const char* name_pattern, cons
     ports[2] = NULL;
     return (const char**)ports;
 }
+*/
+
+const char** jack_get_ports(jack_client_t client, const char* name_pattern, const char* type_pattern, unsigned long flags) {
+    char** ports = (char**)malloc(3 * sizeof(char*));
+    
+    // Check if Rakarrack is looking for its Inputs or Outputs
+    // 0x1 is usually JackPortIsInput
+    if (flags & 0x1) { 
+        ports[0] = strdup("rakarrack:in_1");
+        ports[1] = strdup("rakarrack:in_2");
+    } else {
+        ports[0] = strdup("rakarrack:out_1");
+        ports[1] = strdup("rakarrack:out_2");
+    }
+    ports[2] = NULL;
+    return (const char**)ports;
+}
+
 
 
 /*    

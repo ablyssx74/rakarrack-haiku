@@ -41,8 +41,8 @@ fontconfig_devel libsndfile_devel freetype_devel zlib_devel
 ln -s /boot/system/develop/headers/FL ./Fl
 ln -s ${PWD}/data ${PWD}/src/data
 
-rm -f config.status config.cache config.log Makefile src/Makefile config.h
 make distclean
+rm -f config.status config.cache config.log Makefile src/Makefile config.h
 autoreconf -vif
 
 CPPFLAGS="-I$(pwd)" \
