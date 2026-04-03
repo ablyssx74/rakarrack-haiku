@@ -24,7 +24,6 @@ fontconfig_devel libsndfile_devel freetype_devel zlib_devel
 
 ## Files Added/Updated
 
-## Added/Updated 
 # configure - commented out aconnect
 # src/config.h - Updated config and doc paths
 # src/jack.C - Add Haiku code to get audio inputs, comment out jack code, add cleanup function at bottom.  
