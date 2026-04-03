@@ -42,7 +42,10 @@ fontconfig_devel libsndfile_devel freetype_devel zlib_devel
 ln -s /boot/system/develop/headers/FL ./Fl
 ln -s ${PWD}/data ${PWD}/src/data
 
+autoreconf -vif
+
 CPPFLAGS="-I$(pwd)" \
+ACONNECT=/bin/true \
 ac_cv_header_alsa_asoundlib_h=yes \
 ac_cv_lib_asound_main=yes \
 ac_cv_lib_asound_main=yes \
