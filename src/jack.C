@@ -94,17 +94,28 @@ status_t ConnectInputToPlayer(BSoundPlayer* player) {
     err = roster->GetFreeInputsFor(gPlayerNode, &gPlayerInput, 1, &count, B_MEDIA_RAW_AUDIO);
     if (err != B_OK || count < 1) return B_BUSY;
 
-    media_format format = gInputOutput.format;
+    // FIX: Set the format correctly through the union
+    media_format format;
+    memset(&format, 0, sizeof(format));
+    format.type = B_MEDIA_RAW_AUDIO;
+    
+    format.u.raw_audio.frame_rate = 44100.0;
+    format.u.raw_audio.channel_count = 2;
+    format.u.raw_audio.format = media_raw_audio_format::B_AUDIO_FLOAT;
+    format.u.raw_audio.byte_order = B_MEDIA_HOST_ENDIAN;
+    format.u.raw_audio.buffer_size = 512 * sizeof(float) * 2; 
+    
+    // Use this format directly
     err = roster->Connect(gInputOutput.source, gPlayerInput.destination, &format, &gInputOutput, &gPlayerInput);
     
     if (err == B_OK) {
-        // Use 0 to start the nodes immediately
         roster->StartNode(gInputNode, 0); 
         roster->StartNode(gPlayerNode, 0); 
         printf("Nodes Started. Connection active.\n");
     }
     return err;
 }
+
 
 
 
@@ -126,8 +137,8 @@ void HaikuRecordCallback(void *cookie, void *buffer, size_t size, const media_ra
         input_buffer_L[i] = haiku_in[i * 2];
         input_buffer_R[i] = haiku_in[i * 2 + 1];
     }
-   	static int counter = 0;
-    if (counter++ % 100 == 0) printf("Record Callback is ALIVE\n");
+   //	static int counter = 0;
+   // if (counter++ % 100 == 0) printf("Record Callback is ALIVE\n");
 }
 
 
@@ -139,16 +150,16 @@ void HaikuAudioCallback(void *cookie, void *buffer, size_t size, const media_raw
     memset(buffer, 0, size);
     current_haiku_buffer = fbuf;
 
-    // 1. Let Rakarrack fill fbuf with [LLLL...RRRR...]
+    // 1. 
+
+    // 2. Engine: Process the audio through the effects rack
     jackprocess(nframes, cookie);
 
-    // 2. Use your existing global temp buffers to safely re-order
+    // 3. Output: Re-order the processed L/R data for Haiku speakers
     for (uint32_t i = 0; i < nframes; i++) {
         temp_buffer_L[i] = fbuf[i];
         temp_buffer_R[i] = fbuf[i + nframes];
     }
-
-    // 3. Interleave back into fbuf: [L R L R...]
     for (uint32_t i = 0; i < nframes; i++) {
         fbuf[i * 2]     = temp_buffer_L[i];
         fbuf[i * 2 + 1] = temp_buffer_R[i];
@@ -186,7 +197,7 @@ int JACKstart(RKR * rkr_, jack_client_t * jackclient_) {
     format.format = media_raw_audio_format::B_AUDIO_FLOAT;
     format.channel_count = 2;
     format.frame_rate = 44100.0; 
-    format.buffer_size = 1024 * sizeof(float) * 2; 
+    format.buffer_size = 512 * sizeof(float) * 2; 
 
     // 1. Output Player (Speakers) - BSoundPlayer connects to Default Out automatically
     outPlayer = new BSoundPlayer(&format, "Rakarrack-Out", HaikuAudioCallback, NULL, (void*)rkr_);
