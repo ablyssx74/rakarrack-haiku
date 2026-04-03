@@ -1,8 +1,8 @@
 ### Rakarrack Haiku is a port in progress of the great [rakarrack project](https://rakarrack.sourceforge.net/)
 
-```
-## rakarrack haiku_configure...
 
+To test: Run ./haiku_configure
+```
 
 ## Basic hacks right now to get rakarrack built and tested
 
@@ -13,12 +13,9 @@
 ##  Then turn on metronome.  You should hear the beeping audio. Volume and speed controls work.
 
 
-## Some basic Haiku dependencies... 
-
+## Some basic Haiku dependencies... maybe missing one or two 
 pkgman install fltk_devel xlibe_devel xlibe libsamplerate_devel \
 fontconfig_devel libsndfile_devel freetype_devel zlib_devel
-
-
 
 ## Once rakarrack is built, it is best to open the preferences menu 
 ## and set the Bank Filename to point to src/data/Default.rkrb
