@@ -1,5 +1,5 @@
 ### Rakarrack Haiku is a port in progress of the great [rakarrack project](https://rakarrack.sourceforge.net/)
-
+AI was used to help make the port possible
 
 To test: Run ./haiku_configure
 ```
