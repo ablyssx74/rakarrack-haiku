@@ -35,7 +35,7 @@ fontconfig_devel libsndfile_devel freetype_devel zlib_devel
 # alsa/asoundlib.h, X11/xpm.h, jack/jack.h midiport.h transport.h  - Added to satisfy build
 # haiku_stubs.cpp - Added to satisfy build
 # Symlinked /boot/system/develop/headers/FL ./Fl - For local build
-# haiku_configure - This file. To help build and other details
+# haiku_configure - To help build and other details
 
 ## Make will generate a bunch of lib errors, but this can be ignored
 ## The g++ code after the make will compile the stubs and rakarrack in src directory
