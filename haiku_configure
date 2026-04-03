@@ -5,8 +5,7 @@
 
 ## Currently creates rakarrack-in rakarrack-out and input0 media nodes
 ## input0 node currently only hears raw mic input. Doesn't send any data to rakarrack
-## rakarrack metronome works but you have to turn on the menu first by clicking the Sw button to the right of
-## "Put Order in your Rack", then you have to change to a preset that isn't broken: Preset 4 "Go with Him" is not broken.
+## rakarrack metronome works but you have to turn on the menu first by clicking the Sw button to the right of "Put Order in your Rack"
 ##  Then turn on metronome.  You should hear the beeping audio. Volume and speed controls work.
 
 
@@ -33,7 +32,7 @@ fontconfig_devel libsndfile_devel freetype_devel zlib_devel
 # alsa/asoundlib.h, X11/xpm.h, jack/jack.h midiport.h transport.h  - Added to satisfy build
 # haiku_stubs.cpp - Added to satisfy build
 # Symlinked /boot/system/develop/headers/FL ./Fl - For local build
-# haiku_configure - This file. To help build and other details
+# haiku_configure - To help build and other details
 
 
 
