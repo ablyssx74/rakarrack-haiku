@@ -95,17 +95,17 @@ AnalogFilter.o: AnalogFilter.C \
  /boot/system/develop/headers/gnu/sched.h \
  /boot/system/develop/headers/posix/sched.h \
  /boot/system/develop/headers/posix/dirent.h \
- /boot/home/rakarrack-haiku/alsa/asoundlib.h \
- /boot/home/rakarrack-haiku/X11/xpm.h \
- /boot/home/rakarrack-haiku/jack/jack.h \
- /boot/home/rakarrack-haiku/jack/midiport.h \
- /boot/home/rakarrack-haiku/Fl/Fl_Preferences.H \
- /boot/home/rakarrack-haiku/Fl/Fl_Export.H \
- /boot/home/rakarrack-haiku/Fl/fl_attr.h FPreset.h Reverb.h Chorus.h \
- EffectLFO.h Echo.h Phaser.h Distorsion.h Waveshaper.h EQ.h Compressor.h \
- Alienwah.h DynamicFilter.h Filter.h Filter_.h FormantFilter.h \
- FilterParams.h SVFilter.h Pan.h Harmonizer.h smbPitchShift.h \
- MusicDelay.h Gate.h Tuner.h \
+ /boot/home/Desktop/rakarrack-haiku/alsa/asoundlib.h \
+ /boot/home/Desktop/rakarrack-haiku/X11/xpm.h \
+ /boot/home/Desktop/rakarrack-haiku/jack/jack.h \
+ /boot/home/Desktop/rakarrack-haiku/jack/midiport.h \
+ /boot/home/Desktop/rakarrack-haiku/Fl/Fl_Preferences.H \
+ /boot/home/Desktop/rakarrack-haiku/Fl/Fl_Export.H \
+ /boot/home/Desktop/rakarrack-haiku/Fl/fl_attr.h FPreset.h Reverb.h \
+ Chorus.h EffectLFO.h Echo.h Phaser.h Distorsion.h Waveshaper.h EQ.h \
+ Compressor.h Alienwah.h DynamicFilter.h Filter.h Filter_.h \
+ FormantFilter.h FilterParams.h SVFilter.h Pan.h Harmonizer.h \
+ smbPitchShift.h MusicDelay.h Gate.h Tuner.h \
  /boot/system/develop/tools/lib/gcc/x86_64-unknown-haiku/13.3.0/include/c++/stdlib.h \
  /boot/system/develop/tools/lib/gcc/x86_64-unknown-haiku/13.3.0/include/c++/cstdlib \
  MIDIConverter.h jack.h RecognizeNote.h RecChord.h NewDist.h APhaser.h \
@@ -215,13 +215,13 @@ config.h:
 /boot/system/develop/headers/gnu/sched.h:
 /boot/system/develop/headers/posix/sched.h:
 /boot/system/develop/headers/posix/dirent.h:
-/boot/home/rakarrack-haiku/alsa/asoundlib.h:
-/boot/home/rakarrack-haiku/X11/xpm.h:
-/boot/home/rakarrack-haiku/jack/jack.h:
-/boot/home/rakarrack-haiku/jack/midiport.h:
-/boot/home/rakarrack-haiku/Fl/Fl_Preferences.H:
-/boot/home/rakarrack-haiku/Fl/Fl_Export.H:
-/boot/home/rakarrack-haiku/Fl/fl_attr.h:
+/boot/home/Desktop/rakarrack-haiku/alsa/asoundlib.h:
+/boot/home/Desktop/rakarrack-haiku/X11/xpm.h:
+/boot/home/Desktop/rakarrack-haiku/jack/jack.h:
+/boot/home/Desktop/rakarrack-haiku/jack/midiport.h:
+/boot/home/Desktop/rakarrack-haiku/Fl/Fl_Preferences.H:
+/boot/home/Desktop/rakarrack-haiku/Fl/Fl_Export.H:
+/boot/home/Desktop/rakarrack-haiku/Fl/fl_attr.h:
 FPreset.h:
 Reverb.h:
 Chorus.h:

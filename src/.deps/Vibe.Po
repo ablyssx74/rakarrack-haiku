@@ -91,17 +91,17 @@ Vibe.o: Vibe.C \
  /boot/system/develop/headers/gnu/sched.h \
  /boot/system/develop/headers/posix/sched.h \
  /boot/system/develop/headers/posix/dirent.h \
- /boot/home/rakarrack-haiku/alsa/asoundlib.h \
- /boot/home/rakarrack-haiku/X11/xpm.h \
- /boot/home/rakarrack-haiku/jack/jack.h \
- /boot/home/rakarrack-haiku/jack/midiport.h \
- /boot/home/rakarrack-haiku/Fl/Fl_Preferences.H \
+ /boot/home/Desktop/rakarrack-haiku/alsa/asoundlib.h \
+ /boot/home/Desktop/rakarrack-haiku/X11/xpm.h \
+ /boot/home/Desktop/rakarrack-haiku/jack/jack.h \
+ /boot/home/Desktop/rakarrack-haiku/jack/midiport.h \
+ /boot/home/Desktop/rakarrack-haiku/Fl/Fl_Preferences.H \
  /boot/system/develop/headers/bsd/stdio.h \
  /boot/system/develop/headers/posix/stdio.h \
  /boot/system/develop/tools/lib/gcc/x86_64-unknown-haiku/13.3.0/include/stdarg.h \
  /boot/system/develop/headers/posix/stdio_post.h \
- /boot/home/rakarrack-haiku/Fl/Fl_Export.H \
- /boot/home/rakarrack-haiku/Fl/fl_attr.h FPreset.h Reverb.h \
+ /boot/home/Desktop/rakarrack-haiku/Fl/Fl_Export.H \
+ /boot/home/Desktop/rakarrack-haiku/Fl/fl_attr.h FPreset.h Reverb.h \
  AnalogFilter.h Filter_.h Chorus.h EffectLFO.h Echo.h Phaser.h \
  Distorsion.h Waveshaper.h EQ.h Compressor.h Alienwah.h DynamicFilter.h \
  Filter.h FormantFilter.h FilterParams.h SVFilter.h Pan.h Harmonizer.h \
@@ -211,17 +211,17 @@ config.h:
 /boot/system/develop/headers/gnu/sched.h:
 /boot/system/develop/headers/posix/sched.h:
 /boot/system/develop/headers/posix/dirent.h:
-/boot/home/rakarrack-haiku/alsa/asoundlib.h:
-/boot/home/rakarrack-haiku/X11/xpm.h:
-/boot/home/rakarrack-haiku/jack/jack.h:
-/boot/home/rakarrack-haiku/jack/midiport.h:
-/boot/home/rakarrack-haiku/Fl/Fl_Preferences.H:
+/boot/home/Desktop/rakarrack-haiku/alsa/asoundlib.h:
+/boot/home/Desktop/rakarrack-haiku/X11/xpm.h:
+/boot/home/Desktop/rakarrack-haiku/jack/jack.h:
+/boot/home/Desktop/rakarrack-haiku/jack/midiport.h:
+/boot/home/Desktop/rakarrack-haiku/Fl/Fl_Preferences.H:
 /boot/system/develop/headers/bsd/stdio.h:
 /boot/system/develop/headers/posix/stdio.h:
 /boot/system/develop/tools/lib/gcc/x86_64-unknown-haiku/13.3.0/include/stdarg.h:
 /boot/system/develop/headers/posix/stdio_post.h:
-/boot/home/rakarrack-haiku/Fl/Fl_Export.H:
-/boot/home/rakarrack-haiku/Fl/fl_attr.h:
+/boot/home/Desktop/rakarrack-haiku/Fl/Fl_Export.H:
+/boot/home/Desktop/rakarrack-haiku/Fl/fl_attr.h:
 FPreset.h:
 Reverb.h:
 AnalogFilter.h:

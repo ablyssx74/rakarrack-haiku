@@ -96,20 +96,21 @@ Reverb.o: Reverb.C /boot/system/develop/headers/bsd/stdio.h \
  /boot/system/develop/headers/gnu/sched.h \
  /boot/system/develop/headers/posix/sched.h \
  /boot/system/develop/headers/posix/dirent.h \
- /boot/home/rakarrack-haiku/alsa/asoundlib.h \
- /boot/home/rakarrack-haiku/X11/xpm.h \
- /boot/home/rakarrack-haiku/jack/jack.h \
- /boot/home/rakarrack-haiku/jack/midiport.h \
- /boot/home/rakarrack-haiku/Fl/Fl_Preferences.H \
- /boot/home/rakarrack-haiku/Fl/Fl_Export.H \
- /boot/home/rakarrack-haiku/Fl/fl_attr.h FPreset.h Chorus.h EffectLFO.h \
- Echo.h Phaser.h Distorsion.h AnalogFilter.h Filter_.h Waveshaper.h EQ.h \
- Compressor.h Alienwah.h DynamicFilter.h Filter.h FormantFilter.h \
- FilterParams.h SVFilter.h Pan.h Harmonizer.h smbPitchShift.h \
- MusicDelay.h Gate.h Tuner.h MIDIConverter.h jack.h RecognizeNote.h \
- RecChord.h NewDist.h APhaser.h Valve.h HarmonicEnhancer.h Dual_Flange.h \
- Ring.h Exciter.h MBDist.h Arpie.h Expander.h Shuffle.h Synthfilter.h \
- MBVvol.h Convolotron.h /boot/system/develop/headers/sndfile.h Resample.h \
+ /boot/home/Desktop/rakarrack-haiku/alsa/asoundlib.h \
+ /boot/home/Desktop/rakarrack-haiku/X11/xpm.h \
+ /boot/home/Desktop/rakarrack-haiku/jack/jack.h \
+ /boot/home/Desktop/rakarrack-haiku/jack/midiport.h \
+ /boot/home/Desktop/rakarrack-haiku/Fl/Fl_Preferences.H \
+ /boot/home/Desktop/rakarrack-haiku/Fl/Fl_Export.H \
+ /boot/home/Desktop/rakarrack-haiku/Fl/fl_attr.h FPreset.h Chorus.h \
+ EffectLFO.h Echo.h Phaser.h Distorsion.h AnalogFilter.h Filter_.h \
+ Waveshaper.h EQ.h Compressor.h Alienwah.h DynamicFilter.h Filter.h \
+ FormantFilter.h FilterParams.h SVFilter.h Pan.h Harmonizer.h \
+ smbPitchShift.h MusicDelay.h Gate.h Tuner.h MIDIConverter.h jack.h \
+ RecognizeNote.h RecChord.h NewDist.h APhaser.h Valve.h \
+ HarmonicEnhancer.h Dual_Flange.h Ring.h Exciter.h MBDist.h Arpie.h \
+ Expander.h Shuffle.h Synthfilter.h MBVvol.h Convolotron.h \
+ /boot/system/develop/headers/sndfile.h Resample.h \
  /boot/system/develop/headers/samplerate.h Looper.h metronome.h RyanWah.h \
  RBFilter.h RBEcho.h CoilCrafter.h ShelfBoost.h Vocoder.h Sustainer.h \
  Sequence.h Shifter.h StompBox.h Reverbtron.h Echotron.h StereoHarm.h \
@@ -215,13 +216,13 @@ config.h:
 /boot/system/develop/headers/gnu/sched.h:
 /boot/system/develop/headers/posix/sched.h:
 /boot/system/develop/headers/posix/dirent.h:
-/boot/home/rakarrack-haiku/alsa/asoundlib.h:
-/boot/home/rakarrack-haiku/X11/xpm.h:
-/boot/home/rakarrack-haiku/jack/jack.h:
-/boot/home/rakarrack-haiku/jack/midiport.h:
-/boot/home/rakarrack-haiku/Fl/Fl_Preferences.H:
-/boot/home/rakarrack-haiku/Fl/Fl_Export.H:
-/boot/home/rakarrack-haiku/Fl/fl_attr.h:
+/boot/home/Desktop/rakarrack-haiku/alsa/asoundlib.h:
+/boot/home/Desktop/rakarrack-haiku/X11/xpm.h:
+/boot/home/Desktop/rakarrack-haiku/jack/jack.h:
+/boot/home/Desktop/rakarrack-haiku/jack/midiport.h:
+/boot/home/Desktop/rakarrack-haiku/Fl/Fl_Preferences.H:
+/boot/home/Desktop/rakarrack-haiku/Fl/Fl_Export.H:
+/boot/home/Desktop/rakarrack-haiku/Fl/fl_attr.h:
 FPreset.h:
 Chorus.h:
 EffectLFO.h:
