@@ -39,34 +39,6 @@ fontconfig_devel libsndfile_devel freetype_devel zlib_devel
 
 
 
-
-
-ln -s /boot/system/develop/headers/FL ./Fl
-ln -s ${PWD}/data ${PWD}/src/data
-
-CPPFLAGS="-I$(pwd)" \
-ac_cv_header_alsa_asoundlib_h=yes \
-ac_cv_lib_asound_main=yes \
-ac_cv_lib_asound_main=yes \
-ac_cv_lib_samplerate_src_simple=yes \
-ac_cv_lib_sndfile_sf_open=yes \
-ac_cv_lib_jack_main=yes \
-ac_cv_lib_z_main=yes \
-ac_cv_lib_rt_main=yes \
-ac_cv_lib_pthread_main=yes \
-ac_cv_lib_m_main=yes \
-ac_cv_lib_freetype_main=yes \
-ac_cv_lib_fontconfig_main=yes \
-ac_cv_lib_fltk_main=yes \
-ac_cv_lib_dl_main=yes \
-ac_cv_lib_Xft_main=yes \
-ac_cv_lib_Xpm_main=yes \
-ac_cv_lib_Xext_main=yes \
-ac_cv_lib_Xrender_main=yes \
-ac_cv_lib_X11_main=yes \
-./configure
-
-
 ## Make will generate a bunch of lib errors, but this can be ignored
 ## The g++ code after the make will compile the stubs and rakarrack in src directory
 
