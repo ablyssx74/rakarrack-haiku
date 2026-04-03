@@ -12,36 +12,6 @@ extern "C" char** jack_get_ports(void *, const char *, const char *, unsigned lo
 #include <FL/Fl_Shared_Image.H>
 #include <X11/xpm.h>
 
-#include <cstring>
-
-/* Implementation of strsep for systems where it is missing (like Haiku) */
-char *strsep(char **stringp, const char *delim) {
-    char *s;
-    const char *spanp;
-    int c, sc;
-    char *tok;
-
-    if ((s = *stringp) == NULL)
-        return (NULL);
-
-    for (tok = s;;) {
-        c = *s++;
-        spanp = delim;
-        do {
-            if ((sc = *spanp++) == c) {
-                if (c == 0)
-                    s = NULL;
-                else
-                    s[-1] = 0;
-                *stringp = s;
-                return (tok);
-            }
-        } while (sc != 0);
-    }
-}
-
-
-
 // Added For Haiku This defines the XPM function if xlibe is missing it
 #ifndef XpmCreatePixmapFromData
 #define XpmCreatePixmapFromData(a,b,c,d,e,f) (0)
