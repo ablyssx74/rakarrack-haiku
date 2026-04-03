@@ -71,8 +71,8 @@ ac_cv_lib_X11_main=yes \
 ## Make will generate a bunch of lib errors, but this can be ignored
 ## The g++ code after the make will compile the stubs and rakarrack in src directory
 
-
-make CXXFLAGS="-I/boot/system/develop/headers/os -I/boot/system/develop/headers/os/app -I/boot/system/develop/headers/os/media -I. -g -O2 -fpermissive"
+make CXXFLAGS="-include $(pwd)/haiku_fixes.h -I/boot/system/develop/headers/os -I/boot/system/develop/headers/os/app -I/boot/system/develop/headers/os/media -I. -g -O2 -fpermissive" \
+LIBS="-ljack -lroot -lnetwork -lbe -lmedia"
 
 # Using the above make while using Haiku Media headers in jack.C
 #make CXXFLAGS="-I$(pwd) -I$(pwd)/src -g -O2 -fpermissive"
