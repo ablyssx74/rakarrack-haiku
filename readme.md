@@ -1,5 +1,6 @@
 ### Rakarrack Haiku is a port in progress of the great [rakarrack project](https://rakarrack.sourceforge.net/)
 
+```
 ## rakarrack haiku_configure...
 
 
@@ -86,4 +87,4 @@ g++ -o src/rakarrack src/*.o haiku_stubs.o -lfltk -lfltk_images -lmedia -lbe -lt
 cd src
 ./rakarrack
 
-
+```
