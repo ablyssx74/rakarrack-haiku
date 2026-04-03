@@ -80,7 +80,6 @@ status_t ConnectInputToPlayer(BSoundPlayer* player) {
     BMediaRoster* roster = BMediaRoster::Roster();
     if (!roster) return B_ERROR;
 
-    // Use the globals instead of local variables
     float dMin, dMax;
     int32 dParam;
     player->GetVolumeInfo(&gPlayerNode, &dParam, &dMin, &dMax);
@@ -96,9 +95,16 @@ status_t ConnectInputToPlayer(BSoundPlayer* player) {
     if (err != B_OK || count < 1) return B_BUSY;
 
     media_format format = gInputOutput.format;
-    return roster->Connect(gInputOutput.source, gPlayerInput.destination, &format, &gInputOutput, &gPlayerInput);
+    err = roster->Connect(gInputOutput.source, gPlayerInput.destination, &format, &gInputOutput, &gPlayerInput);
+    
+    if (err == B_OK) {
+        // Use 0 to start the nodes immediately
+        roster->StartNode(gInputNode, 0); 
+        roster->StartNode(gPlayerNode, 0); 
+        printf("Nodes Started. Connection active.\n");
+    }
+    return err;
 }
-
 
 
 
@@ -108,45 +114,48 @@ void HaikuRecordCallback(void *cookie, void *buffer, size_t size, const media_ra
     float* haiku_in = (float*)buffer;
    // uint32_t nframes = size / 8; 
      uint32_t nframes = size / (sizeof(float) * 2); 
-    /* debug
+     /* 
+    debug
         for (uint32_t i = 0; i < nframes; i++) {
         input_buffer_L[i] = 0.05f; 
         input_buffer_R[i] = 0.05f;
     }
-    */
-
+     */
+	
     for (uint32_t i = 0; i < nframes; i++) {
         input_buffer_L[i] = haiku_in[i * 2];
         input_buffer_R[i] = haiku_in[i * 2 + 1];
     }
-    
+   	static int counter = 0;
+    if (counter++ % 100 == 0) printf("Record Callback is ALIVE\n");
 }
 
 
 // The Play Hook: Processes and then Interleaves to Speakers
 void HaikuAudioCallback(void *cookie, void *buffer, size_t size, const media_raw_audio_format &format) {
     float* fbuf = (float*)buffer;
-    //uint32_t nframes = size / 8; 
     uint32_t nframes = size / (sizeof(float) * 2); 
 
-    // 1. CLEAR: Stop the static noise we just tested
     memset(buffer, 0, size);
-
-    // 2. PLUMBING: Tell the stubs where to write
     current_haiku_buffer = fbuf;
 
-    // 3. ENGINE: Let Rakarrack process the guitar signal
+    // 1. Let Rakarrack fill fbuf with [LLLL...RRRR...]
     jackprocess(nframes, cookie);
 
-    // 4. ZIP: Rearrange [L...R...] to [L R L R...]
-    for (int i = nframes - 1; i >= 0; i--) {
-        fbuf[i * 2 + 1] = fbuf[i + nframes];
-        fbuf[i * 2]     = fbuf[i];
+    // 2. Use your existing global temp buffers to safely re-order
+    for (uint32_t i = 0; i < nframes; i++) {
+        temp_buffer_L[i] = fbuf[i];
+        temp_buffer_R[i] = fbuf[i + nframes];
     }
+
+    // 3. Interleave back into fbuf: [L R L R...]
+    for (uint32_t i = 0; i < nframes; i++) {
+        fbuf[i * 2]     = temp_buffer_L[i];
+        fbuf[i * 2 + 1] = temp_buffer_R[i];
+    }
+
     current_haiku_buffer = NULL;
 }
-
-
 
 
 extern "C" {
@@ -160,7 +169,6 @@ extern "C" {
     char** jack_get_ports(jack_client_t *, const char *, const char *, unsigned long);
     void jack_free(void *);
 }
-
 
 jack_client_t *jackclient;
 jack_port_t *outport_left, *outport_right;
@@ -186,12 +194,12 @@ int JACKstart(RKR * rkr_, jack_client_t * jackclient_) {
     // 2. Input Player (Microphone)    
     inPlayer = new BSoundPlayer(&format, "Rakarrack-In", HaikuRecordCallback, NULL, (void*)rkr_);
 
-
     if (outPlayer->InitCheck() != B_OK || inPlayer->InitCheck() != B_OK) return 2;
 
     // START the players
     outPlayer->Start();
     inPlayer->Start();
+    inPlayer->SetHasData(true); 
 
     // MANDATORY: Connect the physical mic to the inPlayer
     status_t connErr = ConnectInputToPlayer(inPlayer);
@@ -509,10 +517,15 @@ extern "C" void HaikuAudioShutdown() {
     
     if (inPlayer) {
         if (roster && gInputNode.node > 0) {
-            // Now these IDs match the ones used to connect
+            // 1. Tell the hardware and player to stop the clock
+            roster->StopNode(gInputNode, 0);
+            roster->StopNode(gPlayerNode, 0);
+
+            // 2. Now disconnect using the exact handles from your globals
             roster->Disconnect(gInputOutput.node.node, gInputOutput.source, 
                                gPlayerInput.node.node, gPlayerInput.destination);
             
+            // 3. Release our claim on these nodes
             roster->ReleaseNode(gInputNode);
             roster->ReleaseNode(gPlayerNode);
         }
@@ -521,12 +534,13 @@ extern "C" void HaikuAudioShutdown() {
         inPlayer = NULL;
     }
 
-    // 2. Clean up the Output Player
     if (outPlayer) {
         outPlayer->Stop();
         delete outPlayer;
         outPlayer = NULL;
     }
+    printf("Haiku Audio Cleaned Up Successfully.\n");
 }
+
 
 
