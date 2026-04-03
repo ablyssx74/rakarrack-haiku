@@ -1,2 +1,89 @@
 ### Rakarrack Haiku is a port in progress of the great [rakarrack project](https://rakarrack.sourceforge.net/)
 
+## rakarrack haiku_configure...
+
+
+## Basic hacks right now to get rakarrack built and tested
+
+## Currently creates rakarrack-in rakarrack-out and input0 media nodes
+## input0 node currently only hears raw mic input. Doesn't send any data to rakarrack
+## rakarrack metronome works but you have to turn on the menu first by clicking the Sw button to the right of
+## "Put Order in your Rack", then you have to change to a preset that isn't broken: Preset 4 "Go with Him" is not broken.
+##  Then turn on metronome.  You should hear the beeping audio. Volume and speed controls work.
+
+
+## Some basic Haiku dependencies... 
+
+pkgman install fltk_devel xlibe_devel xlibe libsamplerate_devel \
+fontconfig_devel libsndfile_devel freetype_devel zlib_devel
+
+
+
+## Once rakarrack is built, it is best to open the preferences menu 
+## and set the Bank Filename to point to src/data/Default.rkrb
+## and set the User Directory to src/data/Default.rkrb
+
+
+## Files Added/Updated
+
+## Added/Updated 
+# configure - commented out aconnect
+# src/config.h - Updated config and doc paths
+# src/jack.C - Add Haiku code to get audio inputs, comment out jack code, add cleanup function at bottom.  
+# jack.h - Add include jack.h linue 29, forward declarted line 31
+# rakarrack.cxx Added code at top
+# various.C - Added code at top to fix crash when trying to open preferences
+# main.C - Added extern at top for clean shutdown and replace while loop at bottom for clean shutdown
+# alsa/asoundlib.h, X11/xpm.h, jack/jack.h midiport.h transport.h  - Added to satisfy build
+# haiku_stubs.cpp - Added to satisfy build
+# Symlinked /boot/system/develop/headers/FL ./Fl - For local build
+# haiku_configure - This file. To help build and other details
+
+
+
+
+
+ln -s /boot/system/develop/headers/FL ./Fl
+ln -s ${PWD}/data ${PWD}/src/data
+
+CPPFLAGS="-I$(pwd)" \
+ac_cv_header_alsa_asoundlib_h=yes \
+ac_cv_lib_asound_main=yes \
+ac_cv_lib_asound_main=yes \
+ac_cv_lib_samplerate_src_simple=yes \
+ac_cv_lib_sndfile_sf_open=yes \
+ac_cv_lib_jack_main=yes \
+ac_cv_lib_z_main=yes \
+ac_cv_lib_rt_main=yes \
+ac_cv_lib_pthread_main=yes \
+ac_cv_lib_m_main=yes \
+ac_cv_lib_freetype_main=yes \
+ac_cv_lib_fontconfig_main=yes \
+ac_cv_lib_fltk_main=yes \
+ac_cv_lib_dl_main=yes \
+ac_cv_lib_Xft_main=yes \
+ac_cv_lib_Xpm_main=yes \
+ac_cv_lib_Xext_main=yes \
+ac_cv_lib_Xrender_main=yes \
+ac_cv_lib_X11_main=yes \
+./configure
+
+
+## Make will generate a bunch of lib errors, but this can be ignored
+## The g++ code after the make will compile the stubs and rakarrack in src directory
+
+
+make CXXFLAGS="-I/boot/system/develop/headers/os -I/boot/system/develop/headers/os/app -I/boot/system/develop/headers/os/media -I. -g -O2 -fpermissive"
+
+# Using the above make while using Haiku Media headers in jack.C
+#make CXXFLAGS="-I$(pwd) -I$(pwd)/src -g -O2 -fpermissive"
+
+g++ -I.. -I. -g -O2 -fpermissive -c src/jack.C -o src/jack.o
+g++ -I. -I./src -g -O2 -fpermissive -c haiku_stubs.cpp -o haiku_stubs.o
+g++ -o src/rakarrack src/*.o haiku_stubs.o -lfltk -lfltk_images -lmedia -lbe -ltranslation -lsndfile -lsamplerate -lz -lpthread
+
+# To Test
+cd src
+./rakarrack
+
+
