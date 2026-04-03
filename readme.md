@@ -37,20 +37,8 @@ fontconfig_devel libsndfile_devel freetype_devel zlib_devel
 # Symlinked /boot/system/develop/headers/FL ./Fl - For local build
 # haiku_configure - This file. To help build and other details
 
-
-
 ## Make will generate a bunch of lib errors, but this can be ignored
 ## The g++ code after the make will compile the stubs and rakarrack in src directory
-
-
-make CXXFLAGS="-I/boot/system/develop/headers/os -I/boot/system/develop/headers/os/app -I/boot/system/develop/headers/os/media -I. -g -O2 -fpermissive"
-
-# Using the above make while using Haiku Media headers in jack.C
-#make CXXFLAGS="-I$(pwd) -I$(pwd)/src -g -O2 -fpermissive"
-
-g++ -I.. -I. -g -O2 -fpermissive -c src/jack.C -o src/jack.o
-g++ -I. -I./src -g -O2 -fpermissive -c haiku_stubs.cpp -o haiku_stubs.o
-g++ -o src/rakarrack src/*.o haiku_stubs.o -lfltk -lfltk_images -lmedia -lbe -ltranslation -lsndfile -lsamplerate -lz -lpthread
 
 # To Test
 cd src
