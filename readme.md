@@ -8,7 +8,7 @@ To test: Run ./haiku_configure
 
 ## Currently creates rakarrack-in rakarrack-out and input0 media nodes
 ## input0 node currently only hears raw mic input. Doesn't send any data to rakarrack
-## Tou can actually now play your guitar  and hear the audio at the same time!  Some latency though
+## You can actually now play your guitar  and hear the audio at the same time!  Some latency though
 ## rakarrack metronome works but you have to turn on the menu first by clicking the Sw button to the right of
 ## "Put Order in your Rack", then you have to change to a preset that isn't broken: Preset 4 "Go with Him" is not broken.
 ##  Then turn on metronome.  You should hear the beeping audio. Volume and speed controls work.
