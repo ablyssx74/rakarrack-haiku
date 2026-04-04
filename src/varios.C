@@ -21,6 +21,7 @@
 
 */
 
+
 #include <FL/Fl_Pixmap.H>
 #include <FL/Fl_Group.H>
 #include <FL/fl_ask.H>
@@ -135,55 +136,78 @@ RKR::PrefNom (const char *dato)
 
 
 
+#ifdef __HAIKU__
+#include <OS.h>
+#include <new> 
+#endif
+
 int
 RKR::Get_Bogomips()
 {
+    char temp[256];
+    char *tmp;
+    FILE *fp = NULL;
+    bool found = false;
 
-char temp[256];
-char *tmp;
-FILE *fp;
+#ifdef __HAIKU__
+    uint32 topologyNodeCount = 0;
+    if (get_cpu_topology_info(NULL, &topologyNodeCount) == B_OK && topologyNodeCount > 0) {
+        cpu_topology_node_info* topology = new (std::nothrow) cpu_topology_node_info[topologyNodeCount];
+        if (topology && get_cpu_topology_info(topology, &topologyNodeCount) == B_OK) {
+            for (uint32 i = 0; i < topologyNodeCount; i++) {
+                if (topology[i].type == B_TOPOLOGY_CORE) {
+                    // Haiku stores the frequency in Hz.
+                    // We divide by 500,000 to get Bogomips (approx 2x MHz)
+                    bogomips = (float)(topology[i].data.core.default_frequency / 500000.0f);
+                    found = true;
+                    break;
+                }
+            }
+        }
+        delete[] topology;
+    }
+    
+    // Fallback: If topology fails, use a safe default for a modern CPU
+    if (!found) {
+        bogomips = 4000.0f; 
+        found = true;
+    }
+#else
+    if ((fp = fopen("/proc/cpuinfo", "r")) != NULL) {
+        memset(temp, 0, sizeof(temp));
+        while (fgets(temp, sizeof temp, fp) != NULL) {
+            if (strstr(temp, "bogomips") != NULL) {
+                tmp = strdup(temp);
+                char *to_free = tmp; 
+                strsep(&tmp, ":");
+                if (tmp) sscanf(tmp, "%f", &bogomips);
+                free(to_free);
+                found = true;
+                break;
+            }
+        }
+        fclose(fp);
+    }
+#endif
 
-  if ((fp = fopen ("/proc/cpuinfo", "r")) != NULL)
-    {
-      memset (temp, 0, sizeof (temp));
+    if (found) {
+        maxx_len = lrintf(150.0f / 4800.0f * bogomips);
+        if (upsample) {
+            maxx_len /= (UpAmo + 8);
+            maxx_len /= (6 - ((UpQual + DownQual) / 2));
+        }
 
-      while (fgets (temp, sizeof temp, fp) != NULL)
-	{
+        if (maxx_len < 5) {
+            if (maxx_len < 2) maxx_len = 2;
+            Message(0, "!! Rakarrack CPU Usage Warning !!", 
+                    "It appears your CPU will not easily handle convolution...");
+        }
+        return (1);
+    }
 
-	  if (strstr (temp, "bogomips") != NULL)
-
-	    {
-	      tmp=strdup(temp);
-	      strsep(&tmp,":");
-              sscanf (tmp, "%f", &bogomips);
-              break;
-	    }
-
-         }
-         
-
-         maxx_len = lrintf(150.0f / 4800.0f * bogomips);
-         if(upsample) 
-         {
-          maxx_len /= (UpAmo + 8); 
-          maxx_len /= (6 - ((UpQual+DownQual)/2)); 
-          // printf("Max Len: %d\n",maxx_len);
-
-         }
-         if(maxx_len < 5 ) 
-         {
-         if(maxx_len < 2 ) maxx_len = 2;
-         Message(0,"!! Rakarrack CPU Usage Warning !!","It appears your CPU will not easily handle convolution with the current settings.  Be careful with the Convolotron effect settings.\nPlease read Help (F1) for more information.");
-         }
-       
-              
-       fclose(fp);
-       return(1); 
-     }
-
- return(0);
-
+    return (0);
 }
+
 
 
 

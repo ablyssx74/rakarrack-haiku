@@ -37,9 +37,13 @@ fontconfig_devel libxfont2_devel libsndfile_devel freetype_devel zlib_devel
 
 
 
-
+if [[ ! -d ./Fl ]];then
 ln -s /boot/system/develop/headers/FL ./Fl
-ln -s ${PWD}/data ${PWD}/src/data
+fi
+
+#if [[ ! -d ${PWD}/src/data ]];then
+#ln -s ${PWD}/data ${PWD}/src/data
+#fi
 
 make distclean
 rm -f config.status config.cache config.log Makefile src/Makefile config.h
@@ -66,7 +70,7 @@ ac_cv_lib_Xpm_main=yes \
 ac_cv_lib_Xext_main=yes \
 ac_cv_lib_Xrender_main=yes \
 ac_cv_lib_X11_main=yes \
-./configure --enable-datadir --datadir=/boot/home/rakarrack-haiku/data
+./configure --enable-datadir --datadir="$(pwd)/data"
 
 
 ## Make will generate a bunch of lib errors, but this can be ignored

@@ -7781,19 +7781,29 @@ printf "%s\n" "@%:@define HELPDIR \"$HELPDIR\"" >>confdefs.h
 printf "%s\n" "@%:@define WEBSITE \"rakarrack.sf.net\"" >>confdefs.h
 
 
+OS_NAME="$(uname -s)"
+
 if test -z "$OPTS";then
 if test -z "$ALTIVEC";then
 if test -z "$SSE"; then
+if test "$OS_NAME" == Haiku; then
+SSE=$(sysinfo -cpu | grep -i sse2)
+else 
 SSE=$(cat /proc/cpuinfo | grep sse2)
+fi
 if test -z "$SSE"; then
 SSE=""
 ac_sse2="no"
 else
-SSE="-msse2 -mfpmath=sse"
+SSE="-O3 -msse2 -mfpmath=sse"
 ac_sse2="yes"
 fi
 if test -z "$SSE"; then
+if test "$OS_NAME" == Haiku; then
+SSE=$(sysinfo -cpu | grep -i "sse")
+else
 SSE=$(cat /proc/cpuinfo | grep sse)
+fi
 if test -z "$SSE"; then
 SSE=""
 ac_sse="no"
@@ -7806,7 +7816,11 @@ fi
 fi
 
 if test -z "$ALTIVEC"; then
+if test "$OS_NAME" == Haiku; then
+SSE=$(sysinfo -cpu | grep -i "altivec")
+else
 ALTIVEC=$(cat /proc/cpuinfo | grep altivec)
+fi
 if test -z "$ALTIVEC"; then
 ALTIVEC=""
 ac_altivec="no"
