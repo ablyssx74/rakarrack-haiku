@@ -21,6 +21,8 @@
 
 */
 
+#include <signal.h>
+#include <unistd.h>
 
 #include <getopt.h>
 #include <sched.h>
@@ -210,12 +212,19 @@ main (int argc, char *argv[])
         }
     }
 
-  printf("Rakarrack loop ended. Cleaning up audio...\n");
-  //HaikuAudioCleanup();
-  HaikuAudioShutdown();
-  printf("Killing process...\n");
-  fflush(stdout);
-  exit(0); 
+printf("Rakarrack loop ended. Cleaning up audio...\n");
+fflush(stdout);
+
+HaikuAudioShutdown();
+
+printf("DEBUG: Cleanup finished. Forcing immediate termination...\n");
+fflush(stdout);
+
+// Use kill on our own process ID to ensure all threads are reaped
+kill(getpid(), SIGKILL); 
+
+// This should never be reached
+_exit(0); 
 
 }
   

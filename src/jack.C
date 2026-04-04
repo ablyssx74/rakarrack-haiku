@@ -72,7 +72,8 @@ public:
           BMediaNode("Rakarrack-In"),
           BMediaEventLooper() // This handles the internal thread
     {
-        AddNodeKind(B_PHYSICAL_INPUT);
+       // AddNodeKind(B_PHYSICAL_INPUT);
+        AddNodeKind(B_BUFFER_CONSUMER); 
     }
     
 	// This MUST match the header exactly to stop the "Abstract Class" error
@@ -182,48 +183,38 @@ void HaikuRecordCallback(void *cookie, void *buffer, size_t size, const media_ra
 int jackprocess (jack_nframes_t nframes, void *arg);
 
 // Helper Function (Must be ABOVE JACKstart)
-status_t ConnectInputToPlayer(BSoundPlayer* player) {
-    if (!player) return B_BAD_VALUE;
+status_t ConnectHardwareToRakarrack() {
     BMediaRoster* roster = BMediaRoster::Roster();
-    if (!roster) return B_ERROR;
+    if (!roster || !inNode) return B_ERROR;
 
-    float dMin, dMax;
-    int32 dParam;
-    player->GetVolumeInfo(&gPlayerNode, &dParam, &dMin, &dMax);
-
-    status_t err = roster->GetAudioInput(&gInputNode);
+    // 1. Get the Physical Hardware Input (HD Audio)
+    media_node hardwareInput;
+    status_t err = roster->GetAudioInput(&hardwareInput);
     if (err != B_OK) return err;
 
+    // 2. Find a free "hole" on the Hardware to plug a cable into
+    media_output hardwareOut;
     int32 count = 0;
-    err = roster->GetFreeOutputsFor(gInputNode, &gInputOutput, 1, &count, B_MEDIA_RAW_AUDIO);
+    err = roster->GetFreeOutputsFor(hardwareInput, &hardwareOut, 1, &count, B_MEDIA_RAW_AUDIO);
     if (err != B_OK || count < 1) return B_BUSY;
 
-    err = roster->GetFreeInputsFor(gPlayerNode, &gPlayerInput, 1, &count, B_MEDIA_RAW_AUDIO);
+    // 3. Find the "Guitar In" pin on your RakInputNode
+    media_input rakIn;
+    err = roster->GetFreeInputsFor(inNode->Node(), &rakIn, 1, &count, B_MEDIA_RAW_AUDIO);
     if (err != B_OK || count < 1) return B_BUSY;
 
-    // FIX: Set the format correctly through the union
-  //  media_format format;
- //   memset(&format, 0, sizeof(format));
-  //  format.type = B_MEDIA_RAW_AUDIO;
- 
- 
+    // 4. Match the format (Wildcard is usually safest for HDA)
     media_format format;
     format.type = B_MEDIA_RAW_AUDIO;
-    format.u.raw_audio = media_raw_audio_format::wildcard; 
-    
-    format.u.raw_audio.frame_rate = 96000.0;
-    format.u.raw_audio.channel_count = 2;
-   // format.u.raw_audio.format = media_raw_audio_format::B_AUDIO_FLOAT;
-    format.u.raw_audio.byte_order = B_MEDIA_HOST_ENDIAN;
-    format.u.raw_audio.buffer_size = 512 * sizeof(float) * 2; 
-    
-    // Use this format directly
-    err = roster->Connect(gInputOutput.source, gPlayerInput.destination, &format, &gInputOutput, &gPlayerInput);
+    format.u.raw_audio = media_raw_audio_format::wildcard;
+
+    // 5. Plug the virtual cable
+    err = roster->Connect(hardwareOut.source, rakIn.destination, &format, &hardwareOut, &rakIn);
     
     if (err == B_OK) {
-        roster->StartNode(gInputNode, 0); 
-        roster->StartNode(gPlayerNode, 0); 
-        printf("Nodes Started. Connection active.\n");
+        roster->StartNode(hardwareInput, 0); 
+        roster->StartNode(inNode->Node(), 0); 
+        printf("SUCCESS: Hardware Input connected to Rakarrack!\n");
     }
     return err;
 }
@@ -663,38 +654,55 @@ JackOUT->Tap_Display=1;
 // Added for Haiku 
 
 extern "C" void HaikuAudioShutdown() {
+    printf("DEBUG: Entering HaikuAudioShutdown...\n");
+
+    // 1. Tell players to stop but DON'T block
+    if (outPlayer) { 
+        printf("DEBUG: Stopping outPlayer (non-blocking)...\n");
+        outPlayer->Stop(false); // false = don't block
+    }
+    if (inPlayer) { 
+        printf("DEBUG: Stopping inPlayer (non-blocking)...\n");
+        inPlayer->Stop(false); 
+    }
+
     BMediaRoster* roster = BMediaRoster::Roster();
-    if (!roster) return;
+    if (roster) {
+        printf("DEBUG: MediaRoster found.\n");
 
-    // 1. SHUT DOWN THE LOOPER (The "Magic Bullet" for the hang)
-    if (inNode != NULL) {
-        // Tell the roster we are done with this node
-        roster->UnregisterNode(inNode); 
-        
-        // This is the "Public" way to trigger the looper's Quit() and delete
-        inNode->Release(); 
-        
-        inNode = NULL; 
+        // 2. Disconnect and Stop Nodes ASYNCHRONOUSLY
+        // If gInputNode is the problem, we skip the blocking StopNode
+        if (gInputNode.node > 0) {
+            printf("DEBUG: Disconnecting nodes...\n");
+            // Disconnect first to break the audio loop
+            roster->Disconnect(gInputOutput.node.node, gInputOutput.source, 
+                               gPlayerInput.node.node, gPlayerInput.destination);
+            
+            printf("DEBUG: Stopping nodes (asynchronous)...\n");
+            roster->StopNode(gInputNode, 0, false); // false = don't wait for reply
+            roster->StopNode(gPlayerNode, 0, false);
+        }
+
+        // 3. Skip Unregistering if it's hanging
+        // Many Haiku apps rely on the OS to clean up nodes on exit
+        // to avoid this exact hang.
     }
 
-    // 2. Tear down the BSoundPlayer connections
-    if (gInputNode.node > 0) {
-        roster->StopNode(gInputNode, 0);
-        roster->StopNode(gPlayerNode, 0);
-
-        roster->Disconnect(gInputOutput.node.node, gInputOutput.source, 
-                           gPlayerInput.node.node, gPlayerInput.destination);
-        
-        roster->ReleaseNode(gInputNode);
-        roster->ReleaseNode(gPlayerNode);
+    // 4. Force delete the players
+    if (outPlayer) { 
+        printf("DEBUG: Deleting outPlayer...\n");
+        delete outPlayer; 
+        outPlayer = NULL; 
+    }
+    if (inPlayer) { 
+        delete inPlayer; 
+        inPlayer = NULL; 
     }
 
-    // 3. Clean up the players
-    if (inPlayer) { inPlayer->Stop(); delete inPlayer; inPlayer = NULL; }
-    if (outPlayer) { outPlayer->Stop(); delete outPlayer; outPlayer = NULL; }
-
-    printf("Haiku Audio Cleaned Up Successfully.\n");
+    printf("DEBUG: Cleanup phase complete.\n");
 }
+
+
 
 
 
