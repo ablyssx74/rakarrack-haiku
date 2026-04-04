@@ -45,10 +45,15 @@ fi
 #ln -s ${PWD}/data ${PWD}/src/data
 #fi
 
+read -p "Rebuild all source files? y/n: " answer
+
+if [[ ${answer,,} == y ]];then
 make distclean
 rm -fr autom4te.cache
 rm -f config.status config.cache config.log Makefile src/Makefile config.h 
 autoreconf -vif
+fi
+
 
 CPPFLAGS="-I$(pwd)" \
 ACONNECT=/bin/true \
