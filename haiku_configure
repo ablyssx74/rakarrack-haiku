@@ -11,8 +11,8 @@
 
 ## Some basic Haiku dependencies... 
 
-pkgman install fltk_devel xlibe_devel xlibe libsamplerate_devel \
-fontconfig_devel libsndfile_devel freetype_devel zlib_devel
+pkgman install fltk_devel libxpm_devel xlibe_devel xlibe libsamplerate_devel \
+fontconfig_devel libxfont2_devel libsndfile_devel freetype_devel zlib_devel
 
 
 ## Once rakarrack is built, it is best to open the preferences menu 
