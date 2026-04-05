@@ -1438,7 +1438,7 @@ RKR::Alg (float *inl1, float *inr1, float *origl, float *origr, void *)
 
        Control_Gain (origl, origr);
 
-      //if(Metro_Bypass) M_Metronome->metronomeout(m_ticks);
+      if(Metro_Bypass) M_Metronome->metronomeout(m_ticks);
 
 
       if (Tuner_Bypass)

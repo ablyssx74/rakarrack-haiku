@@ -95,6 +95,10 @@ ac_cv_lib_X11_main=yes \
 ./configure --enable-datadir --datadir="$(pwd)/data"
 
 
+export LIBRARY_PATH="$LIBRARY_PATH:$(pwd)/X11"
+export BELIBRARIES="$BELIBRARIES:$(pwd)/X11"
+
+
 
 make CXXFLAGS="-include $(pwd)/haiku_fixes.h $(fltk-config --cxxflags) -I. -g -O2 -fpermissive" \
 LIBS="$(fltk-config --ldflags) -lX11 -lmedia -lbe -lsamplerate -lnetwork -lroot"
@@ -109,7 +113,7 @@ g++ -o rakarrack src/*.o haiku_stubs.o \
 
 # To Test
 
-./rakarrack    
+LD_DEBUG=1 ./rakarrack
 
 
 

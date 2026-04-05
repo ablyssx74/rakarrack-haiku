@@ -5,12 +5,19 @@
 #include <string.h>
 #include <SupportDefs.h>
 #include <OS.h>
+#include "global.h" 
+#include "jack.h"
 
 // Planar buffers for Rakarrack to write into
-float input_buffer_L[4096];
-float input_buffer_R[4096];
-float temp_buffer_L[4096];
-float temp_buffer_R[4096];
+float input_buffer_L[8192];
+float input_buffer_R[8192];
+float temp_buffer_L[8192];
+float temp_buffer_R[8192];
+
+
+
+
+
 
 pthread_mutex_t jmutex;
 RKR *JackOUT = NULL;
@@ -19,7 +26,12 @@ float* current_haiku_buffer = NULL;
 extern float* current_haiku_buffer; 
 //float* current_haiku_buffer = NULL;
 extern "C" {
-	
+	int snd_seq_event_output_direct(snd_seq_t *seq, snd_seq_event_t *ev) { 
+        return 0; 
+	}
+    int snd_seq_connect_from(snd_seq_t *seq, int my_port, int src_client, int src_port) { return 0; }
+    int snd_seq_connect_to(snd_seq_t *seq, int my_port, int dest_client, int dest_port) { return 0; }
+        
     int jack_port_connected(const jack_port_t port) { 
         return 1; 
     }
@@ -45,24 +57,25 @@ jack_port_t* jack_port_register(jack_client_t*, const char* name, const char*, u
 
 void* jack_port_get_buffer(jack_port_t port, jack_nframes_t nframes) {
     const char* name = jack_port_name(port);
-    if (!name) return (void*)temp_buffer_L;
+    // Use the dummy buffers if the engine isn't fully alive yet
+    if (!name || !JackOUT || !JackOUT->efxoutl) return (void*)temp_buffer_L;
 
-    // INPUTS: Points Rakarrack to the data captured in HaikuRecordCallback
+    // INPUTS: Where Rakarrack reads guitar data
     if (strstr(name, "in")) {
-        if (strstr(name, "1")) return (void*)input_buffer_L;
-        if (strstr(name, "2")) return (void*)input_buffer_R;
+        if (strstr(name, "1")) return (void*)JackOUT->efxoutl;
+        if (strstr(name, "2")) return (void*)JackOUT->efxoutr;
     }
     
-    // OUTPUTS: Points Rakarrack to temp buffers
-    // DO NOT return current_haiku_buffer here. 
-    // Let the AudioCallback handle the interleaving later.
+    // OUTPUTS: Where Rakarrack writes processed data
+    // We point these to the same efxoutl/r so BSoundPlayer can see the result
     if (strstr(name, "out")) {
-        if (strstr(name, "1")) return (void*)temp_buffer_L;
-        if (strstr(name, "2")) return (void*)temp_buffer_R;
+        if (strstr(name, "1")) return (void*)JackOUT->efxoutl;
+        if (strstr(name, "2")) return (void*)JackOUT->efxoutr;
     }
 
-    return (void*)temp_buffer_L; 
+    return (void*)JackOUT->efxoutl; 
 }
+
 
 
     // --- JACK Stubs ---
@@ -155,11 +168,7 @@ const char** jack_get_ports(jack_client_t client, const char* name_pattern, cons
     void snd_seq_ev_set_noteoff(snd_seq_event_t* ev, int c, int k, int v) {}
     void snd_seq_ev_set_subs(snd_seq_event_t* ev) {}
     void snd_seq_ev_set_direct(snd_seq_event_t* ev) {}
-    int snd_seq_event_output_direct(snd_seq_t* s, snd_seq_event_t* ev) { return 0; }
 
-    // --- X11 Stubs ---
-    void* XGetWMHints(void* d, void* w) { return NULL; }
-    void XSetWMHints(void* d, void* w, void* h) {}
 }
 
 // --- Helper Functions ---
