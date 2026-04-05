@@ -99,8 +99,9 @@ class SimpleRingBuffer {
 public:
     float *buffer;
     int size;
-    int writePos;
-    int readPos;
+    // VOLATILE: Tells the compiler "This value changes in another thread, check memory every time!"
+    volatile int writePos;
+    volatile int readPos;
 
     SimpleRingBuffer(int sz) {
         size = sz;
@@ -108,6 +109,7 @@ public:
         memset(buffer, 0, size * sizeof(float));
         writePos = 0;
         readPos = 0;
+        printf("[DEBUG] RingBuffer Initialized. Size: %d frames\n", size);
     }
 
     void Write(float* data, int frames) {
@@ -130,6 +132,7 @@ public:
         return diff;
     }
 };
+
 
 // Initialize GLOBAL Ring Buffers (allocate them in main or JACKstart)
 SimpleRingBuffer* rbLeft = NULL;
@@ -215,7 +218,7 @@ public:
         void* rawData = buffer->Data();
         
         // This is the heartbeat: if this prints, the data is flowing!
-        printf("Buffer Received! Size: %lu\n", bytes); 
+       // printf("Buffer Received! Size: %lu\n", bytes); 
 
         pthread_mutex_lock(&jmutex);
 
@@ -223,7 +226,7 @@ public:
             int32* data = (int32*)rawData;
             
          if (data[0] > 1000 || data[0] < -1000) {
-          printf("SIGNAL DETECTED! Value: %d\n", data[0]);
+          //printf("SIGNAL DETECTED! Value: %d\n", data[0]);
    		  }
             
             int frames = bytes / (2 * sizeof(int32));
@@ -256,6 +259,12 @@ public:
         }
 
         pthread_mutex_unlock(&jmutex);
+        
+	static int input_log = 0;
+	if (input_log++ % 50 == 0) {
+   // printf("[INPUT]  Addr: %p | WritePos: %d\n", (void*)rbLeft, rbLeft->writePos);
+	}
+    
         buffer->Recycle();
     }
 
@@ -395,20 +404,70 @@ void HaikuRecordCallback(void *cookie, void *buffer, size_t size, const media_ra
 
 // The Play Hook: Processes and then Interleaves to Speakers
 void HaikuAudioCallback(void *cookie, void *buffer, size_t size, const media_raw_audio_format &format) {
-    // Determine how many frames the speakers need
-    int nframes = size / (2 * sizeof(float));
-    
-    // Direct call to your jackprocess function
-    // This maintains your existing logic but runs it in the SoundPlayer thread
-    jackprocess(nframes, cookie);
-    
-    // Copy the results from the JackOUT buffers to the hardware buffer
-    float* out = (float*)buffer;
-    for (int i = 0; i < nframes; i++) {
-        out[i * 2]     = JackOUT->efxoutl[i];
-        out[i * 2 + 1] = JackOUT->efxoutr[i];
+    // Safety Check
+    if (!rbLeft || !rbRight) {
+        memset(buffer, 0, size);
+        return;
+    }
+
+    // 1. Get the Requested Format
+    // 0x24 = Float (Standard Haiku), 0x2 = Short (Legacy)
+    uint32 type = format.format; 
+
+    // 2. Calculate Frames based on the requested format
+    size_t sampleSize = (type == 0x24) ? sizeof(float) : sizeof(int16);
+    size_t frames = size / (2 * sampleSize); // Stereo
+
+    // 3. Preroll Check (Prevent Stuttering)
+    if (rbLeft->Available() < frames) {
+        memset(buffer, 0, size);
+        return;
+    }
+
+    // 4. Digital Gain (Boost the signal)
+    float gain = 20.0f;
+
+    // --- CASE A: System wants FLOATS (Most Likely) ---
+    if (type == 0x24) {
+        float* outBuffer = (float*)buffer;
+        for (int i = 0; i < frames; i++) {
+            float left = rbLeft->buffer[rbLeft->readPos];
+            float right = rbRight->buffer[rbRight->readPos];
+            
+            // Advance Ring Buffer
+            rbLeft->readPos = (rbLeft->readPos + 1) % rbLeft->size;
+            rbRight->readPos = (rbRight->readPos + 1) % rbRight->size;
+
+            // Output directly (Float to Float)
+            outBuffer[i * 2]     = left * gain;
+            outBuffer[i * 2 + 1] = right * gain;
+        }
+    }
+    // --- CASE B: System wants SHORTS (Your old code) ---
+    else {
+        int16* outBuffer = (int16*)buffer;
+        for (int i = 0; i < frames; i++) {
+            float left = rbLeft->buffer[rbLeft->readPos];
+            float right = rbRight->buffer[rbRight->readPos];
+            
+            rbLeft->readPos = (rbLeft->readPos + 1) % rbLeft->size;
+            rbRight->readPos = (rbRight->readPos + 1) % rbRight->size;
+
+            // Convert to Int16
+            float outL = left * 32000.0f * gain;
+            float outR = right * 32000.0f * gain;
+            
+            // Clamp
+            if (outL > 32000) outL = 32000;
+            if (outL < -32000) outL = -32000;
+            outBuffer[i * 2]     = (int16)outL;
+            outBuffer[i * 2 + 1] = (int16)outR;
+        }
     }
 }
+
+
+
 
 
 
