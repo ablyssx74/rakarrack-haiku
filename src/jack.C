@@ -95,6 +95,47 @@ media_output gInputOutput;
 media_input  gPlayerInput;
 
 
+class SimpleRingBuffer {
+public:
+    float *buffer;
+    int size;
+    int writePos;
+    int readPos;
+
+    SimpleRingBuffer(int sz) {
+        size = sz;
+        buffer = new float[size];
+        memset(buffer, 0, size * sizeof(float));
+        writePos = 0;
+        readPos = 0;
+    }
+
+    void Write(float* data, int frames) {
+        for (int i = 0; i < frames; i++) {
+            buffer[writePos] = data[i];
+            writePos = (writePos + 1) % size;
+        }
+    }
+
+    void Read(float* dest, int frames) {
+        for (int i = 0; i < frames; i++) {
+            dest[i] = buffer[readPos];
+            readPos = (readPos + 1) % size;
+        }
+    }
+    
+    int Available() {
+        int diff = writePos - readPos;
+        if (diff < 0) diff += size;
+        return diff;
+    }
+};
+
+// Initialize GLOBAL Ring Buffers (allocate them in main or JACKstart)
+SimpleRingBuffer* rbLeft = NULL;
+SimpleRingBuffer* rbRight = NULL;
+
+
 // Inherit ONLY from BBufferConsumer (which already includes BMediaNode)
 class RakInputNode : public BBufferConsumer, public BMediaEventLooper {
 public:
@@ -178,20 +219,28 @@ public:
 
     // 3. AUDIO: The actual data capture
 virtual void BufferReceived(BBuffer *buffer) {
-    if (!buffer || !JackOUT) return;
+    if (!buffer || !rbLeft) return;
 
     float* incomingData = (float*)buffer->Data();
     size_t numFrames = buffer->SizeUsed() / (2 * sizeof(float)); 
 
+    // De-interleave and write to Ring Buffers
+    // We use a temp buffer to de-interleave first, or just write directly if we modify Write()
+    // For simplicity, let's just write sample-by-sample in a locked block
+    
     pthread_mutex_lock(&jmutex);
     for (size_t i = 0; i < numFrames; i++) {
-        hardware_in_L[i] = incomingData[i * 2];
-        hardware_in_R[i] = incomingData[i * 2 + 1];
+        rbLeft->buffer[rbLeft->writePos] = incomingData[i * 2];
+        rbLeft->writePos = (rbLeft->writePos + 1) % rbLeft->size;
+        
+        rbRight->buffer[rbRight->writePos] = incomingData[i * 2 + 1];
+        rbRight->writePos = (rbRight->writePos + 1) % rbRight->size;
     }
     pthread_mutex_unlock(&jmutex);
 
     buffer->Recycle();
 }
+
 
 
 
@@ -492,6 +541,9 @@ int JACKstart(RKR * rkr_, jack_client_t * jackclient_) {
     } else {
         printf("[DEBUG] Error: No valid TimeSource found. Node may stay in 'stopped' state.\n");
     }
+// Allocate 4 seconds of buffer to be safe
+if (!rbLeft) rbLeft = new SimpleRingBuffer(48000 * 4);
+if (!rbRight) rbRight = new SimpleRingBuffer(48000 * 4);
 
     // 5. Output Player
     outPlayer = new BSoundPlayer(&format, "Rakarrack-Out", HaikuAudioCallback, NULL, (void*)rkr_);
@@ -501,100 +553,6 @@ int JACKstart(RKR * rkr_, jack_client_t * jackclient_) {
   
     return B_OK;
 }
-
-
-
-
-
-/*
-int
-JACKstart (RKR * rkr_, jack_client_t * jackclient_)
-{
-
-
-  JackOUT = rkr_;
-  jackclient = jackclient_;
-
-  jack_set_sync_callback(jackclient, timebase, NULL);
-  jack_set_process_callback (jackclient, jackprocess, 0);
-  jack_on_shutdown (jackclient, jackshutdown, 0);
-
-
-
-  inputport_left =
-    jack_port_register (jackclient, "in_1", JACK_DEFAULT_AUDIO_TYPE,
-			JackPortIsInput, 0);
-  inputport_right =
-    jack_port_register (jackclient, "in_2", JACK_DEFAULT_AUDIO_TYPE,
-			JackPortIsInput, 0);
-
-  inputport_aux =
-    jack_port_register (jackclient, "aux", JACK_DEFAULT_AUDIO_TYPE,
-			JackPortIsInput, 0);
-
-  outport_left =
-    jack_port_register (jackclient, "out_1", JACK_DEFAULT_AUDIO_TYPE,
-			JackPortIsOutput, 0);
-  outport_right =
-    jack_port_register (jackclient, "out_2", JACK_DEFAULT_AUDIO_TYPE,
-			JackPortIsOutput, 0);
-
-  jack_midi_in =  
-    jack_port_register(jackclient, "in", JACK_DEFAULT_MIDI_TYPE, JackPortIsInput, 0);
-
-  jack_midi_out = 
-    jack_port_register(jackclient, "MC out", JACK_DEFAULT_MIDI_TYPE, JackPortIsOutput, 0);
-  
-
-  if (jack_activate (jackclient))
-    {
-      fprintf (stderr, "Cannot activate jack client.\n");
-      return (2);
-    };
-
-  if (JackOUT->aconnect_JA)
-    {
-
-      for (int i = 0; i < JackOUT->cuan_jack; i += 2)
-	{
-	  jack_connect (jackclient, jack_port_name (outport_left),
-			JackOUT->jack_po[i].name);
-	  jack_connect (jackclient, jack_port_name (outport_right),
-			JackOUT->jack_po[i + 1].name);
-	}
-    }
-
-  if (JackOUT->aconnect_JIA)
-    {
-
-       if(JackOUT->cuan_ijack == 1)
-        {
-          jack_connect (jackclient,JackOUT->jack_poi[0].name,jack_port_name(inputport_left));
-	  jack_connect (jackclient,JackOUT->jack_poi[0].name, jack_port_name(inputport_right));
-	 }	
-	
-      else
-       { 
-      for (int i = 0; i < JackOUT->cuan_ijack; i += 2)
-	 {
-	  jack_connect (jackclient,JackOUT->jack_poi[i].name, jack_port_name (inputport_left));
-	  jack_connect (jackclient,JackOUT->jack_poi[i + 1].name,jack_port_name (inputport_right));
-	  }
-       }
-
-    }
-
-
-
-
-
-  pthread_mutex_init (&jmutex, NULL);
-
-
-  return 3;
-
-};
-*/
 
 
 int jackprocess (jack_nframes_t nframes, void *arg)
@@ -645,8 +603,7 @@ int jackprocess (jack_nframes_t nframes, void *arg)
 
    }
   }  
-  
-  
+   
   
   int jnumpi = jack_port_connected(inputport_left) + jack_port_connected(inputport_right );
   if(jnumpi != JackOUT->numpi) 
@@ -681,9 +638,22 @@ int jackprocess (jack_nframes_t nframes, void *arg)
    JackOUT->numpc = 1;
   }
   
+      // Temporary local buffers for the engine
+    float process_in_L[nframes];
+    float process_in_R[nframes];
 
  // START LOCK
     pthread_mutex_lock (&jmutex);
+
+    // READ from Ring Buffer
+    if (rbLeft && rbLeft->Available() >= nframes) {
+        rbLeft->Read(process_in_L, nframes);
+        rbRight->Read(process_in_R, nframes);
+    } else {
+        // Not enough data? Silence input to avoid garbage noise
+        memset(process_in_L, 0, sizeof(float) * nframes);
+        memset(process_in_R, 0, sizeof(float) * nframes);
+    }
 
     // 3. MIDI DATA - Needs to be defined for 'count' to work
     void *data = jack_port_get_buffer(jack_midi_in, nframes); 
@@ -709,7 +679,9 @@ int jackprocess (jack_nframes_t nframes, void *arg)
 
     // 4. RUN THE EFFECTS ENGINE
     // Use the data currently in our global 'inl/inr' (filled by BufferReceived)
-    JackOUT->Alg (JackOUT->efxoutl, JackOUT->efxoutr, inl, inr, 0);
+    // CORRECTED
+	JackOUT->Alg (JackOUT->efxoutl, JackOUT->efxoutr, process_in_L, process_in_R, nframes);
+
 
     // 5. COPY TO OUTPUT
     memcpy (outl, JackOUT->efxoutl, sizeof (jack_default_audio_sample_t) * nframes);
