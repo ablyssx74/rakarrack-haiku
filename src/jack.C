@@ -142,162 +142,131 @@ public:
     RakInputNode() 
         : BBufferConsumer(B_MEDIA_RAW_AUDIO), 
           BMediaNode("Rakarrack-In"),
-          BMediaEventLooper() // This handles the internal thread
+          BMediaEventLooper() 
     {
-       AddNodeKind(B_BUFFER_CONSUMER); 
-      //  AddNodeKind(B_RECORDING);
-        
+        AddNodeKind(B_BUFFER_CONSUMER); 
     }
-    
-	// This MUST match the header exactly to stop the "Abstract Class" error
-	virtual void HandleEvent(const media_timed_event* event, 
-                         bigtime_t lateness, 
-                         bool realTimeEvent = false) 
-	{
-    // Leave this empty for now; the looper just needs it to exist
-	}
 
-    // This replaces the need for "Run()"
-    virtual void NodeRegistered() {
-        // Start the internal BMediaEventLooper thread
-        Run(); // Note: BMediaEventLooper::Run() is PUBLIC!
-    }
-    
-    virtual ~RakInputNode() {}
-	virtual BMediaNode::run_mode RunMode() { return B_RECORDING; }
+    uint32 fInputFormat; 
 
-    // 1. COMMUNICATE: Fixes the Cortex hang
-    virtual port_id ControlPort() const { 
-    return BMediaEventLooper::ControlPort(); 
-	}
-
+    // --- 1. MESSAGE PUMP ---
     virtual status_t HandleMessage(int32 code, const void *data, size_t size) {
-    // If the message is for the Consumer (like "Here is a buffer"), handle it immediately
-    if (BBufferConsumer::HandleMessage(code, data, size) == B_OK) return B_OK;
-    
-    // Otherwise, let the Looper/Node handle it
-    if (BMediaEventLooper::HandleMessage(code, data, size) == B_OK) return B_OK;
-    
-    return BMediaNode::HandleMessage(code, data, size);
+        if (BBufferConsumer::HandleMessage(code, data, size) == B_OK) return B_OK;
+        if (BMediaEventLooper::HandleMessage(code, data, size) == B_OK) return B_OK;
+        return BMediaNode::HandleMessage(code, data, size);
     }
 
-	virtual status_t GetNodeAttributes(media_node_attribute* out_attributes, size_t in_max_count, size_t* out_count) {
-    	// Correct logic: Set count to 0 and return B_OK to tell Cortex we have no special tags.
-    	// If you return an error or leave out_count uninitialized, Cortex hangs.
-    	if (out_count == NULL) return B_BAD_VALUE;
-    	*out_count = 0;
-    	return B_OK;
-	}
-    virtual status_t GetConfiguration(BMessage* message) { return B_OK; }
-
-    // 2. PINS: This makes the "Guitar In" hole appear on the left in Cortex
-    virtual status_t GetNextInput(int32* cookie, media_input* out_input) {
-    // 1. Check the cookie. On the first call, it's 0.
-    if (*cookie != 0) {
-        // This is the "Stop" signal. Returning B_ENTRY_NOT_FOUND or B_ERROR 
-        // tells Cortex there are no more pins to draw.
-        return B_ENTRY_NOT_FOUND; 
+    // --- 2. LATENCY & RUN MODE ---
+    virtual status_t GetLatencyFor(const media_destination&, bigtime_t* out_latency, media_node_id* out_timesource) {
+        *out_latency = 0; 
+        *out_timesource = TimeSource()->ID();
+        return B_OK;
     }
 
-    // 2. Describe the pin
-    out_input->node = Node();
-    out_input->destination.port = ControlPort();
-    out_input->destination.id = 0; // The first pin ID
-    out_input->source = media_source::null;
-    sprintf(out_input->name, "Guitar In");
-    
-    // 3. Set the format (use wildcard to allow the mixer/HDA to connect)
-    out_input->format.type = B_MEDIA_RAW_AUDIO;
-    out_input->format.u.raw_audio = media_raw_audio_format::wildcard;
+    virtual BMediaNode::run_mode RunMode() { return B_RECORDING; }
 
-    // 4. IMPORTANT: Increment the cookie so the NEXT call hits the check at the top.
-    *cookie = 1; 
-
-    return B_OK;
-}
-
-
-    // 3. AUDIO: The actual data capture
-virtual void BufferReceived(BBuffer *buffer) {
-    if (!buffer || !rbLeft) return;
-
-    float* incomingData = (float*)buffer->Data();
-    size_t numFrames = buffer->SizeUsed() / (2 * sizeof(float)); 
-
-    // De-interleave and write to Ring Buffers
-    // We use a temp buffer to de-interleave first, or just write directly if we modify Write()
-    // For simplicity, let's just write sample-by-sample in a locked block
-    
-    pthread_mutex_lock(&jmutex);
-    for (size_t i = 0; i < numFrames; i++) {
-        rbLeft->buffer[rbLeft->writePos] = incomingData[i * 2];
-        rbLeft->writePos = (rbLeft->writePos + 1) % rbLeft->size;
-        
-        rbRight->buffer[rbRight->writePos] = incomingData[i * 2 + 1];
-        rbRight->writePos = (rbRight->writePos + 1) % rbRight->size;
+    // --- 3. LIFECYCLE ---
+    virtual void NodeRegistered() {
+        Run(); 
     }
-    pthread_mutex_unlock(&jmutex);
 
-    buffer->Recycle();
-}
-
-
-
-
-
-
-
-
-
-		
-    // 4. BOILERPLATE: Mandatory to prevent "Abstract Class" errors
+    virtual void HandleEvent(const media_timed_event* event, bigtime_t lateness, bool realTimeEvent = false) {}
+    virtual port_id ControlPort() const { return BMediaEventLooper::ControlPort(); }
     virtual void Preroll() {}
     virtual BMediaAddOn* AddOn(int32* internalID) const { return NULL; }
-    //virtual void NodeRegistered() {}
+
+    // --- 4. CONNECTION LOGIC ---
+    virtual status_t GetNextInput(int32* cookie, media_input* out_input) {
+        if (*cookie != 0) return B_ENTRY_NOT_FOUND; 
+        out_input->node = Node();
+        out_input->destination.port = ControlPort();
+        out_input->destination.id = 0; 
+        out_input->source = media_source::null;
+        sprintf(out_input->name, "Guitar In");
+        out_input->format.type = B_MEDIA_RAW_AUDIO;
+        out_input->format.u.raw_audio = media_raw_audio_format::wildcard;
+        *cookie = 1; 
+        return B_OK;
+    }
+
+    virtual status_t AcceptFormat(const media_destination& dest, media_format* format) {
+        if (format->type != B_MEDIA_RAW_AUDIO) return B_MEDIA_BAD_FORMAT;
+        return B_OK; 
+    }
+
+    virtual status_t Connected(const media_source& source, const media_destination& dest, const media_format& format, media_input* out_input) {
+        out_input->node = Node();
+        out_input->source = source;
+        out_input->destination = dest;
+        out_input->format = format;
+        fInputFormat = format.u.raw_audio.format; // CRITICAL: Save for BufferReceived
+        printf("[DEBUG] Connected! Format ID: %u\n", fInputFormat);
+        return B_OK; 
+    }
+
     virtual void Disconnected(const media_source&, const media_destination&) {}
-	virtual status_t Connected(const media_source& source, 
-                           const media_destination& dest, 
-                           const media_format& format, 
-                           media_input* out_input) 
-	{
-    // 1. Fill out the input info so the Media Server knows the link is active
-    out_input->node = Node();
-    out_input->source = source;
-    out_input->destination = dest;
-    out_input->format = format;
-    sprintf(out_input->name, "Guitar In");
-
-    // 2. Log that we are officially ready
-    fprintf(stderr, "[DEBUG] Connection Finalized: %f Hz\n", format.u.raw_audio.frame_rate);
-    fflush(stderr);
-
-    return B_OK; 
-	}
     virtual status_t FormatChanged(const media_source&, const media_destination&, int32, const media_format&) { return B_OK; }
-	virtual status_t AcceptFormat(const media_destination& dest, media_format* format) {
-    if (format->type != B_MEDIA_RAW_AUDIO) return B_MEDIA_BAD_FORMAT;
-    
-    // If the hardware hasn't picked a format yet, we suggest Float
-    if (format->u.raw_audio.format == media_raw_audio_format::wildcard.format) {
-        format->u.raw_audio.format = media_raw_audio_format::B_AUDIO_FLOAT;
+
+    // --- 5. AUDIO CAPTURE ---
+    virtual void BufferReceived(BBuffer *buffer) {
+        if (!buffer || !rbLeft || !rbRight) return;
+
+        size_t bytes = buffer->SizeUsed();
+        void* rawData = buffer->Data();
+        
+        // This is the heartbeat: if this prints, the data is flowing!
+        printf("Buffer Received! Size: %lu\n", bytes); 
+
+        pthread_mutex_lock(&jmutex);
+
+        if (fInputFormat == 0x4) { // 32-bit Int
+            int32* data = (int32*)rawData;
+            
+         if (data[0] > 1000 || data[0] < -1000) {
+          printf("SIGNAL DETECTED! Value: %d\n", data[0]);
+   		  }
+            
+            int frames = bytes / (2 * sizeof(int32));
+            for (int i = 0; i < frames; i++) {
+                rbLeft->buffer[rbLeft->writePos] = (float)data[i * 2] / 2147483648.0f;
+                rbLeft->writePos = (rbLeft->writePos + 1) % rbLeft->size;
+                rbRight->buffer[rbRight->writePos] = (float)data[i * 2 + 1] / 2147483648.0f;
+                rbRight->writePos = (rbRight->writePos + 1) % rbRight->size;
+            }
+        } 
+        else if (fInputFormat == 0x24) { // 32-bit Float
+            float* data = (float*)rawData;
+            int frames = bytes / (2 * sizeof(float));
+            for (int i = 0; i < frames; i++) {
+                rbLeft->buffer[rbLeft->writePos] = data[i * 2];
+                rbLeft->writePos = (rbLeft->writePos + 1) % rbLeft->size;
+                rbRight->buffer[rbRight->writePos] = data[i * 2 + 1];
+                rbRight->writePos = (rbRight->writePos + 1) % rbRight->size;
+            }
+        }
+        else { // Fallback 16-bit
+            int16* data = (int16*)rawData;
+            int frames = bytes / (2 * sizeof(int16));
+            for (int i = 0; i < frames; i++) {
+                rbLeft->buffer[rbLeft->writePos] = (float)data[i * 2] / 32768.0f;
+                rbLeft->writePos = (rbLeft->writePos + 1) % rbLeft->size;
+                rbRight->buffer[rbRight->writePos] = (float)data[i * 2 + 1] / 32768.0f;
+                rbRight->writePos = (rbRight->writePos + 1) % rbRight->size;
+            }
+        }
+
+        pthread_mutex_unlock(&jmutex);
+        buffer->Recycle();
     }
-    
-    return B_OK; // Say "Yes" to whatever else it wants (Rate, Channels, etc.)
-	}
 
-
-
+    // --- 6. EXTRA BOILERPLATE ---
+    virtual void ProducerDataStatus(const media_destination& for_whom, int32 status, bigtime_t at_performance_time) {}
     virtual void DisposeInputCookie(int32) {}
-    virtual void ProducerDataStatus(const media_destination& for_whom, int32 status, bigtime_t at_performance_time) {
-    if (for_whom.id == 0) { // Your input pin ID
-        fprintf(stderr, "[DEBUG] Producer Status: %s\n", 
-                (status == B_DATA_AVAILABLE) ? "Sending Data" : "Stopped");
-        fflush(stderr);
+    virtual status_t GetNodeAttributes(media_node_attribute* out_attributes, size_t in_max_count, size_t* out_count) {
+        if (out_count) *out_count = 0;
+        return B_OK;
     }
-}
-
-    virtual status_t GetLatencyFor(const media_destination&, bigtime_t*, media_node_id*) { return B_OK; }
-}; // Ensure this semicolon and bracket are here
+};
 
 
 
@@ -316,19 +285,19 @@ status_t ConnectHardwareToRakarrack() {
         return B_ERROR;
     }
 
-    // 1. Get Hardware
-    media_node hardwareInput;
-    status_t err = roster->GetAudioInput(&hardwareInput);
+    // 1. Get Hardware (Store in GLOBAL gInputNode)
+    status_t err = roster->GetAudioInput(&gInputNode);
     if (err != B_OK) {
         printf("[MediaKit] Error: Could not find Physical Audio Input (0x%x)\n", (int)err);
         return err;
     }
-    printf("[MediaKit] Found Hardware Input Node ID: %ld\n", hardwareInput.node);
+    printf("[MediaKit] Found Hardware Input Node ID: %ld\n", gInputNode.node);
 
     // 2. Find Hardware Output Pin
     media_output hardwareOut;
     int32 count = 0;
-    err = roster->GetFreeOutputsFor(hardwareInput, &hardwareOut, 1, &count, B_MEDIA_RAW_AUDIO);
+    // FIX: Use gInputNode here
+    err = roster->GetFreeOutputsFor(gInputNode, &hardwareOut, 1, &count, B_MEDIA_RAW_AUDIO);
     if (err != B_OK || count < 1) {
         printf("[MediaKit] Error: Hardware has no free output pins (0x%x)\n", (int)err);
         return B_BUSY;
@@ -348,8 +317,8 @@ status_t ConnectHardwareToRakarrack() {
     media_format format;
     format.type = B_MEDIA_RAW_AUDIO;
     format.u.raw_audio = media_raw_audio_format::wildcard;
-	format.u.raw_audio.buffer_size = 4096; 
-	
+    format.u.raw_audio.buffer_size = 4096; 
+    
     // 5. Attempt Connection
     printf("[MediaKit] Attempting to connect %s -> %s...\n", hardwareOut.name, rakIn.name);
     err = roster->Connect(hardwareOut.source, rakIn.destination, &format, &hardwareOut, &rakIn);
@@ -359,45 +328,40 @@ status_t ConnectHardwareToRakarrack() {
         return err;
     }
 
-    // Success! Print details of the negotiated format
+    // Success! Print details
     printf("[MediaKit] SUCCESS! Negotiated Format:\n");
     printf("           Rate: %.1f Hz\n", format.u.raw_audio.frame_rate);
     printf("           Channels: %d\n", (int)format.u.raw_audio.channel_count);
     printf("           Buffer Size: %d bytes\n", (int)format.u.raw_audio.buffer_size);
 
-   
-	// 1. Get the system's default time source
-	media_node timeSourceNode;
-	roster->GetTimeSource(&timeSourceNode);
+    // Capture the format for the RingBuffer converter
+    inNode->fInputFormat = format.u.raw_audio.format;
 
-	// 2. We need a BTimeSource object to call Now()
-	BTimeSource* timeSource = roster->MakeTimeSourceFor(timeSourceNode);
-	if (!timeSource) {
-    	printf("[MediaKit] Error: Could not create BTimeSource object\n");
-    	return B_ERROR;
-	}
+    // 6. Time Source Setup
+    media_node timeSourceNode;
+    roster->GetTimeSource(&timeSourceNode);
 
-	// 3. Ensure the internal thread of your node is aware it should be 'Running'
-	//inNode->SetRunMode(BMediaNode::B_RECORDING);
+    BTimeSource* timeSource = roster->MakeTimeSourceFor(timeSourceNode);
+    if (!timeSource) {
+        printf("[MediaKit] Error: Could not create BTimeSource object\n");
+        return B_ERROR;
+    }
 
-    // 4. Sync the nodes to the same TimeSource
-    // Note: hardwareInput is already a media_node struct, 
-    // and inNode->Node() returns a media_node struct.
-    roster->SetTimeSourceFor(hardwareInput.node, timeSourceNode.node);
+    // 7. Sync the nodes to the same TimeSource
+    // FIX: Use gInputNode.node here (was hardwareInput.node)
+    roster->SetTimeSourceFor(gInputNode.node, timeSourceNode.node);
     roster->SetTimeSourceFor(inNode->Node().node, timeSourceNode.node);
 
-	// 5. Calculate a start time (Now + 50ms buffer to ensure nodes are ready)
-	bigtime_t startTime = timeSource->Now() + 50000; 
+    // 8. Calculate start time
+    bigtime_t startTime = timeSource->Now() + 50000; 
 
-    // 6. Start EVERYTHING once
-    roster->StartNode(timeSourceNode, 0); // Ensure clock is running
-    roster->StartNode(hardwareInput, startTime); 
+    // 9. Start EVERYTHING
+    roster->StartNode(timeSourceNode, 0); 
+    // FIX: Use gInputNode here (was hardwareInput)
+    roster->StartNode(gInputNode, startTime); 
     roster->StartNode(inNode->Node(), startTime); 
     
-
-	// 7. Clean up the temporary BTimeSource object
-	timeSource->Release();
-
+    timeSource->Release();
     
     return B_OK;
 }
@@ -478,8 +442,11 @@ extern "C" bigtime_t estimate_max_scheduling_latency();
 int JACKstart(RKR * rkr_, jack_client_t * jackclient_) {
     JackOUT = rkr_;
     pthread_mutex_init(&jmutex, NULL);
+    
+    // Allocate Ring Buffers first so they are ready for the first BufferReceived
+    if (!rbLeft) rbLeft = new SimpleRingBuffer(48000 * 4);
+    if (!rbRight) rbRight = new SimpleRingBuffer(48000 * 4);
 
-    // 1. Define Format
     media_raw_audio_format format;
     memset(&format, 0, sizeof(format)); 
     format.format = media_raw_audio_format::B_AUDIO_FLOAT;
@@ -489,70 +456,45 @@ int JACKstart(RKR * rkr_, jack_client_t * jackclient_) {
     format.buffer_size = 512 * sizeof(float) * 2; 	
 
     BMediaRoster* roster = BMediaRoster::Roster();
-    if (!roster) {
-        printf("[DEBUG] Error: Could not access Media Roster.\n");
-        return B_ERROR;
-    }
-
-    // 2. Initialize and Register Input Node
     inNode = new RakInputNode(); 
-    status_t regErr = roster->RegisterNode(inNode);
-    if (regErr != B_OK) {
-        printf("[DEBUG] Node registration failed: %s\n", strerror(regErr));
-        return regErr;
-    }
-    printf("[DEBUG] RakInputNode registered. Node ID: %ld\n", inNode->Node().node);
+    roster->RegisterNode(inNode);
 
-    // 3. Connect Hardware
-    if (ConnectHardwareToRakarrack() != B_OK) {
-        printf("[DEBUG] Auto-connect failed. Manual link in Cortex may be required.\n");
-    }
+    // This must populate the global 'gInputNode' variable
+    ConnectHardwareToRakarrack();
 
-    // 4. TimeSource Management
-    // Get the preferred time source for this node's hardware/chain
+    bigtime_t start_at = 0;
     BTimeSource* timeSource = roster->MakeTimeSourceFor(inNode->Node());
     
-    // Fallback to system master clock if needed
-    if (timeSource == NULL) {
-        media_node tsNode;
-        roster->GetTimeSource(&tsNode);
-        timeSource = roster->MakeTimeSourceFor(tsNode);
-    }
-
     if (timeSource) {
-        // Slaving the node to the clock: Essential for BMediaEventLooper stability
         roster->SetTimeSourceFor(inNode->Node().node, timeSource->Node().node);
-        
         bigtime_t real = system_time(); 
         roster->StartTimeSource(timeSource->Node(), real);
         
         bigtime_t initLatency = 0;
         roster->GetInitialLatencyFor(inNode->Node(), &initLatency);
         
-        // Start the node slightly in the future to allow buffers to fill
-        bigtime_t start_at = timeSource->Now() + initLatency + 50000;
+        // Define start_at here
+        start_at = timeSource->Now() + initLatency + 50000;
         
-        printf("[DEBUG] Starting Input Node at: %lld\n", start_at);
         roster->StartNode(inNode->Node(), start_at);
         
-        // The Roster now manages the node's relationship with the clock.
-        // We release our local reference to the object.
-        timeSource->Release();
-    } else {
-        printf("[DEBUG] Error: No valid TimeSource found. Node may stay in 'stopped' state.\n");
-    }
-// Allocate 4 seconds of buffer to be safe
-if (!rbLeft) rbLeft = new SimpleRingBuffer(48000 * 4);
-if (!rbRight) rbRight = new SimpleRingBuffer(48000 * 4);
+        // CRITICAL: Also start the Hardware Producer (the Mic/Line In)
+        // Without this, the hardware won't send any buffers to BufferReceived
+        if (gInputNode.node > 0) {
+            roster->StartNode(gInputNode, start_at);
+            printf("[DEBUG] Started Hardware Input Node: %ld\n", gInputNode.node);
+        }
 
-    // 5. Output Player
+        timeSource->Release();
+    }
+
     outPlayer = new BSoundPlayer(&format, "Rakarrack-Out", HaikuAudioCallback, NULL, (void*)rkr_);
     outPlayer->Start();
     outPlayer->SetHasData(true);
-    printf("[DEBUG] Haiku BSoundPlayer started.\n");      
-  
+    
     return B_OK;
 }
+
 
 
 int jackprocess (jack_nframes_t nframes, void *arg)
@@ -680,7 +622,8 @@ int jackprocess (jack_nframes_t nframes, void *arg)
     // 4. RUN THE EFFECTS ENGINE
     // Use the data currently in our global 'inl/inr' (filled by BufferReceived)
     // CORRECTED
-	JackOUT->Alg (JackOUT->efxoutl, JackOUT->efxoutr, process_in_L, process_in_R, nframes);
+	JackOUT->Alg (JackOUT->efxoutl, JackOUT->efxoutr, process_in_L, process_in_R, NULL);
+
 
 
     // 5. COPY TO OUTPUT

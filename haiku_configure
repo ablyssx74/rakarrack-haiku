@@ -111,9 +111,8 @@ g++ -o rakarrack src/*.o haiku_stubs.o \
     
     
 
-# To Test
-
-LD_DEBUG=1 ./rakarrack
+# Test
+./rakarrack
 
 
 
