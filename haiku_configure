@@ -79,10 +79,28 @@ ac_cv_lib_X11_main=yes \
 ./configure --enable-datadir --datadir="$(pwd)/data"
 
 
+
+make CXXFLAGS="-include $(pwd)/haiku_fixes.h $(shell fltk-config --cxxflags) -I. -g -O2 -fpermissive" \
+LIBS="$(fltk-config --ldflags) -lX11 -lmedia -lbe -lsamplerate -lnetwork -lroot"
+
+g++ -c haiku_stubs.cpp -o haiku_stubs.o -I. -I./src -g -O2 -fpermissive
+
+g++ -o rakarrack src/*.o haiku_stubs.o \
+    -lfltk_images -lfltk -lX11 -lmedia -lbe -ltranslation \
+    -lsamplerate -lsndfile -lnetwork -lroot -lpthread
+
+# To Test
+./rakarrack    
+
+
+
+
+
+
 ## Make will generate a bunch of lib errors, but this can be ignored
 ## The g++ code after the make will compile the stubs and rakarrack in src directory
 
-make CXXFLAGS="-include $(pwd)/haiku_fixes.h -I/boot/system/develop/headers/os -I/boot/system/develop/headers/os/app -I/boot/system/develop/headers/os/media -I. -g -O2 -fpermissive" LIBS="-ljack -lroot -lnetwork -lbe -lmedia"
+#make CXXFLAGS="-include $(pwd)/haiku_fixes.h -I/boot/system/develop/headers/os -I/boot/system/develop/headers/os/app -I/boot/system/develop/headers/os/media -I. -g -O2 -fpermissive" LIBS="-ljack -lroot -lnetwork -lbe -lmedia"
 
 # Using the above make while using Haiku Media headers in jack.C
 #make CXXFLAGS="-I$(pwd) -I$(pwd)/src -g -O2 -fpermissive"
@@ -92,7 +110,7 @@ g++ -I. -I./src -g -O2 -fpermissive -c haiku_stubs.cpp -o haiku_stubs.o
 g++ -o src/rakarrack src/*.o haiku_stubs.o -lfltk -lfltk_images -lmedia -lbe -ltranslation -lsndfile -lsamplerate -lz -lpthread
 
 # To Test
-cd src
-./rakarrack
+#cd src
+#./rakarrack
 
 

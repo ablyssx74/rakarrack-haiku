@@ -21,15 +21,14 @@
 
 */
 
-// Added everything to line 203 or so and a cleanup function at the bottom for Haiku
-// Using aboulute paths here because Looper.h is already defined by the app and will 
-// Cause conflicts when trying to call Haiku's Looper.h
-#include "/boot/system/develop/headers/os/app/Looper.h"
-#include "/boot/system/develop/headers/os/app/Application.h"
-#include "/boot/system/develop/headers/os/app/Message.h"
-#include "/boot/system/develop/headers/os/support/Archivable.h"
-#include "/boot/system/develop/headers/os/media/TimeSource.h"
-#include "/boot/system/develop/headers/os/media/MediaEventLooper.h"
+
+#include <app/Looper.h>
+#include <media/BufferProducer.h>
+#include <app/Application.h>
+#include <app/Message.h>
+#include <support/Archivable.h>
+#include <media/TimeSource.h>
+#include <media/MediaEventLooper.h>
 
 
 
@@ -40,8 +39,8 @@
 #endif
 
 // Media Kit & System
-#include "/boot/system/develop/headers/os/media/SoundPlayer.h"
-#include "/boot/system/develop/headers/os/media/MediaRoster.h"
+#include <media/SoundPlayer.h>
+#include <media/MediaRoster.h>
 
 #include "jack.h"
 #include "global.h"
@@ -52,9 +51,12 @@
 #include <stdio.h>
 #include <pthread.h>
 
-#include "/boot/system/develop/headers/os/media/BufferConsumer.h"
-#include "/boot/system/develop/headers/os/media/Buffer.h"
-#include "/boot/system/develop/headers/os/media/MediaNode.h"
+#include <media/BufferConsumer.h>
+#include <media/Buffer.h>
+#include <media/MediaNode.h>
+
+#include <media/BufferGroup.h>
+#include <new>
 
 
 
