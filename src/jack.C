@@ -29,7 +29,9 @@
 #include <support/Archivable.h>
 #include <media/TimeSource.h>
 #include <media/MediaEventLooper.h>
-
+#include <SupportDefs.h>
+#include <OS.h>
+#include <syslog.h>
 
 
 // X11 Conflict Fix: Include X11 then UNDEF its macros immediately
@@ -58,13 +60,10 @@
 #include <media/BufferGroup.h>
 #include <new>
 
-
-
-
-
-
+// Prototypes
+void HaikuAudioCallback(void *cookie, void *buffer, size_t size, const media_raw_audio_format &format);
 void HaikuRecordCallback(void *cookie, void *buffer, size_t size, const media_raw_audio_format &format);
-
+int jackprocess (jack_nframes_t nframes, void *arg);
 
 // Inherit ONLY from BBufferConsumer (which already includes BMediaNode)
 class RakInputNode : public BBufferConsumer, public BMediaEventLooper {
@@ -74,8 +73,9 @@ public:
           BMediaNode("Rakarrack-In"),
           BMediaEventLooper() // This handles the internal thread
     {
-       // AddNodeKind(B_PHYSICAL_INPUT);
-        AddNodeKind(B_BUFFER_CONSUMER); 
+       AddNodeKind(B_BUFFER_CONSUMER); 
+        AddNodeKind(B_RECORDING);
+        
     }
     
 	// This MUST match the header exactly to stop the "Abstract Class" error
@@ -141,6 +141,9 @@ public:
 
     // 3. AUDIO: The actual data capture
     virtual void BufferReceived(BBuffer *buffer) {
+  		syslog(LOG_ERR, "Data arriving: %ld bytes", buffer->SizeUsed());
+  		fprintf(stderr, "[DEBUG] BufferReceived: %ld bytes\n", buffer->SizeUsed());
+    	fflush(stderr);
         HaikuRecordCallback(NULL, buffer->Data(), buffer->SizeUsed(), media_raw_audio_format::wildcard);
         buffer->Recycle();
     }
@@ -150,9 +153,22 @@ public:
     virtual BMediaAddOn* AddOn(int32* internalID) const { return NULL; }
     //virtual void NodeRegistered() {}
     virtual void Disconnected(const media_source&, const media_destination&) {}
-    virtual status_t Connected(const media_source&, const media_destination&, const media_format&, media_input*) { return B_OK; }
+	virtual status_t Connected(const media_source& source, const media_destination& dest, 
+                           const media_format& format, media_input* out_input) {
+    // Fill out the input description to finalize the link
+    out_input->node = Node();
+    out_input->source = source;
+    out_input->destination = dest;
+    out_input->format = format;
+    return B_OK;
+	}
     virtual status_t FormatChanged(const media_source&, const media_destination&, int32, const media_format&) { return B_OK; }
-    virtual status_t AcceptFormat(const media_destination&, media_format*) { return B_OK; }
+    virtual status_t AcceptFormat(const media_destination& dest, media_format* format) {
+    if (format->type != B_MEDIA_RAW_AUDIO) return B_MEDIA_BAD_FORMAT;
+    // You can force 44100 or leave as wildcard, but return B_OK to confirm
+    return B_OK;
+	}
+
     virtual void DisposeInputCookie(int32) {}
     virtual void ProducerDataStatus(const media_destination&, int32, bigtime_t) {}
     virtual status_t GetLatencyFor(const media_destination&, bigtime_t*, media_node_id*) { return B_OK; }
@@ -179,48 +195,103 @@ media_output gInputOutput;
 media_input  gPlayerInput;
 
 
-// Prototypes
-void HaikuAudioCallback(void *cookie, void *buffer, size_t size, const media_raw_audio_format &format);
-void HaikuRecordCallback(void *cookie, void *buffer, size_t size, const media_raw_audio_format &format);
-int jackprocess (jack_nframes_t nframes, void *arg);
+
 
 // Helper Function (Must be ABOVE JACKstart)
 status_t ConnectHardwareToRakarrack() {
     BMediaRoster* roster = BMediaRoster::Roster();
-    if (!roster || !inNode) return B_ERROR;
+    if (!roster) {
+        printf("[MediaKit] Error: Could not get Media Roster!\n");
+        return B_ERROR;
+    }
+    if (!inNode) {
+        printf("[MediaKit] Error: RakInputNode is NULL!\n");
+        return B_ERROR;
+    }
 
-    // 1. Get the Physical Hardware Input (HD Audio)
+    // 1. Get Hardware
     media_node hardwareInput;
     status_t err = roster->GetAudioInput(&hardwareInput);
-    if (err != B_OK) return err;
+    if (err != B_OK) {
+        printf("[MediaKit] Error: Could not find Physical Audio Input (0x%x)\n", (int)err);
+        return err;
+    }
+    printf("[MediaKit] Found Hardware Input Node ID: %ld\n", hardwareInput.node);
 
-    // 2. Find a free "hole" on the Hardware to plug a cable into
+    // 2. Find Hardware Output Pin
     media_output hardwareOut;
     int32 count = 0;
     err = roster->GetFreeOutputsFor(hardwareInput, &hardwareOut, 1, &count, B_MEDIA_RAW_AUDIO);
-    if (err != B_OK || count < 1) return B_BUSY;
+    if (err != B_OK || count < 1) {
+        printf("[MediaKit] Error: Hardware has no free output pins (0x%x)\n", (int)err);
+        return B_BUSY;
+    }
+    printf("[MediaKit] Using Hardware Output Pin: %s\n", hardwareOut.name);
 
-    // 3. Find the "Guitar In" pin on your RakInputNode
+    // 3. Find Rakarrack Input Pin
     media_input rakIn;
     err = roster->GetFreeInputsFor(inNode->Node(), &rakIn, 1, &count, B_MEDIA_RAW_AUDIO);
-    if (err != B_OK || count < 1) return B_BUSY;
+    if (err != B_OK || count < 1) {
+        printf("[MediaKit] Error: RakInputNode has no free input pins (0x%x)\n", (int)err);
+        return B_BUSY;
+    }
+    printf("[MediaKit] Using Rakarrack Input Pin: %s\n", rakIn.name);
 
-    // 4. Match the format (Wildcard is usually safest for HDA)
+    // 4. Set Format
     media_format format;
     format.type = B_MEDIA_RAW_AUDIO;
     format.u.raw_audio = media_raw_audio_format::wildcard;
-
-    // 5. Plug the virtual cable
+	format.u.raw_audio.buffer_size = 4096; 
+	
+    // 5. Attempt Connection
+    printf("[MediaKit] Attempting to connect %s -> %s...\n", hardwareOut.name, rakIn.name);
     err = roster->Connect(hardwareOut.source, rakIn.destination, &format, &hardwareOut, &rakIn);
     
-    if (err == B_OK) {
-        roster->StartNode(hardwareInput, 0); 
-        roster->StartNode(inNode->Node(), 0); 
-        printf("SUCCESS: Hardware Input connected to Rakarrack!\n");
+    if (err != B_OK) {
+        printf("[MediaKit] CONNECTION FAILED: 0x%x (%s)\n", (int)err, strerror(err));
+        return err;
     }
-    return err;
-}
 
+    // Success! Print details of the negotiated format
+    printf("[MediaKit] SUCCESS! Negotiated Format:\n");
+    printf("           Rate: %.1f Hz\n", format.u.raw_audio.frame_rate);
+    printf("           Channels: %d\n", (int)format.u.raw_audio.channel_count);
+    printf("           Buffer Size: %d bytes\n", (int)format.u.raw_audio.buffer_size);
+
+    roster->StartNode(hardwareInput, 0); 
+    roster->StartNode(inNode->Node(), 0); 
+    
+	// 1. Get the system's default time source
+	media_node timeSourceNode;
+	roster->GetTimeSource(&timeSourceNode);
+
+	// 2. We need a BTimeSource object to call Now()
+	BTimeSource* timeSource = roster->MakeTimeSourceFor(timeSourceNode);
+	if (!timeSource) {
+    	printf("[MediaKit] Error: Could not create BTimeSource object\n");
+    	return B_ERROR;
+	}
+
+    // 3. Sync the nodes to the same TimeSource
+    // Note: hardwareInput is already a media_node struct, 
+    // and inNode->Node() returns a media_node struct.
+    roster->SetTimeSourceFor(hardwareInput.node, timeSourceNode.node);
+    roster->SetTimeSourceFor(inNode->Node().node, timeSourceNode.node);
+
+	// 4. Calculate a start time (Now + 50ms buffer to ensure nodes are ready)
+	bigtime_t startTime = timeSource->Now() + 50000; 
+
+    // 5. Start EVERYTHING once
+    roster->StartNode(timeSourceNode, 0); // Ensure clock is running
+    roster->StartNode(hardwareInput, startTime); 
+    roster->StartNode(inNode->Node(), startTime); 
+
+	// Clean up the temporary BTimeSource object
+	timeSource->Release();
+
+    
+    return B_OK;
+}
 
 
 
@@ -249,26 +320,32 @@ void HaikuRecordCallback(void *cookie, void *buffer, size_t size, const media_ra
 
 // The Play Hook: Processes and then Interleaves to Speakers
 void HaikuAudioCallback(void *cookie, void *buffer, size_t size, const media_raw_audio_format &format) {
+    RKR *rkr = (RKR*)cookie;
     float* fbuf = (float*)buffer;
     uint32_t nframes = size / (sizeof(float) * 2); 
 
-    memset(buffer, 0, size);
-    current_haiku_buffer = fbuf;
-
-    // 1. 
-
-    // 2. Engine: Process the audio through the effects rack
+    // 1. Run the engine (This fills temp_buffer_L/R with processed guitar)
     jackprocess(nframes, cookie);
 
-    // 3. Write to Haiku Output (Interleaved)
-    // Use the engine's output buffers (temp_buffer_L/R) directly
+    // 2. Add the Metronome HERE (Post-Effects)
+    if (rkr && rkr->M_Metronome && rkr->Metro_Bypass) {
+        float m_ticks[4096]; // Temporary tick buffer
+        rkr->M_Metronome->metronomeout(m_ticks);
+        float mvol = rkr->M_Metro_Vol * 0.01f;
+
+        for (uint32_t i = 0; i < nframes; i++) {
+            temp_buffer_L[i] += m_ticks[i] * mvol;
+            temp_buffer_R[i] += m_ticks[i] * mvol;
+        }
+    }
+
+    // 3. Interleave to Haiku Speakers
     for (uint32_t i = 0; i < nframes; i++) {
         fbuf[i * 2]     = temp_buffer_L[i];
         fbuf[i * 2 + 1] = temp_buffer_R[i];
     }
-
-    current_haiku_buffer = NULL;
 }
+
 
 
 extern "C" {
@@ -302,16 +379,29 @@ int JACKstart(RKR * rkr_, jack_client_t * jackclient_) {
     media_raw_audio_format format;
     memset(&format, 0, sizeof(format)); 
     format.format = media_raw_audio_format::B_AUDIO_FLOAT;
-    format.channel_count = 2;
-    format.frame_rate = 96000.0; 
+    format.channel_count = 2; 
+    format.frame_rate = 48000.0; 
+   // format.frame_rate = 96000.0; 
     format.byte_order = B_MEDIA_HOST_ENDIAN;
     format.buffer_size = 512 * sizeof(float) * 2; 	
 
     BMediaRoster* roster = BMediaRoster::Roster();
-    RakInputNode* inNode = new RakInputNode();
-    roster->RegisterNode(inNode);
+   // RakInputNode* inNode = new RakInputNode();
 
-    // Safe TimeSource Logic
+    
+   // 2. CRITICAL: Assign to the GLOBAL inNode, not a local one
+    inNode = new RakInputNode(); 
+    roster->RegisterNode(inNode);
+    printf("[DEBUG] RakInputNode registered. Node ID: %ld\n", inNode->Node().node);
+
+    
+   // 3. Connect Hardware to Rakarrack (This plugs the "Virtual Cable")
+    status_t connErr = ConnectHardwareToRakarrack();
+    if (connErr != B_OK) {
+        printf("[DEBUG] Auto-connect failed: 0x%x. You may need to manual link in Cortex.\n", (int)connErr);
+    }
+
+    // 4. TimeSource Logic
     BTimeSource* timeSource = roster->MakeTimeSourceFor(inNode->Node());
     if (timeSource == NULL) {
         media_node tsNode;
@@ -320,25 +410,21 @@ int JACKstart(RKR * rkr_, jack_client_t * jackclient_) {
     }
 
     if (timeSource) {
-        if (!timeSource->IsRunning()) {
-            bigtime_t real = system_time(); 
-            roster->StartTimeSource(timeSource->Node(), real);
-            roster->SeekTimeSource(timeSource->Node(), 0, real);
-        }
+        bigtime_t real = system_time(); 
+        roster->StartTimeSource(timeSource->Node(), real);
         
         bigtime_t initLatency = 0;
         roster->GetInitialLatencyFor(inNode->Node(), &initLatency);
-        bigtime_t startTime = timeSource->Now() + initLatency + 25000; 
-        roster->StartNode(inNode->Node(), startTime);
+        roster->StartNode(inNode->Node(), timeSource->Now() + initLatency + 10000);
         timeSource->Release();
     }
 
-    // Now 'format' is safely in scope for the output player
+    // 5. Output Player
     outPlayer = new BSoundPlayer(&format, "Rakarrack-Out", HaikuAudioCallback, NULL, (void*)rkr_);
-    
     outPlayer->Start();
     outPlayer->SetHasData(true);
-
+    printf("[DEBUG] Haiku BSoundPlayer started.\n");      
+  
     return 0;
 }
 
@@ -348,10 +434,34 @@ int JACKstart(RKR * rkr_, jack_client_t * jackclient_) {
 
 
 
+/*
 
+int jackprocess(jack_nframes_t nframes, void *arg) {
+    RKR *rkr = (RKR *)arg;
+    if (!rkr) return -1;
 
+    // A. Manually move Haiku's input into Rakarrack's engine buffers
+    // This is the "Missing Link" for your guitar/mic
+    for (uint32_t i = 0; i < nframes; i++) {
+        rkr->efxoutl[i] = input_buffer_L[i];
+        rkr->efxoutr[i] = input_buffer_R[i];
+    }
 
+    // B. Run the actual Rakarrack Engine
+    rkr->Control_Gain(input_buffer_L, input_buffer_R);
+    rkr->Process_Effects();
+    rkr->Control_Volume(input_buffer_L, input_buffer_R);
 
+    // C. Move the processed (WET) audio to your temp buffers
+    for (uint32_t i = 0; i < nframes; i++) {
+        temp_buffer_L[i] = rkr->efxoutl[i];
+        temp_buffer_R[i] = rkr->efxoutr[i];
+    }
+
+    return 0;
+}
+
+*/
 
 
 
@@ -444,8 +554,8 @@ JACKstart (RKR * rkr_, jack_client_t * jackclient_)
   return 3;
 
 };
-
 */
+
 
 int
 jackprocess (jack_nframes_t nframes, void *arg)
@@ -566,31 +676,46 @@ jackprocess (jack_nframes_t nframes, void *arg)
   JackOUT->efx_MIDIConverter->ev_count = 0;
 
 
-   
+/*   
   memcpy (JackOUT->efxoutl, inl,
 	  sizeof (jack_default_audio_sample_t) * nframes);
   memcpy (JackOUT->efxoutr, inr,
 	  sizeof (jack_default_audio_sample_t) * nframes);
   memcpy (JackOUT->auxdata, aux,
 	  sizeof (jack_default_audio_sample_t) * nframes);
+*/  
+
+  // A. Move Haiku's input into the Engine
+  memcpy (JackOUT->efxoutl, inl, sizeof (jack_default_audio_sample_t) * nframes);
+  memcpy (JackOUT->efxoutr, inr, sizeof (jack_default_audio_sample_t) * nframes);
+  memcpy (JackOUT->auxdata, aux, sizeof (jack_default_audio_sample_t) * nframes);
+
+
+  // B. RUN THE EFFECTS (The "Alg" call)
+  // Inside Alg, it calls Control_Gain, Process_Effects, and Control_Volume.
+  JackOUT->Alg (JackOUT->efxoutl, JackOUT->efxoutr, inl, inr, 0);
+
+
+  // C. THE METRONOME FIX
+  // Inject the metronome AFTER the effects but BEFORE the output copy.
+  // This ensures the click is never "heard" by the delay/reverb feedback.
+  if (JackOUT->Metro_Bypass) {
+      // Assuming m_ticks is a float array in JackOUT or local
+      JackOUT->M_Metronome->metronomeout(JackOUT->m_ticks); 
+      float mvol = JackOUT->M_Metro_Vol * 0.01f;
+      for (int k = 0; k < (int)nframes; k++) {
+          JackOUT->efxoutl[k] += JackOUT->m_ticks[k] * mvol;
+          JackOUT->efxoutr[k] += JackOUT->m_ticks[k] * mvol;
+      }
+  }
   
-
-
-
-  JackOUT->Alg (JackOUT->efxoutl, JackOUT->efxoutr, inl, inr ,0);
-
-  
-  memcpy (outl, JackOUT->efxoutl,
-	  sizeof (jack_default_audio_sample_t) * nframes);
-  memcpy (outr, JackOUT->efxoutr,
-	  sizeof (jack_default_audio_sample_t) * nframes);
+  // D. Move finished audio to Haiku's Output
+  memcpy (outl, JackOUT->efxoutl, sizeof (jack_default_audio_sample_t) * nframes);
+  memcpy (outr, JackOUT->efxoutr, sizeof (jack_default_audio_sample_t) * nframes);
   
   
   pthread_mutex_unlock (&jmutex);
-
-
   return 0;
-
 };
 
 

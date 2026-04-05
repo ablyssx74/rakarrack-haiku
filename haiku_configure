@@ -54,6 +54,22 @@ rm -f config.status config.cache config.log Makefile src/Makefile config.h
 autoreconf -vif
 fi
 
+## Create dummy 
+if [[ ! -e "$(pwd)/X11/libXrandr.so" ]];then
+cat <<EOF > "$(pwd)/X11/dummy_xrandr.c"
+int XRRQueryExtension() { return 0; }
+int XRRQueryVersion() { return 0; }
+int XRRUpdateConfiguration() { return 0; }
+EOF
+
+gcc -shared -fPIC -o "$(pwd)/X11/libXrandr.so.2" "$(pwd)/X11/dummy_xrandr.c"
+# Create a link for the unversioned name too
+ln -s "$(pwd)/X11/libXrandr.so.2" "$(pwd)/X11/libXrandr.so"
+fi
+
+export LIBRARY_PATH="$LIBRARY_PATH:$(pwd)/X11"
+
+
 
 CPPFLAGS="-I$(pwd)" \
 ACONNECT=/bin/true \
@@ -88,8 +104,11 @@ g++ -c haiku_stubs.cpp -o haiku_stubs.o -I. -I./src -g -O2 -fpermissive
 g++ -o rakarrack src/*.o haiku_stubs.o \
     -lfltk_images -lfltk -lX11 -lmedia -lbe -ltranslation \
     -lsamplerate -lsndfile -lnetwork -lroot -lpthread
+    
+    
 
 # To Test
+
 ./rakarrack    
 
 

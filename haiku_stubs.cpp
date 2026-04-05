@@ -38,7 +38,9 @@ jack_port_t* jack_port_register(jack_client_t*, const char* name, const char*, u
 }
 
     // Return 96000 consistently
-    uint32_t jack_get_sample_rate(jack_client_t) { return 96000; }
+   // uint32_t jack_get_sample_rate(jack_client_t) { return 96000.0; }
+   // uint32_t jack_get_sample_rate(jack_client_t) { return 96000; }
+    uint32_t jack_get_sample_rate(jack_client_t) { return 48000.0; }
     jack_nframes_t jack_get_buffer_size(jack_client_t) { return 512; }
 
 void* jack_port_get_buffer(jack_port_t port, jack_nframes_t nframes) {
