@@ -3,6 +3,6 @@
 To test run  ./haiku_configure
 
 Note: 
-Media Server should be set to 48kHz as that is hard coded in
+Media Server should be set to 48kHz as that is hard coded in <br>
 Media server needs to be restarted after rakarrack is shutdown for the MediaKit to reconnect to rakarrack 
 
