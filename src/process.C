@@ -31,6 +31,8 @@
 #include <Fl/Fl_Preferences.H>
 #include "global.h"
 
+#define MAX_RKR_PERIOD 8192
+
 int Pexitprogram, preset;
 int commandline;
 int exitwithhelp, gui, nojack;
@@ -106,6 +108,7 @@ RKR::RKR ()
   strcpy (jackcliname, jack_get_client_name (jackclient));
   J_SAMPLE_RATE = jack_get_sample_rate (jackclient);
   J_PERIOD = jack_get_buffer_size (jackclient);
+  printf("DEBUG: Jack Buffer Size (J_PERIOD) is: %d\n", J_PERIOD);
   
   rakarrack.get(PrefNom("Disable Warnings"),mess_dis,0);
   rakarrack.get (PrefNom ("Filter DC Offset"), DC_Offset, 0); 
@@ -212,24 +215,46 @@ RKR::RKR ()
 
 
   bogomips = 0.0f;
-  i = Get_Bogomips();
+  printf("DEBUG: About to call Get_Bogomips in process.C\n");
+i = Get_Bogomips();
+printf("Rakarrack: Get_Bogomips Success: %d\n", i);
+printf("Rakarrack: J_PERIOD is: %d\n", J_PERIOD);
+printf("Rakarrack: Engine is using PERIOD: %d\n", PERIOD);
 
 
   
-  efxoutl = (float *) malloc (sizeof (float) * PERIOD);
-  efxoutr = (float *) malloc (sizeof (float) * PERIOD);
 
-  smpl = (float *) malloc (sizeof (float) * PERIOD);
-  smpr = (float *) malloc (sizeof (float) * PERIOD);
 
-  anall = (float *) malloc (sizeof (float) * PERIOD);
-  analr = (float *) malloc (sizeof (float) * PERIOD);
 
-  auxdata = (float *) malloc (sizeof (float) * PERIOD);
-  auxresampled = (float *) malloc (sizeof (float) * PERIOD);
+// update allocations:
+efxoutl      = (float *) malloc (sizeof (float) * MAX_RKR_PERIOD);
+efxoutr      = (float *) malloc (sizeof (float) * MAX_RKR_PERIOD);
 
-  m_ticks = (float *) malloc (sizeof (float) * PERIOD);
+smpl         = (float *) malloc (sizeof (float) * MAX_RKR_PERIOD);
+smpr         = (float *) malloc (sizeof (float) * MAX_RKR_PERIOD);
 
+anall        = (float *) malloc (sizeof (float) * MAX_RKR_PERIOD);
+analr        = (float *) malloc (sizeof (float) * MAX_RKR_PERIOD);
+
+auxdata      = (float *) malloc (sizeof (float) * MAX_RKR_PERIOD);
+auxresampled = (float *) malloc (sizeof (float) * MAX_RKR_PERIOD);
+
+m_ticks      = (float *) malloc (sizeof (float) * MAX_RKR_PERIOD);
+
+// Zero out (Clean the buckets)
+memset(efxoutl, 0, sizeof(float) * MAX_RKR_PERIOD);
+memset(efxoutr, 0, sizeof(float) * MAX_RKR_PERIOD);
+
+memset(smpl,    0, sizeof(float) * MAX_RKR_PERIOD);
+memset(smpr,    0, sizeof(float) * MAX_RKR_PERIOD);
+
+memset(anall,   0, sizeof(float) * MAX_RKR_PERIOD);
+memset(analr,   0, sizeof(float) * MAX_RKR_PERIOD);
+
+memset(auxdata, 0, sizeof(float) * MAX_RKR_PERIOD);
+memset(auxresampled, 0, sizeof(float) * MAX_RKR_PERIOD);
+
+memset(m_ticks, 0, sizeof(float) * MAX_RKR_PERIOD);
 
 
   Fpre = new FPreset(); 
@@ -798,7 +823,7 @@ RKR::init_rkr ()
   MIDIConverter_Bypass = 0;
   Metro_Bypass = 0;
 
-  for (int i = 0; i <= 45; i += 5)
+  for (int i = 0; i < 45; i += 5)
     {
       efx_EQ1->changepar (i + 10, 7);
       efx_EQ1->changepar (i + 14, 0);
@@ -815,7 +840,7 @@ RKR::init_rkr ()
   efx_EQ1->changepar (51, 8000);
   efx_EQ1->changepar (56, 16000);
 
-  for (int i = 0; i <= 10; i += 5)
+  for (int i = 0; i < 10; i += 5)
     {
       efx_EQ2->changepar (i + 10, 7);
       efx_EQ2->changepar (i + 13, 64);
@@ -1244,7 +1269,7 @@ RKR::Control_Gain (float *origl, float *origr)
 
 
 
-  for (i = 0; i <= PERIOD; i++)
+  for (i = 0; i < PERIOD; i++)
     {
       efxoutl[i] *= Log_I_Gain;
       efxoutr[i] *= Log_I_Gain;
@@ -1271,7 +1296,7 @@ RKR::Control_Gain (float *origl, float *origr)
   {
       temp_sum = 0.0;
       tmp = 0.0;
-      for (i = 0; i <= PERIOD; i++)
+      for (i = 0; i < PERIOD; i++)
       {
         tmp = fabsf(auxresampled[i]);
         if (tmp > a_sum) a_sum = tmp;
@@ -1320,7 +1345,7 @@ RKR::Control_Volume (float *origl,float *origr)
 
      else Temp_M_Volume = Log_M_Volume;
 
-  for (i = 0; i <= PERIOD; i++)  //control volume
+  for (i = 0; i < PERIOD; i++)  //control volume
     {
       
       efxoutl[i] *= Temp_M_Volume*booster;
@@ -1342,7 +1367,7 @@ RKR::Control_Volume (float *origl,float *origr)
 
   if ((!flpos) && (have_signal)) efx_FLimiter->out(efxoutl, efxoutr);  //then limit final output
   
-  for (i = 0; i <= PERIOD; i++)
+  for (i = 0; i < PERIOD; i++)
     {
       
       tmp = fabsf (efxoutl[i]);
@@ -1422,7 +1447,8 @@ RKR::cleanup_efx ()
 
 
 void
-RKR::Alg (float *inl1, float *inr1, float *origl, float *origr, void *)
+//RKR::Alg (float *inl1, float *inr1, float *origl, float *origr, void *)
+RKR::Alg (float *inl1, float *inr1, float *origl, float *origr, int nframes) 
 {
 
   int i;

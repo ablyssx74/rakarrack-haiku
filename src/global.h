@@ -191,7 +191,9 @@ public:
   RKR ();
   ~RKR ();
 
-  void Alg (float *inl, float *inr,float *origl, float *origr ,void *);
+ // void Alg (float *inl, float *inr,float *origl, float *origr ,void *);
+  void Alg (float *inl, float *inr, float *origl, float *origr, int nframes);
+  
   void Control_Gain (float *origl, float *origr);
   void Control_Volume (float *origl, float *origr);
 

@@ -196,10 +196,7 @@ main (int argc, char *argv[])
 
 //  mlockall (MCL_CURRENT | MCL_FUTURE);
 
-
-  
-   // Haiku Update
-  // Main Loop update
+  // Haiku Main Loop update
   while (Pexitprogram == 0)
     {
       if (gui)
@@ -221,53 +218,13 @@ main (int argc, char *argv[])
     }
 
 printf("Rakarrack loop ended. Cleaning up audio...\n");
-fflush(stdout);
+
 
 HaikuAudioShutdown();
 
-printf("DEBUG: Cleanup finished. Forcing immediate termination...\n");
+printf("Rakarrack:: Cleanup finished. Forcing immediate termination...\n");
 fflush(stdout);
-
-// Use kill on our own process ID to ensure all threads are reaped
-kill(getpid(), SIGKILL); 
-
-// This should never be reached
-_exit(0); 
-
+exit(0); 
 }
   
-  /*
-  
-    //Main Loop
-  while (Pexitprogram == 0)
-    {
-      // Refresh GUI
-      if (gui)
-	{
-	  Fl::wait ();
-	}
-      else
-	{
-	  usleep (1500);
-	  if (preset != 1000)
-	    {
-	      if( (preset>0) && (preset<61)) rkr.Bank_to_Preset (preset);
-	      preset = 1000;
-	    }
 
-
-	}
-
-      
-      rkr.miramidi ();
-
-    }
-
-// free memory etc.
-
-  JACKfinish ();
-  return (0);
-
-
-};
-*/

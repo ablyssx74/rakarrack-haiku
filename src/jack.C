@@ -21,8 +21,6 @@
 
 */
 
-// Global Debug Flag (Default to OFF)
-bool gDebugMode = false;
 
 
 #include <app/Looper.h>
@@ -35,7 +33,10 @@ bool gDebugMode = false;
 #include <SupportDefs.h>
 #include <OS.h>
 #include <syslog.h>
+#include <math.h>
 
+// Global Debug Flag (Default to OFF)
+bool gDebugMode = false;
 
 // X11 Conflict Fix: Include X11 then UNDEF its macros immediately
 #include <X11/Xlib.h>
@@ -61,13 +62,11 @@ bool gDebugMode = false;
 #include <media/MediaNode.h>
 
 #include <media/BufferGroup.h>
-#include <new>
+//#include <new>
+#include <xmmintrin.h>
 
 // Forward Declarations
 status_t ConnectHardwareToRakarrack();
-void HaikuAudioCallback(void *cookie, void *buffer, size_t size, const media_raw_audio_format &format);
-
-
 
 // Prototypes
 void HaikuAudioCallback(void *cookie, void *buffer, size_t size, const media_raw_audio_format &format);
@@ -79,15 +78,6 @@ extern float input_buffer_L[8192];
 extern float input_buffer_R[8192];
 extern float temp_buffer_L[8192];
 extern float temp_buffer_R[8192];
-
-float haiku_out_L[8192];
-float haiku_out_R[8192];
-
-float haiku_final_L[8192]; 
-float haiku_final_R[8192];
-
-float hardware_in_L[8192];
-float hardware_in_R[8192];
 
 class RakInputNode; // Forward declaration
 static RakInputNode *inNode = NULL; 
@@ -118,22 +108,42 @@ public:
         memset(buffer, 0, size * sizeof(float));
         writePos = 0;
         readPos = 0;
+        if (gDebugMode) {
         printf("[DEBUG] RingBuffer Initialized. Size: %d frames\n", size);
+        }
     }
 
     ~SimpleRingBuffer() {
         delete[] buffer;
     }
 
-    // Write data and ensure the writePos is updated only after data is in memory
+    // Standard Write (for non-interleaved data)
     void Write(float* data, int frames) {
+        int wp = writePos; 
         for (int i = 0; i < frames; i++) {
-            buffer[writePos] = data[i];
-            // Atomic-style wrap around
-            int next = (writePos + 1) % size;
-            writePos = next;
+            buffer[wp] = data[i];
+            wp++;
+            if (wp >= size) wp = 0;
+            
+            __sync_synchronize(); // Change to this
+            writePos = wp; 
         }
     }
+
+    // Specialized Interleaved Write (for [L, R, L, R] hardware)
+    void WriteInterleaved(float* data, int frames, int channelOffset) {
+        int wp = writePos;
+        for (int i = 0; i < frames; i++) {
+            buffer[wp] = data[i * 2 + channelOffset];
+            wp++;
+            if (wp >= size) wp = 0;
+
+            __sync_synchronize(); // Change to this
+            writePos = wp; 
+        }
+    }
+
+    
 
     // Read data and ensure we don't read past the writePos
     void Read(float* dest, int frames) {
@@ -157,7 +167,7 @@ public:
     int FreeSpace() {
         return (size - 1) - Available();
     }
-
+  
     // Clear the buffer (useful for stopping/starting effects)
     void Clear() {
         writePos = 0;
@@ -165,9 +175,6 @@ public:
         memset(buffer, 0, size * sizeof(float));
     }
 };
-
-
-
 
 // 1. Raw Guitar Input (Filled by RakInputNode)
 SimpleRingBuffer* rbInputLeft = NULL;
@@ -190,6 +197,13 @@ public:
 
     uint32 fInputFormat; 
 
+    virtual ~RakInputNode() {
+        // This stops the internal thread safely.
+        // Without this, the Media Server thinks we are still running!
+        BMediaEventLooper::Quit(); 
+    }
+
+
     // --- 1. MESSAGE PUMP ---
     virtual status_t HandleMessage(int32 code, const void *data, size_t size) {
         if (BBufferConsumer::HandleMessage(code, data, size) == B_OK) return B_OK;
@@ -198,21 +212,19 @@ public:
     }
 
     // --- 2. LATENCY & RUN MODE ---
-// Inside class RakInputNode : public ...
-virtual status_t GetLatencyFor(const media_destination&, bigtime_t* out_latency, media_node_id* out_timesource) {
-    // Report a small, valid latency (10ms) so the Media Server allows the connection
-    *out_latency = 10000; 
+   // Inside class RakInputNode : public ...
+    virtual status_t GetLatencyFor(const media_destination&, bigtime_t* out_latency, media_node_id* out_timesource) {
+        // Report 1ms (1000 microseconds) for snappy response
+    	 *out_latency = 1000; 
     
-    // Always provide a valid ID
-    if (TimeSource()) 
-        *out_timesource = TimeSource()->ID();
-    else 
-        *out_timesource = 0;
+    	// Always provide a valid ID
+  		  if (TimeSource()) 
+        	*out_timesource = TimeSource()->ID();
+    	else 
+       		 *out_timesource = 0;
         
-    return B_OK;
-}
-
-
+    	return B_OK;
+    }
 
     virtual BMediaNode::run_mode RunMode() { return B_RECORDING; }
 
@@ -252,7 +264,7 @@ virtual status_t GetLatencyFor(const media_destination&, bigtime_t* out_latency,
         out_input->format = format;
         fInputFormat = format.u.raw_audio.format; 
          if (gDebugMode) {
-      		  printf("[MediaKit] Connected! Format ID: %u\n", fInputFormat);
+      		  printf("[Rakarrack] Connected! Format ID: %u\n", fInputFormat);
          }
         return B_OK; 
     }
@@ -261,94 +273,71 @@ virtual status_t GetLatencyFor(const media_destination&, bigtime_t* out_latency,
     virtual status_t FormatChanged(const media_source&, const media_destination&, int32, const media_format&) { return B_OK; }
 
     // --- 5. AUDIO CAPTURE (UPDATED TO rbInput) ---
-    virtual void BufferReceived(BBuffer *buffer) {
-        if (!buffer || !rbInputLeft || !rbInputRight) return;
+	virtual void BufferReceived(BBuffer *buffer) {
+    if (!buffer || !rbInputLeft || !rbInputRight) return;
 
-        size_t bytes = buffer->SizeUsed();
-        void* rawData = buffer->Data();
+    size_t bytes = buffer->SizeUsed();
+    void* rawData = buffer->Data();
+    
+    // --- 32-bit INT SECTION ---
+    if (fInputFormat == 0x4) { 
+        int32* data = (int32*)rawData;
+        int frames = bytes / (2 * sizeof(int32));            
         
-        // 1. LOCK and WRITE to Input Buffer
-        pthread_mutex_lock(&jmutex);
+        const float kReciprocal = 1.0f / 2147483648.0f;
+        float totalGain = kReciprocal * 1.0f; // Force gain to 1.0f for testing
 
-	 if (fInputFormat == 0x4) { // 32-bit Int
-            int32* data = (int32*)rawData;
-            int frames = bytes / (2 * sizeof(int32));
+        for (int i = 0; i < frames; i++) {
+            float valL = (float)data[i * 2] * totalGain;
+            float valR = (float)data[i * 2 + 1] * totalGain;
+
+            rbInputLeft->buffer[rbInputLeft->writePos] = valL;
+            rbInputRight->buffer[rbInputRight->writePos] = valR;
             
-            // 1. DEBUG PROBE (Check raw input before processing)
-            // We check data[0] directly so we don't need the loop index 'i'
-             // Inside BufferReceived... inside the 'if (fInputFormat == ...)' block
-    
-  			  if (gDebugMode) {
-     			   if (frames > 0 && data[0] != 0) {
-       		      printf("[IN-PROBE] Raw: %d | Float: %.6f\n", (int)data[0], (float)data[0] / 2147483648.0f);
-       			 }
-   			 }
+            // Sync before moving the pointer
+            __sync_synchronize(); 
 
-
-            // 2. GAIN FACTOR (Crucial for hearing the guitar)
-            // Boost signal by 50x because raw 32-bit guitar signals are often tiny
-            float gain = 50.0f; 
-
-            for (int i = 0; i < frames; i++) {
-                // Convert to Float (-1.0 to 1.0)
-                float valL = ((float)data[i * 2] / 2147483648.0f);
-                float valR = ((float)data[i * 2 + 1] / 2147483648.0f);
-
-                // Apply Boost
-                valL *= gain;
-                valR *= gain;
-
-                // Write to Ring Buffer
-                rbInputLeft->buffer[rbInputLeft->writePos] = valL;
-                rbInputLeft->writePos = (rbInputLeft->writePos + 1) % rbInputLeft->size;
-                
-                rbInputRight->buffer[rbInputRight->writePos] = valR;
-                rbInputRight->writePos = (rbInputRight->writePos + 1) % rbInputRight->size;
-            }
+            int next = (rbInputLeft->writePos + 1) % rbInputLeft->size;
+            rbInputLeft->writePos = next;
+            rbInputRight->writePos = next;
         }
-
-        else if (fInputFormat == 0x24) { // 32-bit Float
-            float* data = (float*)rawData;
-            int frames = bytes / (2 * sizeof(float));
-            for (int i = 0; i < frames; i++) {
-                rbInputLeft->buffer[rbInputLeft->writePos] = data[i * 2];
-                rbInputLeft->writePos = (rbInputLeft->writePos + 1) % rbInputLeft->size;
-                rbInputRight->buffer[rbInputRight->writePos] = data[i * 2 + 1];
-                rbInputRight->writePos = (rbInputRight->writePos + 1) % rbInputRight->size;
-            }
-        }
-        else { // Fallback 16-bit
-            int16* data = (int16*)rawData;
-            int frames = bytes / (2 * sizeof(int16));
-            for (int i = 0; i < frames; i++) {
-                rbInputLeft->buffer[rbInputLeft->writePos] = (float)data[i * 2] / 32768.0f;
-                rbInputLeft->writePos = (rbInputLeft->writePos + 1) % rbInputLeft->size;
-                rbInputRight->buffer[rbInputRight->writePos] = (float)data[i * 2 + 1] / 32768.0f;
-                rbInputRight->writePos = (rbInputRight->writePos + 1) % rbInputRight->size;
-            }
-        }
-
-		 pthread_mutex_unlock(&jmutex); // UNLOCK before processing!
-        
-        // 2. TRIGGER THE ENGINE
-        // If we have enough data (e.g., 256 frames), run the effects!
-        // jackprocess handles its own locking, so we call it outside the lock.
-        int block_size = 256; 
-        while (rbInputLeft->Available() >= block_size) {
-            jackprocess(block_size, NULL);
-        }
-
-        // Debug logging
-         if (gDebugMode) {
-       		 static int input_log = 0;
-       		 if (input_log++ % 100 == 0) {
-             // If this stays low, it means the engine is eating the data correctly!
-          	  printf("[INPUT] WritePos: %d | Available: %d\n", rbInputLeft->writePos, rbInputLeft->Available());
-        	}
-         }
-    
-        buffer->Recycle();
     }
+    // --- 32-bit FLOAT SECTION ---
+    else if (fInputFormat == 0x24) { 
+        float* data = (float*)rawData;
+        int frames = bytes / (2 * sizeof(float));
+        
+        rbInputLeft->WriteInterleaved(data, frames, 0); 
+        rbInputRight->WriteInterleaved(data, frames, 1); 
+    }
+    // --- 16-bit FALLBACK ---
+    else { 
+        int16* data = (int16*)rawData;
+        int frames = bytes / (2 * sizeof(int16));
+        const float k16Recip = 1.0f / 32768.0f;
+
+        for (int i = 0; i < frames; i++) {
+            rbInputLeft->buffer[rbInputLeft->writePos] = (float)data[i * 2] * k16Recip;
+            rbInputRight->buffer[rbInputRight->writePos] = (float)data[i * 2 + 1] * k16Recip;
+            
+            __sync_synchronize();
+
+            int next = (rbInputLeft->writePos + 1) % rbInputLeft->size;
+            rbInputLeft->writePos = next;
+            rbInputRight->writePos = next;
+        }
+    }
+
+    // 2. DEBUG PROBE (Only when needed)
+    if (gDebugMode) {
+        static int input_log = 0;
+        if (input_log++ % 500 == 0) { // Increased to 500 to reduce console lag
+            printf("[INPUT] Available: %d frames\n", rbInputLeft->Available());
+        }
+    }
+
+    buffer->Recycle();
+}
 
     virtual void ProducerDataStatus(const media_destination& for_whom, int32 status, bigtime_t at_performance_time) {}
     virtual void DisposeInputCookie(int32) {}
@@ -358,31 +347,25 @@ virtual status_t GetLatencyFor(const media_destination&, bigtime_t* out_latency,
     }
 };
 
-
-
 	// The Record Hook: Grabs guitar from Haiku and puts it in Rakarrack's "In"
 	void HaikuRecordCallback(void *cookie, void *buffer, size_t size, const media_raw_audio_format &format) {
-	
-    if (buffer == NULL || (addr_t)buffer < 0x1000) return;
-    float* haiku_in = (float*)buffer;
-   // uint32_t nframes = size / 8; 
-     uint32_t nframes = size / (sizeof(float) * 2); 
-     if (nframes > 4096) nframes = 4096; 
-     /* 
-    debug
-        for (uint32_t i = 0; i < nframes; i++) {
-        input_buffer_L[i] = 0.05f; 
-        input_buffer_R[i] = 0.05f;
-    }
-     */
-	
-    for (uint32_t i = 0; i < nframes; i++) {
-        input_buffer_L[i] = haiku_in[i * 2];
-        input_buffer_R[i] = haiku_in[i * 2 + 1];
-    }
-   //	static int counter = 0;
-   // if (counter++ % 100 == 0) printf("Record Callback is ALIVE\n");
-}
+    if (buffer == NULL || rbInputLeft == NULL || rbInputRight == NULL) return;
+
+    // Use the incoming buffer from the hardware
+    	float* incoming = (float*)buffer;
+   	 	uint32_t nframes = size / (sizeof(float) * 2); 
+   		 if (nframes > 8192) nframes = 8192; // Match your global array size
+
+   	 // 1. Copy from hardware into your existing Globals
+    	for (uint32_t i = 0; i < nframes; i++) {
+        input_buffer_L[i] = incoming[i * 2];
+        input_buffer_R[i] = incoming[i * 2 + 1];
+    	}
+
+    // 2. Push from Globals into the Ring Buffers for the engine to use
+   	 rbInputLeft->Write(input_buffer_L, nframes);
+   	 rbInputRight->Write(input_buffer_R, nframes);
+	}
 
 
 	// The Play Hook: Processes and then Interleaves to Speakers
@@ -403,31 +386,43 @@ virtual status_t GetLatencyFor(const media_destination&, bigtime_t* out_latency,
         printf("[Debug-Output] Reading from Engine... Available Frames: %d\n", rbOutputLeft->Available());
     		}
         }
-
-    if (rbOutputLeft->Available() < (int)frames) {
-        memset(buffer, 0, size);
-        return;
+        
+        if (gDebugMode) {
+   		 uint32_t realFrames = size / (format.channel_count * sampleSize);
+        static int size_check_count = 0;
+        if (size_check_count++ % 500 == 0) {
+            printf("[Rakarrack] Buffer Size: %zu bytes | Frames: %u\n", size, realFrames);
+          }
+       }
+       
+    // 1. ONE-TIME LATENCY KILLER
+    static bool firstRun = true;
+    if (firstRun && rbInputLeft->Available() > 512) {
+        // Just once, jump the read pointer to the most recent data
+        int lookback = frames * 2; // Keep a tiny safety margin of 2 buffers
+        rbInputLeft->readPos = (rbInputLeft->writePos - lookback + rbInputLeft->size) % rbInputLeft->size;
+        rbInputRight->readPos = (rbInputRight->writePos - lookback + rbInputRight->size) % rbInputRight->size;
+        
+        firstRun = false; // Never run this logic again!
+        printf("[Rakarrack] Initial backlog cleared. Now at live edge.\n");
     }
 
-    pthread_mutex_lock(&jmutex);
 
+    jackprocess(frames, NULL);
+
+    pthread_mutex_lock(&jmutex);
+    
     if (type == 0x24) { // Float
         float* outBuffer = (float*)buffer;
-        rbOutputLeft->Read(temp_buffer_L, frames);
-        rbOutputRight->Read(temp_buffer_R, frames);
-
         for (size_t i = 0; i < frames; i++) {
-            outBuffer[i * 2]     = temp_buffer_L[i];
-            outBuffer[i * 2 + 1] = temp_buffer_R[i];
+            outBuffer[i * 2]     = JackOUT->efxoutl[i];
+            outBuffer[i * 2 + 1] = JackOUT->efxoutr[i];
         }
     } else { // Short
         int16* outBuffer = (int16*)buffer;
-        rbOutputLeft->Read(temp_buffer_L, frames);
-        rbOutputRight->Read(temp_buffer_R, frames);
-
         for (size_t i = 0; i < frames; i++) {
-            outBuffer[i * 2]     = (int16)(temp_buffer_L[i] * 32767.0f);
-            outBuffer[i * 2 + 1] = (int16)(temp_buffer_R[i] * 32767.0f);
+            outBuffer[i * 2]     = (int16)(JackOUT->efxoutl[i] * 32767.0f);
+            outBuffer[i * 2 + 1] = (int16)(JackOUT->efxoutr[i] * 32767.0f);
         }
     }
     // Probe the FIRST sample of the Left channel
@@ -444,23 +439,11 @@ virtual status_t GetLatencyFor(const media_destination&, bigtime_t* out_latency,
 }
 
 
-
-
-
-
-
-
-
-
-
 extern "C" {
-    // ... your other stubs ...
+
     char** jack_get_ports(jack_client_t *, const char *, const char *, unsigned long);
-    void jack_free(void *);
-    
-    jack_port_t* jack_port_register(jack_client_t*, const char*, const char*, unsigned long, unsigned long);
-    
-    // Make sure these are also here:
+    void jack_free(void *);    
+    jack_port_t* jack_port_register(jack_client_t*, const char*, const char*, unsigned long, unsigned long); 
     char** jack_get_ports(jack_client_t *, const char *, const char *, unsigned long);
     void jack_free(void *);
 }
@@ -472,7 +455,6 @@ jack_port_t *jack_midi_in, *jack_midi_out;
 void *dataout;
 
 int jackprocess (jack_nframes_t nframes, void *arg);
-
 
 extern "C" bigtime_t estimate_max_scheduling_latency();
 
@@ -493,7 +475,7 @@ int JACKstart(RKR * rkr_, jack_client_t * jackclient_) {
     format.channel_count = 2; 
     format.frame_rate = 48000.0; 
     format.byte_order = B_MEDIA_HOST_ENDIAN;
-    format.buffer_size = 512 * sizeof(float) * 2; 	
+    format.buffer_size = 128 * sizeof(float) * 2; 	
 
     // 3. Register Input Node
     BMediaRoster* roster = BMediaRoster::Roster();
@@ -522,9 +504,9 @@ int JACKstart(RKR * rkr_, jack_client_t * jackclient_) {
         // (If it is the Time Source, it's already running!)
         if (gInputNode.node > 0 && gInputNode.node != timeSource->Node().node) {
             roster->StartNode(gInputNode, 0);
-            printf("[MediaKit] Started Hardware Node (Asynchronous)\n");
+            printf("[Rakarrack] Started Hardware Node (Asynchronous)\n");
         } else {
-            printf("[MediaKit] Hardware Node is the Time Source (Already Running)\n");
+            printf("[Rakarrack] Hardware Node is the Time Source (Already Running)\n");
         }
 
         timeSource->Release();
@@ -536,16 +518,14 @@ int JACKstart(RKR * rkr_, jack_client_t * jackclient_) {
     outPlayer->Start();
     outPlayer->SetHasData(true);
     
-    printf("[MediaKit] Rakarrack Audio Engine started.\n");
+    printf("[Rakarrack] Audio Engine started.\n");
     return B_OK;
 }
 
 
-
-
-#include <math.h> // Ensure this is at the top for isnan()
 int jackprocess (jack_nframes_t nframes, void *arg)
 {
+	_mm_setcsr(_mm_getcsr() | 0x8040); // Sets DAZ (Denormals-Are-Zero) and FTZ (Flush-To-Zero)
     static float process_in_L[8192];
     static float process_in_R[8192];
 
@@ -580,63 +560,22 @@ int jackprocess (jack_nframes_t nframes, void *arg)
         JackOUT->jack_process_midievents(&midievent);
     }  
 
-    // 4. RUN EFFECTS ENGINE (CRITICAL FIX: nframes, NOT NULL)
+    // 4. RUN EFFECTS ENGINE 
     // We use 'nframes' so the engine actually loops!
-    JackOUT->Alg(JackOUT->efxoutl, JackOUT->efxoutr, process_in_L, process_in_R, nframes);
+	for (int i = 0; i < (int)nframes; i++) {
+    // Clean up "ghost" signals (Denormals) that cause static
+    if (fabs(process_in_L[i]) < 1e-15f) process_in_L[i] = 0.0f;
+    if (fabs(process_in_R[i]) < 1e-15f) process_in_R[i] = 0.0f;
 
-    // 5. FORCE MIX: DRY + WET
-    // This guarantees you hear the guitar even if the preset mutes it.
-    for (int i = 0; i < (int)nframes; i++) {
-        // Mix Clean Guitar (process_in) with Effects (efxout)
-        float outL = process_in_L[i] + JackOUT->efxoutl[i];
-        float outR = process_in_R[i] + JackOUT->efxoutr[i];
+    JackOUT->efxoutl[i] = process_in_L[i];
+    JackOUT->efxoutr[i] = process_in_R[i];
+	}   
 
-        // Hard Limiter to prevent ear-splitting noise
-        if (outL > 1.0f) outL = 1.0f; if (outL < -1.0f) outL = -1.0f;
-        if (outR > 1.0f) outR = 1.0f; if (outR < -1.0f) outR = -1.0f;
-
-        // Write back to the output buffer we send to speakers
-        JackOUT->efxoutl[i] = outL;
-        JackOUT->efxoutr[i] = outR;
-    }
-
-    // 6. WRITE OUTPUT
-    pthread_mutex_lock(&jmutex);
-    if (rbOutputLeft && rbOutputRight) {
-        rbOutputLeft->Write(JackOUT->efxoutl, nframes);
-        rbOutputRight->Write(JackOUT->efxoutr, nframes);
-    }
-    pthread_mutex_unlock(&jmutex);
+    JackOUT->Alg(JackOUT->efxoutl, JackOUT->efxoutr, process_in_L, process_in_R, nframes); 
 
     return 0;
 }
 
-
-
-
-
-
-void
-JACKfinish ()
-{
-  jack_client_close (jackclient);
-  pthread_mutex_destroy (&jmutex);
-  usleep (100000);
-};
-
-
-/*
-void
-jackshutdown (void *arg)
-{
-  if (gui == 0)
-    printf ("Jack Shut Down, sorry.\n");
-  else
-    JackOUT->Message (1,JackOUT->jackcliname,
-		      "Jack Shut Down, try to save your work");
-};
-
-*/
 
 int
 timebase(jack_transport_state_t state, jack_position_t *pos, void *arg)
@@ -674,69 +613,59 @@ JackOUT->Update_tempo();
 JackOUT->Tap_Display=1;
 }
 
-
-
 status_t ConnectHardwareToRakarrack() {
     BMediaRoster* roster = BMediaRoster::Roster();
-    if (!roster) {
-        printf("[MediaKit] Error: Could not get Media Roster!\n");
-        return B_ERROR;
-    }
-    if (!inNode) {
-        printf("[MediaKit] Error: RakInputNode is NULL!\n");
-        return B_ERROR;
-    }
+    if (!roster || !inNode) return B_ERROR;
 
-    // 1. Get Hardware (Store in GLOBAL gInputNode)
-    // Note: gInputNode must be declared as 'media_node gInputNode;' in your globals
-    extern media_node gInputNode; 
-    
+    // 1. Find Hardware
     status_t err = roster->GetAudioInput(&gInputNode);
-    if (err != B_OK) {
-        printf("[MediaKit] Error: Could not find Physical Audio Input (0x%x)\n", (int)err);
-        return err;
-    }
-    printf("[MediaKit] Found Hardware Input Node ID: %d\n", (int)gInputNode.node);
+    if (err != B_OK) return err;
+    printf("[Rakarrack] Hardware Input Node: %d\n", (int)gInputNode.node);
 
-    // 2. Find Hardware Output Pin
+    // 2. Check for Busy Pins (Basic Recovery)
     media_output hardwareOut;
     int32 count = 0;
     err = roster->GetFreeOutputsFor(gInputNode, &hardwareOut, 1, &count, B_MEDIA_RAW_AUDIO);
-    if (err != B_OK || count < 1) {
-        printf("[MediaKit] Error: Hardware has no free output pins (0x%x)\n", (int)err);
+
+    if (err != B_OK || count == 0) {
+        printf("[Rakarrack] WARNING: Pins busy. Attempting to find free pin...\n");
+        // Try to find ANY free pin, even if the default one is taken
+        media_output outputs[16];
+        int32 numOut = 0;
+        if (roster->GetAllOutputsFor(gInputNode, outputs, 16, &numOut) == B_OK) {
+            for (int i = 0; i < numOut; i++) {
+                if (outputs[i].destination.port == 0) { // Found a free one!
+                    hardwareOut = outputs[i];
+                    count = 1;
+                    err = B_OK;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (count == 0) {
+        printf("[Rakarrack] ERROR: All hardware pins are blocked. Please restart Media Server.\n");
         return B_BUSY;
     }
-    printf("[MediaKit] Using Hardware Output Pin: %s\n", hardwareOut.name);
 
-    // 3. Find Rakarrack Input Pin
+    // 3. Find Rakarrack Input
     media_input rakIn;
     err = roster->GetFreeInputsFor(inNode->Node(), &rakIn, 1, &count, B_MEDIA_RAW_AUDIO);
-    if (err != B_OK || count < 1) {
-        printf("[MediaKit] Error: RakInputNode has no free input pins (0x%x)\n", (int)err);
-        return B_BUSY;
-    }
-    printf("[MediaKit] Using Rakarrack Input Pin: %s\n", rakIn.name);
+    if (err != B_OK) return err;
 
-    // 4. Set Format
+    // 4. Connect
     media_format format;
     format.type = B_MEDIA_RAW_AUDIO;
     format.u.raw_audio = media_raw_audio_format::wildcard;
     
-    // 5. Attempt Connection
-    printf("[MediaKit] Attempting to connect %s -> %s...\n", hardwareOut.name, rakIn.name);
     err = roster->Connect(hardwareOut.source, rakIn.destination, &format, &hardwareOut, &rakIn);
-    
     if (err != B_OK) {
-        printf("[MediaKit] CONNECTION FAILED: 0x%x (%s)\n", (int)err, strerror(err));
+        printf("[Rakarrack] Connect failed: %s\n", strerror(err));
         return err;
     }
 
-    // Success! Print details
-    printf("[MediaKit] SUCCESS! Negotiated Format:\n");
-    printf("           Rate: %.1f Hz\n", format.u.raw_audio.frame_rate);
-    printf("           Channels: %d\n", (int)format.u.raw_audio.channel_count);
-    
-    // CRITICAL: Start the hardware node here if it isn't running
+    // 5. Start Hardware
     BTimeSource* ts = roster->MakeTimeSourceFor(gInputNode);
     if (ts) {
         roster->StartTimeSource(ts->Node(), system_time());
@@ -748,47 +677,60 @@ status_t ConnectHardwareToRakarrack() {
 }
 
 
-// Added for Haiku 
+// Shutdown
 
 extern "C" void HaikuAudioShutdown() {
-    printf("DEBUG: Entering HaikuAudioShutdown...\n");
+    printf("Rakarrack: Entering HaikuAudioShutdown...\n");
+    BMediaRoster* roster = BMediaRoster::Roster();
 
-    // 1. Stop the Player (Output)
-    if (outPlayer) { 
-        printf("DEBUG: Stopping outPlayer...\n");
-        outPlayer->Stop(); 
-        // Deleting outPlayer AUTOMATICALLY disconnects the output node
-        delete outPlayer; 
-        outPlayer = NULL; 
+    // 1. Stop and Cleanup Output
+    if (outPlayer) {
+        printf("Rakarrack: Stopping outPlayer...\n");
+        outPlayer->Stop();
+        delete outPlayer;
+        outPlayer = NULL;
     }
 
-    // 2. Disconnect Input Nodes manually (Safe Check)
-    BMediaRoster* roster = BMediaRoster::Roster();
-    if (roster && gInputNode.node > 0) {
-        // Check if the hardware node is still actually connected
-        media_output connectedOutput;
+    // 2. Disconnect and Unregister Input
+    if (roster && inNode && gInputNode.node > 0) {
         media_input connectedInput;
-        int32 count = 0;
-        
-        // Only disconnect if the Roster says it's connected
-        if (roster->GetConnectedOutputsFor(gInputNode, &connectedOutput, 1, &count) == B_OK && count > 0) {
-             printf("DEBUG: Disconnecting Input Hardware...\n");
-             roster->Disconnect(connectedOutput.node.node, connectedOutput.source, 
-                                connectedInput.node.node, connectedInput.destination);
+        int32 inputCount = 0;
+
+        // Check if we are connected to something
+        if (roster->GetConnectedInputsFor(inNode->Node(), &connectedInput, 1, &inputCount) == B_OK && inputCount > 0) {
+            printf("Rakarrack: Disconnecting Hardware (Node %d) -> Input...\n", (int)gInputNode.node);
+
+            // FIX: Use 'gInputNode.node' for the source ID, because media_source doesn't have it.
+            status_t err = roster->Disconnect(
+                gInputNode.node,            // Source Node ID (Hardware)
+                connectedInput.source,      // Source Output Pin
+                inNode->Node().node,        // Dest Node ID (Us)
+                connectedInput.destination  // Dest Input Pin
+            );
+
+            if (err != B_OK) {
+                printf("Rakarrack: [WARNING] Disconnect failed: %s\n", strerror(err));
+            }
         }
 
-        // 3. Stop the Hardware Node
-        printf("DEBUG: Stopping Hardware Node...\n");
-        roster->StopNode(gInputNode, 0, true); // true = synchronous wait
+        // 3. Stop and Unregister OUR Node
+        // Important: Do not stop 'gInputNode' (Hardware), or you kill system audio!
+        printf("Rakarrack: Stopping and Unregistering RakInputNode...\n");
+        roster->StopNode(inNode->Node(), 0, true);
+        roster->UnregisterNode(inNode);
+
+        // 4. Delete the Object
+        delete inNode;
+        inNode = NULL;
     }
 
-    // 4. Cleanup Ring Buffers
-    delete rbInputLeft; rbInputLeft = NULL;
-    delete rbInputRight; rbInputRight = NULL;
-    delete rbOutputLeft; rbOutputLeft = NULL;
-    delete rbOutputRight; rbOutputRight = NULL;
+    // 5. Cleanup Buffers
+    if (rbInputLeft) { delete rbInputLeft; rbInputLeft = NULL; }
+    if (rbInputRight) { delete rbInputRight; rbInputRight = NULL; }
+    if (rbOutputLeft) { delete rbOutputLeft; rbOutputLeft = NULL; }
+    if (rbOutputRight) { delete rbOutputRight; rbOutputRight = NULL; }
 
-    printf("DEBUG: Cleanup phase complete.\n");
+    printf("Rakarrack: Shutdown complete.\n");
 }
 
 

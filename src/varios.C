@@ -156,18 +156,18 @@ RKR::Get_Bogomips()
         if (topology && get_cpu_topology_info(topology, &topologyNodeCount) == B_OK) {
             for (uint32 i = 0; i < topologyNodeCount; i++) {
                 if (topology[i].type == B_TOPOLOGY_CORE) {
-                    // Haiku stores the frequency in Hz.
-                    // We divide by 500,000 to get Bogomips (approx 2x MHz)
+                    // Try to get real frequency, but force 4000 if it's 0
                     bogomips = (float)(topology[i].data.core.default_frequency / 500000.0f);
+                    if (bogomips <= 0) bogomips = 4000.0f; 
+                    
                     found = true;
-                    break;
+                    break; // Exit loop AFTER setting bogomips
                 }
             }
         }
         delete[] topology;
     }
     
-    // Fallback: If topology fails, use a safe default for a modern CPU
     if (!found) {
         bogomips = 4000.0f; 
         found = true;
@@ -191,7 +191,9 @@ RKR::Get_Bogomips()
 #endif
 
     if (found) {
+        // Now calculate maxx_len based on the fixed bogomips
         maxx_len = lrintf(150.0f / 4800.0f * bogomips);
+        
         if (upsample) {
             maxx_len /= (UpAmo + 8);
             maxx_len /= (6 - ((UpQual + DownQual) / 2));
@@ -199,9 +201,10 @@ RKR::Get_Bogomips()
 
         if (maxx_len < 5) {
             if (maxx_len < 2) maxx_len = 2;
-            Message(0, "!! Rakarrack CPU Usage Warning !!", 
-                    "It appears your CPU will not easily handle convolution...");
         }
+
+        // PRINT HERE: After all math is done!
+        fprintf(stderr, "DEBUG: Final Bogomips: %f, Final maxx_len: %d\n", bogomips, (int)maxx_len);
         return (1);
     }
 
