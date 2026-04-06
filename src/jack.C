@@ -21,6 +21,9 @@
 
 */
 
+// Global Debug Flag (Default to OFF)
+bool gDebugMode = false;
+
 
 #include <app/Looper.h>
 #include <media/BufferProducer.h>
@@ -248,7 +251,9 @@ virtual status_t GetLatencyFor(const media_destination&, bigtime_t* out_latency,
         out_input->destination = dest;
         out_input->format = format;
         fInputFormat = format.u.raw_audio.format; 
-        printf("[DEBUG] Connected! Format ID: %u\n", fInputFormat);
+         if (gDebugMode) {
+      		  printf("[MediaKit] Connected! Format ID: %u\n", fInputFormat);
+         }
         return B_OK; 
     }
 
@@ -265,16 +270,43 @@ virtual status_t GetLatencyFor(const media_destination&, bigtime_t* out_latency,
         // 1. LOCK and WRITE to Input Buffer
         pthread_mutex_lock(&jmutex);
 
-        if (fInputFormat == 0x4) { // 32-bit Int
+	 if (fInputFormat == 0x4) { // 32-bit Int
             int32* data = (int32*)rawData;
             int frames = bytes / (2 * sizeof(int32));
+            
+            // 1. DEBUG PROBE (Check raw input before processing)
+            // We check data[0] directly so we don't need the loop index 'i'
+             // Inside BufferReceived... inside the 'if (fInputFormat == ...)' block
+    
+  			  if (gDebugMode) {
+     			   if (frames > 0 && data[0] != 0) {
+       		      printf("[IN-PROBE] Raw: %d | Float: %.6f\n", (int)data[0], (float)data[0] / 2147483648.0f);
+       			 }
+   			 }
+
+
+            // 2. GAIN FACTOR (Crucial for hearing the guitar)
+            // Boost signal by 50x because raw 32-bit guitar signals are often tiny
+            float gain = 50.0f; 
+
             for (int i = 0; i < frames; i++) {
-                rbInputLeft->buffer[rbInputLeft->writePos] = (float)data[i * 2] / 2147483648.0f;
+                // Convert to Float (-1.0 to 1.0)
+                float valL = ((float)data[i * 2] / 2147483648.0f);
+                float valR = ((float)data[i * 2 + 1] / 2147483648.0f);
+
+                // Apply Boost
+                valL *= gain;
+                valR *= gain;
+
+                // Write to Ring Buffer
+                rbInputLeft->buffer[rbInputLeft->writePos] = valL;
                 rbInputLeft->writePos = (rbInputLeft->writePos + 1) % rbInputLeft->size;
-                rbInputRight->buffer[rbInputRight->writePos] = (float)data[i * 2 + 1] / 2147483648.0f;
+                
+                rbInputRight->buffer[rbInputRight->writePos] = valR;
                 rbInputRight->writePos = (rbInputRight->writePos + 1) % rbInputRight->size;
             }
-        } 
+        }
+
         else if (fInputFormat == 0x24) { // 32-bit Float
             float* data = (float*)rawData;
             int frames = bytes / (2 * sizeof(float));
@@ -307,11 +339,13 @@ virtual status_t GetLatencyFor(const media_destination&, bigtime_t* out_latency,
         }
 
         // Debug logging
-        static int input_log = 0;
-        if (input_log++ % 100 == 0) {
+         if (gDebugMode) {
+       		 static int input_log = 0;
+       		 if (input_log++ % 100 == 0) {
              // If this stays low, it means the engine is eating the data correctly!
-            printf("[INPUT] WritePos: %d | Available: %d\n", rbInputLeft->writePos, rbInputLeft->Available());
-        }
+          	  printf("[INPUT] WritePos: %d | Available: %d\n", rbInputLeft->writePos, rbInputLeft->Available());
+        	}
+         }
     
         buffer->Recycle();
     }
@@ -326,8 +360,8 @@ virtual status_t GetLatencyFor(const media_destination&, bigtime_t* out_latency,
 
 
 
-// The Record Hook: Grabs guitar from Haiku and puts it in Rakarrack's "In"
-void HaikuRecordCallback(void *cookie, void *buffer, size_t size, const media_raw_audio_format &format) {
+	// The Record Hook: Grabs guitar from Haiku and puts it in Rakarrack's "In"
+	void HaikuRecordCallback(void *cookie, void *buffer, size_t size, const media_raw_audio_format &format) {
 	
     if (buffer == NULL || (addr_t)buffer < 0x1000) return;
     float* haiku_in = (float*)buffer;
@@ -351,21 +385,24 @@ void HaikuRecordCallback(void *cookie, void *buffer, size_t size, const media_ra
 }
 
 
-// The Play Hook: Processes and then Interleaves to Speakers
-void HaikuAudioCallback(void *cookie, void *buffer, size_t size, const media_raw_audio_format &format) {
-    if (!rbOutputLeft || !rbOutputRight) {
-        memset(buffer, 0, size);
-        return;
-    }
+	// The Play Hook: Processes and then Interleaves to Speakers
+	void HaikuAudioCallback(void *cookie, void *buffer, size_t size, const media_raw_audio_format &format) {
+  	  if (!rbOutputLeft || !rbOutputRight) {
+    	    memset(buffer, 0, size);
+   	     return;
+   	 }
 
     uint32 type = format.format; 
     size_t sampleSize = (type == 0x24) ? sizeof(float) : sizeof(int16);
     size_t frames = size / (2 * sampleSize); // <--- This defines 'frames'
     
         static int out_log = 0;
-    if (out_log++ % 50 == 0) {
-        printf("[OUTPUT] Reading from Engine... Available Frames: %d\n", rbOutputLeft->Available());
-    }
+        if (gDebugMode) {
+        static int out_log = 0;
+        if (out_log++ % 50 == 0) {
+        printf("[Debug-Output] Reading from Engine... Available Frames: %d\n", rbOutputLeft->Available());
+    		}
+        }
 
     if (rbOutputLeft->Available() < (int)frames) {
         memset(buffer, 0, size);
@@ -393,7 +430,16 @@ void HaikuAudioCallback(void *cookie, void *buffer, size_t size, const media_raw
             outBuffer[i * 2 + 1] = (int16)(temp_buffer_R[i] * 32767.0f);
         }
     }
-
+    // Probe the FIRST sample of the Left channel
+	float probeSample = 0.0f;
+	if (type == 0x24) probeSample = ((float*)buffer)[0];
+	else probeSample = ((int16*)buffer)[0] / 32767.0f;
+	 	if (gDebugMode) {
+			static int out_log_count = 0;
+				if (out_log_count++ % 50 == 0) {
+    				printf("[Debug-Out-Check] Sending to Speaker: %.6f\n", probeSample);
+					}
+ 				}
     pthread_mutex_unlock(&jmutex);
 }
 
@@ -476,9 +522,9 @@ int JACKstart(RKR * rkr_, jack_client_t * jackclient_) {
         // (If it is the Time Source, it's already running!)
         if (gInputNode.node > 0 && gInputNode.node != timeSource->Node().node) {
             roster->StartNode(gInputNode, 0);
-            printf("[DEBUG] Started Hardware Node (Asynchronous)\n");
+            printf("[MediaKit] Started Hardware Node (Asynchronous)\n");
         } else {
-            printf("[DEBUG] Hardware Node is the Time Source (Already Running)\n");
+            printf("[MediaKit] Hardware Node is the Time Source (Already Running)\n");
         }
 
         timeSource->Release();
@@ -490,7 +536,7 @@ int JACKstart(RKR * rkr_, jack_client_t * jackclient_) {
     outPlayer->Start();
     outPlayer->SetHasData(true);
     
-    printf("[DEBUG] Rakarrack Audio Engine started.\n");
+    printf("[MediaKit] Rakarrack Audio Engine started.\n");
     return B_OK;
 }
 
@@ -498,79 +544,75 @@ int JACKstart(RKR * rkr_, jack_client_t * jackclient_) {
 
 
 #include <math.h> // Ensure this is at the top for isnan()
-
 int jackprocess (jack_nframes_t nframes, void *arg)
 {
-    // 1. Setup Local Buffers
-    // Use static buffers to avoid stack overflow on large block sizes
     static float process_in_L[8192];
     static float process_in_R[8192];
 
-    // Safety: If frames exceed our static buffer, clamp it (or skip)
+    // Safety Clamp
     if (nframes > 8192) nframes = 8192;
 
-    // 2. Read from Input Ring Buffer (Protected)
+    // 1. READ INPUT
     pthread_mutex_lock(&jmutex);
-    
     if (rbInputLeft && rbInputRight && rbInputLeft->Available() >= (int)nframes) {
         rbInputLeft->Read(process_in_L, nframes);
         rbInputRight->Read(process_in_R, nframes);
     } else {
-        // Not enough data? Silence.
         memset(process_in_L, 0, sizeof(float) * nframes);
         memset(process_in_R, 0, sizeof(float) * nframes);
     }
-    
     pthread_mutex_unlock(&jmutex);
 
-    // 3. THE FIX: NaN / DC Guard
-    // Scan the input. If we find garbage, silence it to save the engine.
+    // 2. NAN GUARD
     for (int i = 0; i < (int)nframes; i++) {
-        // Fix Left
-        if (isnan(process_in_L[i]) || isinf(process_in_L[i])) {
-            process_in_L[i] = 0.0f;
-        }
-        // Fix Right
-        if (isnan(process_in_R[i]) || isinf(process_in_R[i])) {
-            process_in_R[i] = 0.0f;
-        }
+        if (isnan(process_in_L[i])) process_in_L[i] = 0.0f;
+        if (isnan(process_in_R[i])) process_in_R[i] = 0.0f;
     }
 
-    // 4. MIDI Processing (Keep your existing logic)
+    // 3. MIDI PROCESSING
     void *mididata_in = jack_port_get_buffer(jack_midi_in, nframes); 
     void *mididata_out = jack_port_get_buffer(jack_midi_out, nframes); 
     int count = jack_midi_get_event_count(mididata_in);
     jack_midi_event_t midievent;
-
     jack_midi_clear_buffer(mididata_out);
     for (int i = 0; i < count; i++) {                  
         jack_midi_event_get(&midievent, mididata_in, i);
         JackOUT->jack_process_midievents(&midievent);
     }  
-    // ... (Write back MIDI events from engine if needed) ...
 
-    // 5. RUN THE EFFECTS ENGINE
-    // Now safe to call because inputs are sanitized
-    JackOUT->Alg(JackOUT->efxoutl, JackOUT->efxoutr, process_in_L, process_in_R, NULL);
+    // 4. RUN EFFECTS ENGINE (CRITICAL FIX: nframes, NOT NULL)
+    // We use 'nframes' so the engine actually loops!
+    JackOUT->Alg(JackOUT->efxoutl, JackOUT->efxoutr, process_in_L, process_in_R, nframes);
 
-    // 6. Write to Output Ring Buffer
+    // 5. FORCE MIX: DRY + WET
+    // This guarantees you hear the guitar even if the preset mutes it.
+    for (int i = 0; i < (int)nframes; i++) {
+        // Mix Clean Guitar (process_in) with Effects (efxout)
+        float outL = process_in_L[i] + JackOUT->efxoutl[i];
+        float outR = process_in_R[i] + JackOUT->efxoutr[i];
+
+        // Hard Limiter to prevent ear-splitting noise
+        if (outL > 1.0f) outL = 1.0f; if (outL < -1.0f) outL = -1.0f;
+        if (outR > 1.0f) outR = 1.0f; if (outR < -1.0f) outR = -1.0f;
+
+        // Write back to the output buffer we send to speakers
+        JackOUT->efxoutl[i] = outL;
+        JackOUT->efxoutr[i] = outR;
+    }
+
+    // 6. WRITE OUTPUT
     pthread_mutex_lock(&jmutex);
-    
     if (rbOutputLeft && rbOutputRight) {
-        // Sanitize Output too (Just in case the engine exploded internally)
-        for (int i = 0; i < (int)nframes; i++) {
-            if (isnan(JackOUT->efxoutl[i])) JackOUT->efxoutl[i] = 0.0f;
-            if (isnan(JackOUT->efxoutr[i])) JackOUT->efxoutr[i] = 0.0f;
-        }
-        
         rbOutputLeft->Write(JackOUT->efxoutl, nframes);
         rbOutputRight->Write(JackOUT->efxoutr, nframes);
     }
-
     pthread_mutex_unlock(&jmutex);
 
     return 0;
 }
+
+
+
 
 
 

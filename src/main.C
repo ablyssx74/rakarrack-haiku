@@ -32,7 +32,9 @@
 #include "rakarrack.h"
 #include "jack.h"
 
+
 // Haiku Update
+extern bool gDebugMode;
 extern "C" void HaikuAudioShutdown();
 
 void
@@ -42,6 +44,7 @@ show_help ()
   fprintf (stderr,
 	   "  -h ,     --help \t\t\t display command-line help and exit\n");
   fprintf (stderr, "  -n ,     --no-gui \t\t\t disable GUI\n");
+  fprintf (stderr, "  -D ,     --debug \t\t\t enable verbose debug logging\n"); 
   fprintf (stderr, "  -l File, --load=File \t\t\t loads preset\n");
   fprintf (stderr, "  -b File, --bank=File \t\t\t loads bank\n");
   fprintf (stderr, "  -p #,    --preset=# \t\t\t set preset\n");
@@ -86,6 +89,7 @@ main (int argc, char *argv[])
     {"bank", 1, NULL, 'b'},
     {"preset",1,NULL, 'p'},
     {"no-gui", 0, NULL, 'n'},
+    {"debug", 0, 0, 'D'},
     {"dump-preset-names", 0, NULL, 'x'},
     {"help", 0, NULL, 'h'},
     {0, 0, 0, 0}
@@ -125,6 +129,10 @@ main (int argc, char *argv[])
 	case 'h':
 	  exitwithhelp = 1;
 	  break;
+    case 'D': 
+        gDebugMode = true;
+        printf("[DEBUG] Debug Mode Enabled via Command Line.\n");
+        break;
 	case 'n':
 	  gui = 0;
 	  break;
