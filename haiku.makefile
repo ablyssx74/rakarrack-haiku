@@ -54,7 +54,6 @@ CXXFLAGS += -I$(X11_PATH)
 
 # Update your build target to use these flags
 build: haiku_stubs.o
-	# Haiku uses LIBRARY_PATH instead of LD_LIBRARY_PATH
 	export LIBRARY_PATH="$$LIBRARY_PATH:$(X11_PATH)"; \
 	$(MAKE) CXXFLAGS="$(HAIKU_FIXES) $(FLTK_CXX) -I. $(OPT_FLAGS) -fpermissive -I$(X11_PATH)" \
 		LIBS="$(FLTK_LD) -L$(X11_PATH) $(EXTRA_LIBS) $(HAIKU_LIBS) $(LD_OPTIMIZE) $(PWD)/haiku_stubs.o"; \
