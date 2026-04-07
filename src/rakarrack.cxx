@@ -7,7 +7,7 @@ extern "C" char** jack_get_ports(void *, const char *, const char *, unsigned lo
 #include <X11/xpm.h>
 #include <Entry.h>
 #include <Roster.h>
-//
+
 
 #include "rakarrack.h"
 #include "icono_rakarrack_128x128.xpm"
@@ -20,7 +20,7 @@ extern "C" char** jack_get_ports(void *, const char *, const char *, unsigned lo
 #ifndef XpmCreatePixmapFromData
 #define XpmCreatePixmapFromData(a,b,c,d,e,f) (0)
 #endif
-//
+
 
 static Fl_Tiled_Image *back; 
 static Fl_Color leds_color; 
