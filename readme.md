@@ -18,7 +18,7 @@ Things to keep in mind: <br>
 Sample rate is hardcoded in at 48 kHz. <br>
 Update Input/Output frequency in Haiku Media Prefernces to match.<br>
 
-Known bug: <br>
+Known bugs: <br>
 Upsampling will cause a crash. Maybe not worth looking into as the sound is already amazing on Haiku<br>
 rakkarack media node sticks around after closing rakarrack. <br>
 Restart media server to clear the zombie node else it won't connect again.<br>
