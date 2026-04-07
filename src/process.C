@@ -1,4 +1,4 @@
-f/*
+/*
   rakarrack - a guitar effects software
 
  process.C  -  mainloop functions
