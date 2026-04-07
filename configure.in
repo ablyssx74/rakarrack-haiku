@@ -310,6 +310,8 @@ CXXFLAGS="-Wall $SSE $ALTIVEC -ffast-math -pipe $ADDS -fsigned-char `$FLTKCONFIG
 AC_CONFIG_FILES([Makefile src/Makefile man/Makefile data/Makefile icons/Makefile doc/Makefile doc/help/Makefile doc/help/imagenes/Makefile doc/help/css/Makefile extra/Makefile])
 AC_OUTPUT
 
+haiku_rakarrack_msg="Bypassed"
+
 echo
 echo  " $PACKAGE_NAME $PACKAGE_VERSION"
 echo
@@ -321,15 +323,15 @@ echo  " Use sse2 . . . . . . . . . . . . . . . . . . . . . . . .: $ac_sse2"
 echo  
 echo  " Library________________________________________________________"
 echo  " X11 support  . . . . . . . . . . . . . . . . . . . . . .: $ac_X11"
-echo  " Xpm support (libxpm) . . . . . . . . . . . . . . . . . .: $ac_Xpm"
+echo  " Xpm support (libxpm) . . . . . . . . . . . . . . . . . .: $haiku_rakarrack_msg"
 echo  " Xft support  . . . . . . . . . . . . . . . . . . . . . .: $ac_libXft"
-echo  " Xrender support  . . . . . . . . . . . . . . . . . . . .: $ac_Xrender"
+echo  " Xrender support  . . . . . . . . . . . . . . . . . . . .: $haiku_rakarrack_msg"
 echo  " Fontconfig support . . . . . . . . . . . . . . . . . . .: $ac_fontconfig"
 echo  " Freetype support . . . . . . . . . . . . . . . . . . . .: $ac_freetype"
 echo  " FLTK toolkit . . . . . . . . . . . . . . . . . . . . . .: $ac_fltk"
 echo  " pthread support (libpthread) . . . . . . . . . . . . . .: $ac_pthread"
-echo  " JACK Audio Connection Kit library  . . . . . . . . . . .: $ac_jack"
-echo  " ALSA MIDI Sequencer support  . . . . . . . . . . . . . .: $ac_asound"
+echo  " JACK Audio Connection Kit library  . . . . . . . . . . .: $haiku_rakarrack_msg"
+echo  " ALSA MIDI Sequencer support  . . . . . . . . . . . . . .: $haiku_rakarrack_msg"
 echo  " Samplerate conversion (libsamplerate). . . . . . . . . .: $ac_samplerate"
 echo  " General audio file (libsndfile)  . . . . . . . . . . . .: $ac_sndfile"
 echo  
