@@ -26640,10 +26640,16 @@ Order_Bro->select(1);
 
 void RKRGUI::Show_Next_Time() {
   if(rkr->mess_dis) return;
-Fl_Widget *w = fl_message_icon();
-w->parent()->copy_label(rkr->jackcliname);         
-fl_message("This setting will be changed the next time you run rakarrack");
+
+  // Safety check: ensure the icon and its parent exist
+  Fl_Widget *w = fl_message_icon();
+  if (w && w->parent()) {
+      w->parent()->copy_label(rkr->jackcliname);
+  }
+
+  fl_message("This setting will be changed the next time you run rakarrack");
 }
+
 
 void RKRGUI::update_looper() {
   rkr->efx_Looper->getstate();
