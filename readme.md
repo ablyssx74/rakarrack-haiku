@@ -8,7 +8,7 @@ To clean the build run ``` make -f haiku.makefile clean``` <br>
 
 Things to keep in mind: <br>
 
-Sample rate is hard coded in at 48 kHz. <br>
+Sample rate is hardcoded in at 48 kHz. <br>
 Update Input/Output frequency in Haiku Media Prefernces to match.<br>
 
 Known bug: <br>
