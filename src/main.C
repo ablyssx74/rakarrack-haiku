@@ -221,8 +221,7 @@ printf("Rakarrack loop ended. Cleaning up audio...\n");
 
 
 HaikuAudioShutdown();
-
-printf("Rakarrack:: Cleanup finished. Forcing immediate termination...\n");
+printf("Rakarrack: Shutdown complete.\n");
 fflush(stdout);
 exit(0); 
 }
