@@ -34,6 +34,7 @@
 #include <OS.h>
 #include <syslog.h>
 #include <math.h>
+#include <Alert.h>
 
 // Global Debug Flag (Default to OFF)
 bool gDebugMode = false;
@@ -646,6 +647,34 @@ status_t ConnectHardwareToRakarrack() {
 
     if (count == 0) {
         printf("[Rakarrack] ERROR: All hardware pins are blocked. Please restart Media Server.\n");
+               // Trigger Haiku Alert
+        BAlert* alert = new BAlert("Media Server Busy", 
+            "All hardware audio pins are currently blocked by the Media Server.\n\n"
+            "Would you like to attempt a restart of the Media Services?\n\n"
+            "If so, please allow ~5 seconds for the Media Service to restart before starting the app.\n\n",
+            "Cancel", "Restart Media Server", NULL, B_WIDTH_AS_USUAL, B_STOP_ALERT);
+
+        // alert->Go() returns the index of the button clicked (0 for Cancel, 1 for Restart)
+			if (alert->Go() == 1) {
+    printf("[Rakarrack] Cycling Media Services...\n");
+    
+    // 1. Send the quit signal
+    system("hey media_server quit > /dev/null 2>&1");
+    
+    // 2. Brutally kill the addon server (usually the one holding the pins)
+    system("kill media_addon_server > /dev/null 2>&1");
+
+    // 3. Start the server back up in the background
+    // We use 'nohup' or '&' to make sure it outlives Rakarrack
+    system("/boot/system/servers/media_server &");
+    
+    // 4. EXIT IMMEDIATELY
+    // Do not show another BAlert here, because the BApplication/Roster 
+    // connection is already broken and will cause "Bad port ID" errors.
+    printf("[Rakarrack] Media server restarting... Please allow ~5 seconds before relaunching the app.\n");
+    exit(0); 
+		}
+
         return B_BUSY;
     }
 
