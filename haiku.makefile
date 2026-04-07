@@ -72,7 +72,7 @@ config:
 	ac_cv_lib_Xext_main=yes \
 	ac_cv_lib_Xrender_main=yes \
 	ac_cv_lib_X11_main=yes \
-	./configure --enable-datadir --datadir="$(PWD)/data" --enable-docdir --docdir="$(PWD)/doc/" --with-frame-rate=$(RATE) --with-buffer-frames="$(FRAMES)"
+	./configure --enable-datadir --datadir="$(PWD)/data" --enable-docdir --docdir="$(PWD)/doc/help" --with-frame-rate=$(RATE) --with-buffer-frames="$(FRAMES)"
 	
 
 build: haiku_stubs.o
