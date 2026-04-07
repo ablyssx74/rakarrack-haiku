@@ -1,10 +1,6 @@
 # Optimized Haiku Build Script - No shell-init calls
 SHELL := /bin/bash
 
-# Directories (User can override these on the command line if needed)
-X11_LIB_PATH = $(PWD)/X11
-LDFLAGS += -L$(X11_PATH)
-
 # Optimization & Size Settings
 OPT_FLAGS = -O3 -s -ffunction-sections -fdata-sections
 LD_OPTIMIZE = -Wl,--gc-sections
@@ -48,11 +44,13 @@ config:
 # Build logic
 # Define the absolute path to your X11 folder
 X11_PATH = $(PWD)/X11
+X11_LIB_PATH = $(PWD)/X11
 
 # Add search paths to your flags
 # -I$(X11_PATH) finds headers; -L$(X11_PATH) finds libraries
-CXXFLAGS += -I$(X11_PATH)
 LDFLAGS += -L$(X11_PATH)
+CXXFLAGS += -I$(X11_PATH)
+
 
 # Update your build target to use these flags
 build: haiku_stubs.o
