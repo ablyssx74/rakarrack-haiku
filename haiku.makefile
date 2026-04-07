@@ -5,6 +5,9 @@ SHELL := /bin/bash
 
 CPU_FEATURES := $(shell sysinfo -cpu)
 
+# Default values if not specified on the command line
+FRAMES ?= 16
+RATE   ?= 48000.0
 
 
 ifneq ($(findstring AVX512,$(CPU_FEATURES)),)
@@ -69,10 +72,14 @@ config:
 	ac_cv_lib_Xext_main=yes \
 	ac_cv_lib_Xrender_main=yes \
 	ac_cv_lib_X11_main=yes \
-	./configure --enable-datadir --datadir="$(PWD)/data" --enable-docdir --docdir="$(PWD)/doc/" --with-frame-rate=48000.0 --with-buffer-frames="16"
+	./configure --enable-datadir --datadir="$(PWD)/data" --enable-docdir --docdir="$(PWD)/doc/" --with-frame-rate=$(RATE) --with-buffer-frames="$(FRAMES)"
 	
 
 build: haiku_stubs.o
+	@echo "=========================================================="
+	@echo " Building Rakarrack for Haiku [$(FRAMES) frames @ $(RATE)Hz]"
+	@echo " SIMD Level: $(shell echo $(SIMD_FLAGS) | grep -o 'march=[^ ]*')"
+	@echo "=========================================================="
 	touch configure.in aclocal.m4 Makefile.am Makefile.in configure config.status
 	$(MAKE) -j$(nproc) \
 		CXXFLAGS="-include $(PWD)/jack/jack.h $(HAIKU_FIXES) $(FLTK_CXX) $(BUILD_FLAGS) -fpermissive -I. -I$(PWD)/jack" \

@@ -32,7 +32,7 @@
                         '/packages/automake-1.18.1-1/.self/data/aclocal-1.18/substnot.m4',
                         '/packages/automake-1.18.1-1/.self/data/aclocal-1.18/tar.m4',
                         '/packages/automake-1.18.1-1/.self/data/aclocal-1.18/xargsn.m4',
-                        'configure.in'
+                        'configure.ac'
                       ],
                       {
                         'AC_CONFIG_MACRO_DIR' => 1,
@@ -92,7 +92,7 @@
                       [
                         '/packages/autoconf-2.72-1/.self/data/autoconf/autoconf/autoconf.m4f',
                         'aclocal.m4',
-                        'configure.in'
+                        'configure.ac'
                       ],
                       {
                         'AC_CANONICAL_BUILD' => 1,
@@ -170,7 +170,7 @@
                         '/packages/autoconf-2.72-1/.self/data/autoconf/autoconf/autoconf.m4f',
                         'aclocal.m4',
                         '/packages/autoconf-2.72-1/.self/data/autoconf/autoconf/trailer.m4',
-                        'configure.in'
+                        'configure.ac'
                       ],
                       {
                         'AC_CANONICAL_BUILD' => 1,
