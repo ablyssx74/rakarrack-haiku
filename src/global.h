@@ -101,7 +101,7 @@
 #include <X11/xpm.h>
 #include <jack/jack.h>
 #include <jack/midiport.h>
-#include <Fl/Fl_Preferences.H>
+#include <FL/Fl_Preferences.H>
 #include "FPreset.h"
 #include "Reverb.h"
 #include "Chorus.h"

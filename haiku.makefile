@@ -3,6 +3,7 @@ SHELL := /bin/bash
 
 # Directories (User can override these on the command line if needed)
 X11_LIB_PATH = $(PWD)/X11
+LDFLAGS += -L$(X11_PATH)
 
 # Optimization & Size Settings
 OPT_FLAGS = -O3 -s -ffunction-sections -fdata-sections
@@ -45,12 +46,22 @@ config:
 	./configure --enable-datadir --datadir="$(PWD)/data"
 
 # Build logic
+# Define the absolute path to your X11 folder
+X11_PATH = $(PWD)/X11
+
+# Add search paths to your flags
+# -I$(X11_PATH) finds headers; -L$(X11_PATH) finds libraries
+CXXFLAGS += -I$(X11_PATH)
+LDFLAGS += -L$(X11_PATH)
+
+# Update your build target to use these flags
 build: haiku_stubs.o
-	export LIBRARY_PATH="$$LIBRARY_PATH:$(X11_LIB_PATH)"; \
-	export BELIBRARIES="$$BELIBRARIES:$(X11_LIB_PATH)"; \
-	$(MAKE) CXXFLAGS="$(HAIKU_FIXES) $(FLTK_CXX) -I. $(OPT_FLAGS) -fpermissive" \
-		LIBS="$(FLTK_LD) $(EXTRA_LIBS) $(HAIKU_LIBS) $(LD_OPTIMIZE) $(PWD)/haiku_stubs.o"; \
+	# Haiku uses LIBRARY_PATH instead of LD_LIBRARY_PATH
+	export LIBRARY_PATH="$$LIBRARY_PATH:$(X11_PATH)"; \
+	$(MAKE) CXXFLAGS="$(HAIKU_FIXES) $(FLTK_CXX) -I. $(OPT_FLAGS) -fpermissive -I$(X11_PATH)" \
+		LIBS="$(FLTK_LD) -L$(X11_PATH) $(EXTRA_LIBS) $(HAIKU_LIBS) $(LD_OPTIMIZE) $(PWD)/haiku_stubs.o"; \
 	g++ -o rakarrack src/*.o haiku_stubs.o \
+		-I$(X11_PATH) -L$(X11_PATH) \
 		-lfltk_images -lfltk $(EXTRA_LIBS) $(HAIKU_LIBS) $(LD_OPTIMIZE) -s; \
 		mimeset -f src/rakarrack
 
