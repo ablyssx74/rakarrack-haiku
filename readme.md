@@ -12,7 +12,8 @@ To clean the build run ``` make -f haiku.makefile clean``` <br>
 
 Things to keep in mind: <br>
 
-Sample rate is hardcoded in at 48 kHz. <br>
+Input/Output frequency & Sample rate can be configured after make -f haiku.makefile config if ran by adding the flags like so<br>
+ ``` make -f haiku.makefile RATE=48000.0 FRAMES=16 ```. <br>
 Update Input/Output frequency in Haiku Media Prefernces to match.<br>
 
 Known bugs: <br>
