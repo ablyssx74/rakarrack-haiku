@@ -23774,7 +23774,7 @@ visor->textsize((unsigned char)k);
 
 
 memset(temp,0, sizeof(temp));
-sprintf(temp,"%s/html/license.html",HELPDIR);
+sprintf(temp,"%s/help/license.html",HELPDIR);
 visor->load(temp);
 
 
