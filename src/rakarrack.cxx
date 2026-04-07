@@ -23738,7 +23738,7 @@ switch (rkr->efx_order[i])
 
 void RKRGUI::show_help() {
     char temp[1024];
-    sprintf(temp, "%s/help/help.html", HELPDIR);
+    sprintf(temp, "%s/help.html", HELPDIR);
 
     entry_ref ref;
     if (get_ref_for_path(temp, &ref) == B_OK) {
@@ -23774,7 +23774,7 @@ visor->textsize((unsigned char)k);
 
 
 memset(temp,0, sizeof(temp));
-sprintf(temp,"%s/help/license.html",HELPDIR);
+sprintf(temp,"%s/license.html",HELPDIR);
 visor->load(temp);
 
 
