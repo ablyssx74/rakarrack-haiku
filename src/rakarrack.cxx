@@ -5,6 +5,8 @@ extern bool gDebugMode;
 // Added For Haiku
 extern "C" char** jack_get_ports(void *, const char *, const char *, unsigned long);
 #include <X11/xpm.h>
+#include <Entry.h>
+#include <Roster.h>
 //
 
 #include "rakarrack.h"
@@ -23732,40 +23734,21 @@ switch (rkr->efx_order[i])
   Fl::redraw();
 }
 
+
+
 void RKRGUI::show_help() {
-  int x,y,w,h,k;
+    char temp[1024];
+    sprintf(temp, "%s/html/help.html", HELPDIR);
 
-char temp[128];
-
-
-Fl_Preferences rakarrack (Fl_Preferences::USER, WEBSITE, PACKAGE);
-
-if (rkr->help_displayed==0)
-{
- visor = new Fl_Help_Dialog;
-
-rakarrack.get(rkr->PrefNom("Help X"),x,1);
-rakarrack.get(rkr->PrefNom("Help Y"),y,1);
-rakarrack.get(rkr->PrefNom("Help W"),w,640);
-rakarrack.get(rkr->PrefNom("Help H"),h,480);
-rakarrack.get(rkr->PrefNom("Help TextSize"),k,11);
-visor->resize(x,y,w,h);
-visor->textsize((unsigned char)k);
+    entry_ref ref;
+    if (get_ref_for_path(temp, &ref) == B_OK) {
+        // This tells Haiku to "open" the file just like double-clicking it
+        be_roster->Launch(&ref);
+    } else {
+        printf("Error: Could not find help file at %s\n", temp);
+    }
 }
 
-
-memset(temp,0, sizeof(temp));
-sprintf(temp,"%s/html/help.html",HELPDIR);
-
-
- if (FILE * file = fopen(temp, "r"))
-        {
-                fclose(file);
-                visor->load(temp);
-		rkr->help_displayed=1;
-		visor->show();
-	}
-}
 
 void RKRGUI::show_lic() {
   int x,y,w,h,k;

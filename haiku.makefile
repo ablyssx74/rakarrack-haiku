@@ -39,7 +39,7 @@ config:
 	ac_cv_lib_Xext_main=yes \
 	ac_cv_lib_Xrender_main=yes \
 	ac_cv_lib_X11_main=yes \
-	./configure --enable-datadir --datadir="$(PWD)/data"
+	./configure --enable-datadir --datadir="$(PWD)/data" --enable-docdir --docdir="$(PWD)/data"
 
 # Build logic
 # Define the absolute path to your X11 folder
