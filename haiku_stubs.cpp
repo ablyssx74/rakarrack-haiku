@@ -1,12 +1,12 @@
 #include "jack.h"
 #include "alsa/asoundlib.h"
+#include "global.h"
+#include "config.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <SupportDefs.h>
 #include <OS.h>
-#include "global.h" 
-#include "jack.h"
 
 // Planar buffers for Rakarrack to write into
 float input_buffer_L[8192];
@@ -14,48 +14,42 @@ float input_buffer_R[8192];
 float temp_buffer_L[8192];
 float temp_buffer_R[8192];
 
-
-
-
-
-
 pthread_mutex_t jmutex;
 RKR *JackOUT = NULL;
 float* current_haiku_buffer = NULL;
 
 extern float* current_haiku_buffer; 
-//float* current_haiku_buffer = NULL;
+
 extern "C" {
 	int snd_seq_event_output_direct(snd_seq_t *seq, snd_seq_event_t *ev) { 
         return 0; 
 	}
     int snd_seq_connect_from(snd_seq_t *seq, int my_port, int src_client, int src_port) { return 0; }
-    int snd_seq_connect_to(snd_seq_t *seq, int my_port, int dest_client, int dest_port) { return 0; }
-        
+    int snd_seq_connect_to(snd_seq_t *seq, int my_port, int dest_client, int dest_port) { return 0; }        
     int jack_port_connected(const jack_port_t port) { 
         return 1; 
-    }
+   		 }
 	int jack_port_unregister(jack_client_t*, jack_port_t*) { return 0; }
-	const char* jack_port_type(const jack_port_t*) { return "32 bit float mono audio"; }
-
-	
+	const char* jack_port_type(const jack_port_t*) { return "32 bit float mono audio"; }	
 	jack_port_t* jack_port_by_name(jack_client_t* client, const char* name) {
-    // Return the name itself as the "handle"
-    return (jack_port_t*)strdup(name);
-}
+    	// Return the name itself as the "handle"
+   		 return (jack_port_t*)strdup(name);
+		}
 
-jack_port_t* jack_port_register(jack_client_t*, const char* name, const char*, unsigned long, unsigned long) {
-    // Also return the name as the "handle"
-    return (jack_port_t*)strdup(name);
-}
+	jack_port_t* jack_port_register(jack_client_t*, const char* name, const char*, unsigned long, unsigned long) {
+   		 // Also return the name as the "handle"
+   		 return (jack_port_t*)strdup(name);
+		}
 
-    // Return 96000 consistently
-   // uint32_t jack_get_sample_rate(jack_client_t) { return 96000.0; }
-   // uint32_t jack_get_sample_rate(jack_client_t) { return 96000; }
-    uint32_t jack_get_sample_rate(jack_client_t) { return 48000.0; }
-    jack_nframes_t jack_get_buffer_size(jack_client_t) { return 128; }
+	 uint32_t jack_get_sample_rate(jack_client_t) { 
+    	return (uint32_t)DEFAULT_FRAME_RATE; 
+		}
 
-void* jack_port_get_buffer(jack_port_t port, jack_nframes_t nframes) {
+	 jack_nframes_t jack_get_buffer_size(jack_client_t) { 
+    	return (jack_nframes_t)DEFAULT_BUFFER_FRAMES; 
+		}
+
+	void* jack_port_get_buffer(jack_port_t port, jack_nframes_t nframes) {
     const char* name = jack_port_name(port);
     // Use the dummy buffers if the engine isn't fully alive yet
     if (!name || !JackOUT || !JackOUT->efxoutl) return (void*)temp_buffer_L;
@@ -64,53 +58,33 @@ void* jack_port_get_buffer(jack_port_t port, jack_nframes_t nframes) {
     if (strstr(name, "in")) {
         if (strstr(name, "1")) return (void*)JackOUT->efxoutl;
         if (strstr(name, "2")) return (void*)JackOUT->efxoutr;
-    }
+    	}
     
     // OUTPUTS: Where Rakarrack writes processed data
     // We point these to the same efxoutl/r so BSoundPlayer can see the result
     if (strstr(name, "out")) {
         if (strstr(name, "1")) return (void*)JackOUT->efxoutl;
         if (strstr(name, "2")) return (void*)JackOUT->efxoutr;
-    }
+   		 }
 
     return (void*)JackOUT->efxoutl; 
-}
-
-
+	}
 
     // --- JACK Stubs ---
     jack_client_t jack_client_open(const char* name, jack_options_t, jack_status_t*, ...) { return (jack_client_t)0x12345; }
     const char* jack_get_client_name(jack_client_t) { return "Rakarrack-Haiku"; }
-    //uint32_t jack_get_sample_rate(jack_client_t) { return 44100; }
-    //jack_nframes_t jack_get_buffer_size(jack_client_t) { return 512; }
     void jack_set_process_callback(jack_client_t, int (*)(jack_nframes_t, void*), void*) {}
     int jack_activate(jack_client_t) { return 0; }
     void jack_on_shutdown(jack_client_t, void (*)(void*), void*) {}
-    int jack_connect(jack_client_t, const char*, const char*) { return 0; }
-    
-const char* jack_port_name(jack_port_t port) {
+    int jack_connect(jack_client_t, const char*, const char*) { return 0; }    
+	const char* jack_port_name(jack_port_t port) {
     if (port == NULL) return "unknown";
     return (const char*)port; // We assume the port handle is the string pointer
-}
-
-    
+	}    
     float jack_cpu_load(jack_client_t) { return 0.0f; }
-
-
     void jack_client_close(jack_client_t) {}
     int jack_transport_query(jack_client_t, jack_position_t*) { return 0; }
-/*
-const char** jack_get_ports(jack_client_t client, const char* name_pattern, const char* type_pattern, unsigned long flags) {
-    // Allocate space for the array AND the strings in one or two blocks
-    char** ports = (char**)malloc(3 * sizeof(char*));
-    ports[0] = strdup("rakarrack:in_1");
-    ports[1] = strdup("rakarrack:in_2");
-    ports[2] = NULL;
-    return (const char**)ports;
-}
-*/
-
-const char** jack_get_ports(jack_client_t client, const char* name_pattern, const char* type_pattern, unsigned long flags) {
+	const char** jack_get_ports(jack_client_t client, const char* name_pattern, const char* type_pattern, unsigned long flags) {
     char** ports = (char**)malloc(3 * sizeof(char*));
     
     // Check if Rakarrack is looking for its Inputs or Outputs
@@ -124,28 +98,8 @@ const char** jack_get_ports(jack_client_t client, const char* name_pattern, cons
     }
     ports[2] = NULL;
     return (const char**)ports;
-}
+	}
 
-
-
-/*    
-const char** jack_get_ports(jack_client_t client, const char* name_pattern, const char* type_pattern, unsigned long flags) {
-    // Rakarrack expects an array of strings ending with NULL
-    // It will call free() on the pointer we return.
-    const char** ports = (const char**)malloc(3 * sizeof(char*));
-    
-    if (flags & 0x1) { // JackPortIsInput
-        ports[0] = "rakarrack:in_1";
-        ports[1] = "rakarrack:in_2";
-    } else { // JackPortIsOutput
-        ports[0] = "rakarrack:out_1";
-        ports[1] = "rakarrack:out_2";
-    }
-    ports[2] = NULL;
-
-    return ports;
-}
-*/    
     //void jack_free(void*) {}
     void jack_free(void* p) { if (p) free(p); }
 
@@ -168,7 +122,6 @@ const char** jack_get_ports(jack_client_t client, const char* name_pattern, cons
     void snd_seq_ev_set_noteoff(snd_seq_event_t* ev, int c, int k, int v) {}
     void snd_seq_ev_set_subs(snd_seq_event_t* ev) {}
     void snd_seq_ev_set_direct(snd_seq_event_t* ev) {}
-
 }
 
 // --- Helper Functions ---

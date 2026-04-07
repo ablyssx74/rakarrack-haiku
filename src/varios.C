@@ -204,7 +204,9 @@ RKR::Get_Bogomips()
         }
 
         // PRINT HERE: After all math is done!
-        fprintf(stderr, "DEBUG: Final Bogomips: %f, Final maxx_len: %d\n", bogomips, (int)maxx_len);
+        // Bogomips (4798.64): This is Rakarrack's internal calibration for timing-sensitive effects (like Flangers or Delays). 
+        // That’s a healthy number for a modern machine running Haiku.
+        fprintf(stderr, "Rakarrack: Final Bogomips: %f, Final maxx_len: %d\n", bogomips, (int)maxx_len);
         return (1);
     }
 

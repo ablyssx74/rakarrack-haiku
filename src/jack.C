@@ -51,6 +51,7 @@ bool gDebugMode = false;
 
 #include "jack.h"
 #include "global.h"
+#include "config.h"
 
 #include <unistd.h>
 #include <stddef.h>
@@ -120,31 +121,28 @@ public:
 
     // Standard Write (for non-interleaved data)
     void Write(float* data, int frames) {
-        int wp = writePos; 
-        for (int i = 0; i < frames; i++) {
-            buffer[wp] = data[i];
-            wp++;
-            if (wp >= size) wp = 0;
-            
+   	 int wp = writePos; 
+   	 for (int i = 0; i < frames; i++) {
+        buffer[wp] = data[i];
+        wp++;
+        if (wp >= size) wp = 0;
+  	    }
             __sync_synchronize(); // Change to this
-            writePos = wp; 
-        }
+            writePos = wp;         
     }
 
     // Specialized Interleaved Write (for [L, R, L, R] hardware)
     void WriteInterleaved(float* data, int frames, int channelOffset) {
-        int wp = writePos;
-        for (int i = 0; i < frames; i++) {
-            buffer[wp] = data[i * 2 + channelOffset];
-            wp++;
-            if (wp >= size) wp = 0;
-
+   		int wp = writePos;
+   		for (int i = 0; i < frames; i++) {
+        buffer[wp] = data[i * 2 + channelOffset];
+        wp++;
+        if (wp >= size) wp = 0;
+ 		   }
             __sync_synchronize(); // Change to this
             writePos = wp; 
-        }
-    }
+      }
 
-    
 
     // Read data and ensure we don't read past the writePos
     void Read(float* dest, int frames) {
@@ -463,20 +461,23 @@ int JACKstart(RKR * rkr_, jack_client_t * jackclient_) {
     JackOUT = rkr_;
     pthread_mutex_init(&jmutex, NULL);
     
-    // 1. Initialize Ring Buffers
-    if (!rbInputLeft)   rbInputLeft   = new SimpleRingBuffer(48000);
-    if (!rbInputRight)  rbInputRight  = new SimpleRingBuffer(48000);
-    if (!rbOutputLeft)  rbOutputLeft  = new SimpleRingBuffer(48000);
-    if (!rbOutputRight) rbOutputRight = new SimpleRingBuffer(48000);
+	// 1. Initialize Ring Buffers (Size = 2 seconds of audio)
+	uint32_t bufferSize = (uint32_t)DEFAULT_FRAME_RATE * 2;
+
+	if (!rbInputLeft)   rbInputLeft   = new SimpleRingBuffer(bufferSize);
+	if (!rbInputRight)  rbInputRight  = new SimpleRingBuffer(bufferSize);
+	if (!rbOutputLeft)  rbOutputLeft  = new SimpleRingBuffer(bufferSize);
+	if (!rbOutputRight) rbOutputRight = new SimpleRingBuffer(bufferSize);
+
 
     // 2. Setup Output Format
     media_raw_audio_format format;
     memset(&format, 0, sizeof(format)); 
     format.format = media_raw_audio_format::B_AUDIO_FLOAT;
     format.channel_count = 2; 
-    format.frame_rate = 48000.0; 
+    format.frame_rate = DEFAULT_FRAME_RATE; 
     format.byte_order = B_MEDIA_HOST_ENDIAN;
-    format.buffer_size = 128 * sizeof(float) * 2; 	
+    format.buffer_size = DEFAULT_BUFFER_FRAMES * sizeof(float) * 2; 	
 
     // 3. Register Input Node
     BMediaRoster* roster = BMediaRoster::Roster();

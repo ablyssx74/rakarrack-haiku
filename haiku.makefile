@@ -69,7 +69,7 @@ config:
 	ac_cv_lib_Xext_main=yes \
 	ac_cv_lib_Xrender_main=yes \
 	ac_cv_lib_X11_main=yes \
-	./configure --enable-datadir --datadir="$(PWD)/data" --enable-docdir --docdir="$(PWD)/doc/"
+	./configure --enable-datadir --datadir="$(PWD)/data" --enable-docdir --docdir="$(PWD)/doc/" --with-frame-rate=48000.0 --with-buffer-frames="64"
 	
 
 build: haiku_stubs.o
@@ -95,8 +95,9 @@ clean:
 	# Call the internal Makefile's distclean if it exists
 	-[ -f Makefile ] && $(MAKE) distclean
 	# Clean up leftover Autotools files and caches
-	rm -rf autom4te.cache configure~ config.log config.status Makefile src/Makefile \
+	rm -rf autom4te.cache config.cache configure~ config.log config.status Makefile src/Makefile \
 	       man/Makefile data/Makefile icons/Makefile doc/Makefile \
 	       doc/help/Makefile doc/help/imagenes/Makefile doc/help/css/Makefile extra/Makefile
+	autoreconf -vif
 	@echo "Deep clean complete."
 
