@@ -729,8 +729,7 @@ extern "C" void HaikuAudioShutdown() {
     if (rbInputRight) { delete rbInputRight; rbInputRight = NULL; }
     if (rbOutputLeft) { delete rbOutputLeft; rbOutputLeft = NULL; }
     if (rbOutputRight) { delete rbOutputRight; rbOutputRight = NULL; }
-
-    printf("Rakarrack: Shutdown complete.\n");
+    
 }
 
 
