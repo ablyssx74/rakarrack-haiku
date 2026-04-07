@@ -23738,7 +23738,7 @@ switch (rkr->efx_order[i])
 
 void RKRGUI::show_help() {
     char temp[1024];
-    sprintf(temp, "%s/html/help.html", HELPDIR);
+    sprintf(temp, "%s/help/help.html", HELPDIR);
 
     entry_ref ref;
     if (get_ref_for_path(temp, &ref) == B_OK) {
