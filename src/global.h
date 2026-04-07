@@ -569,7 +569,7 @@ public:
 
   double Tap_timeB;
   double Tap_timeC;
-  double jt_tempo;
+  volatile double jt_tempo;
 
   double tempobuf[6];  
 
@@ -580,7 +580,7 @@ public:
   timeval timeA;
 
   float booster;
-  float cpuload;
+  volatile  float cpuload;
   float rtrig;
 
   float *efxoutl;
@@ -594,9 +594,9 @@ public:
   float *denormal;
   float *m_ticks;
 
-  float Master_Volume;
-  float Input_Gain;
-  float Fraction_Bypass;
+  volatile float Master_Volume;
+  volatile float Input_Gain;
+  volatile float Fraction_Bypass;
   float Log_I_Gain;
   float Log_M_Volume;
   float M_Metro_Vol;
@@ -606,10 +606,10 @@ public:
   float old_ir_sum;
   float old_vl_sum;
   float old_vr_sum;
-  float val_vl_sum;
-  float val_vr_sum;
-  float val_il_sum;
-  float val_ir_sum;
+  volatile float val_vl_sum;
+  volatile float val_vr_sum;
+  volatile float val_il_sum;
+  volatile float val_ir_sum;
   float old_a_sum;
   float val_a_sum;
 

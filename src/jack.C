@@ -58,6 +58,7 @@ bool gDebugMode = false;
 #include <string.h>
 #include <stdio.h>
 #include <pthread.h>
+#include <OS.h>
 
 #include <media/BufferConsumer.h>
 #include <media/Buffer.h>
@@ -527,7 +528,13 @@ int JACKstart(RKR * rkr_, jack_client_t * jackclient_) {
 
 int jackprocess (jack_nframes_t nframes, void *arg)
 {
+	
+	// Start the clock
+    bigtime_t start_time = system_time();
+    
+    
 	_mm_setcsr(_mm_getcsr() | 0x8040); // Sets DAZ (Denormals-Are-Zero) and FTZ (Flush-To-Zero)
+	
     static float process_in_L[8192];
     static float process_in_R[8192];
 
@@ -574,6 +581,17 @@ int jackprocess (jack_nframes_t nframes, void *arg)
 	}   
 
     JackOUT->Alg(JackOUT->efxoutl, JackOUT->efxoutr, process_in_L, process_in_R, nframes); 
+    
+    // Stop the clock
+    bigtime_t end_time = system_time();
+
+    // 5. CALCULATE LOAD
+    // Available time for this block in microseconds
+    double max_us = ((double)nframes / DEFAULT_FRAME_RATE) * 1000000.0;
+    float instant_load = ((float)(end_time - start_time) / max_us) * 100.0f;
+
+    // Smooth the result so the UI doesn't flicker (90% old, 10% new)
+    JackOUT->cpuload = (JackOUT->cpuload * 0.9f) + (instant_load * 0.1f);
 
     return 0;
 }
