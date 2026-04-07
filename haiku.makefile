@@ -1,13 +1,43 @@
-# Optimized Haiku Build Script - No shell-init calls
+# Optimized Haiku Build Script
 SHELL := /bin/bash
 
+# --- CPU Feature Detection ---
+
+CPU_FEATURES := $(shell sysinfo -cpu)
+
+
+
+ifneq ($(findstring AVX512,$(CPU_FEATURES)),)
+    SIMD_FLAGS := -O3 -march=skylake-avx512 -ffp-contract=fast
+# AMD Ryzen Detection (Zen 1, 2, 3)
+else ifneq ($(findstring znver,$(CPU_FEATURES)),)
+    SIMD_FLAGS := -O3 -march=znver2 -ffp-contract=fast
+# Your Xeon (Haswell/Broadwell)
+else ifneq ($(findstring AVX2,$(CPU_FEATURES)),)
+    SIMD_FLAGS := -O3 -march=haswell -ffp-contract=fast
+# Sandy/Ivy Bridge
+else ifneq ($(findstring AVX,$(CPU_FEATURES)),)
+    SIMD_FLAGS := -O3 -march=sandybridge
+# Nehalem / Westmere
+else ifneq ($(findstring SSE4.2,$(CPU_FEATURES)),)
+    SIMD_FLAGS := -O3 -march=nehalem
+# Pentium 4 / Early Core2 (SSE3)
+else ifneq ($(findstring SSE3,$(CPU_FEATURES)),)
+    SIMD_FLAGS := -O3 -march=prescott
+# Fallback: Automatic detection or generic 64-bit
+else
+    SIMD_FLAGS := -O3 -march=native
+endif
+
+
+
 # Optimization & Size Settings
-OPT_FLAGS = -O3 -s -ffunction-sections -fdata-sections
+# We use SIMD_FLAGS instead of a generic -O3
+BUILD_FLAGS = $(SIMD_FLAGS) -ffast-math -ffunction-sections -fdata-sections -s
 LD_OPTIMIZE = -Wl,--gc-sections
 HAIKU_FIXES = -include $(PWD)/haiku_fixes.h
 HAIKU_LIBS = -lmedia -lbe -ltranslation -lnetwork -lroot -lpthread
 EXTRA_LIBS = -lX11 -lsamplerate -lsndfile -lfltk_images -lfltk_forms -lpng -lz
-
 
 # Lazy evaluation: These will only run when the recipes actually execute
 FLTK_CXX = $$(fltk-config --cxxflags)
@@ -40,34 +70,33 @@ config:
 	ac_cv_lib_Xrender_main=yes \
 	ac_cv_lib_X11_main=yes \
 	./configure --enable-datadir --datadir="$(PWD)/data" --enable-docdir --docdir="$(PWD)/doc/"
+	
 
-# Build logic
-# Define the absolute path to your X11 folder
-X11_PATH = $(PWD)/X11
-X11_LIB_PATH = $(PWD)/X11
-
-# Add search paths to your flags
-# -I$(X11_PATH) finds headers; -L$(X11_PATH) finds libraries
-LDFLAGS += -L$(X11_PATH)
-CXXFLAGS += -I$(X11_PATH)
-
-
-# Update your build target to use these flags
 build: haiku_stubs.o
 	touch configure.in aclocal.m4 Makefile.am Makefile.in configure config.status
-	export LIBRARY_PATH="$$LIBRARY_PATH:$(X11_PATH)"; \
-	$(MAKE) CXXFLAGS="$(HAIKU_FIXES) $(FLTK_CXX) -I. $(OPT_FLAGS) -fpermissive -I$(X11_PATH)" \
-		LIBS="$(FLTK_LD) -L$(X11_PATH) $(EXTRA_LIBS) $(HAIKU_LIBS) $(LD_OPTIMIZE) $(PWD)/haiku_stubs.o"; \
+	$(MAKE) -j$(nproc) \
+		CXXFLAGS="-include $(PWD)/jack/jack.h $(HAIKU_FIXES) $(FLTK_CXX) $(BUILD_FLAGS) -fpermissive -I. -I$(PWD)/jack" \
+		LIBS="$(FLTK_LD) $(EXTRA_LIBS) $(HAIKU_LIBS) $(LD_OPTIMIZE) $(PWD)/haiku_stubs.o"
 	g++ -o rakarrack src/*.o haiku_stubs.o \
-		-I$(X11_PATH) -L$(X11_PATH) \
-		-lfltk_images -lfltk $(EXTRA_LIBS) $(HAIKU_LIBS) $(LD_OPTIMIZE) -s; \
-		mimeset -f src/rakarrack
-
+		$(BUILD_FLAGS) \
+		-include $(PWD)/jack/jack.h \
+		-lfltk_images -lfltk $(EXTRA_LIBS) $(HAIKU_LIBS) $(LD_OPTIMIZE)
+	mimeset -f src/rakarrack
 
 haiku_stubs.o: haiku_stubs.cpp
-	g++ -c $< -o $@ -I. -I./src $(OPT_FLAGS) -fpermissive
-	
-	
+	g++ -c $< -o $@ -I$(PWD)/jack -I. -I./src $(BUILD_FLAGS) -fpermissive
+
+
 clean:
+	@echo "Performing deep clean (distclean)..."
+	# Remove the binaries and stubs
 	rm -f rakarrack haiku_stubs.o
-	$(MAKE) clean
+	#rm -f aclocal.m4 configure
+	# Call the internal Makefile's distclean if it exists
+	-[ -f Makefile ] && $(MAKE) distclean
+	# Clean up leftover Autotools files and caches
+	rm -rf autom4te.cache configure~ config.log config.status Makefile src/Makefile \
+	       man/Makefile data/Makefile icons/Makefile doc/Makefile \
+	       doc/help/Makefile doc/help/imagenes/Makefile doc/help/css/Makefile extra/Makefile
+	@echo "Deep clean complete."
+

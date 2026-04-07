@@ -26,7 +26,7 @@
 // Added for Haiku
 // This ensures the compiler knows the JACK types 
 // from your dummy folder 
-#include <jack/jack.h> 
+//#include <jack/jack.h> 
 
 class RKR; // Forward declaration 
 

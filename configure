@@ -7781,58 +7781,72 @@ printf "%s\n" "#define HELPDIR \"$HELPDIR\"" >>confdefs.h
 printf "%s\n" "#define WEBSITE \"rakarrack.sf.net\"" >>confdefs.h
 
 
+# Important Note on Audio Latency
+# While -O3 is standard for Rakarrack, sometimes high optimization levels can
+# increase binary size or cause slight jitters in real-time audio threads.
+# If you notice "crackling" that wasn't there before, try -O2 -march=haswell
+# to see if it stabilizes.
+
 OS_NAME="$(uname -s)"
 
-if test -z "$OPTS";then
-if test -z "$ALTIVEC";then
+# 1. CPU Feature Detection (SSE/AVX)
+# We check if $SSE is already set to avoid overwriting user-provided flags.
 if test -z "$SSE"; then
-if test "$OS_NAME" == Haiku; then
-SSE=$(sysinfo -cpu | grep -i sse2)
-else
-SSE=$(cat /proc/cpuinfo | grep sse2)
-fi
-if test -z "$SSE"; then
-SSE=""
-ac_sse2="no"
-else
-SSE="-O3 -msse2 -mfpmath=sse"
-ac_sse2="yes"
-fi
-if test -z "$SSE"; then
-if test "$OS_NAME" == Haiku; then
-SSE=$(sysinfo -cpu | grep -i "sse")
-else
-SSE=$(cat /proc/cpuinfo | grep sse)
-fi
-if test -z "$SSE"; then
-SSE=""
-ac_sse="no"
-else
-SSE="-msse -mfpmath=sse"
-ac_sse="yes"
-fi
-fi
-fi
+    if test "$OS_NAME" = "Haiku"; then
+        CPU_FEATURES=$(sysinfo -cpu)
+        if echo "$CPU_FEATURES" | grep -qi "avx512"; then
+            SSE="-O3 -march=skylake-avx512 -ffp-contract=fast"
+            ac_sse="yes (AVX-512)"
+        elif echo "$CPU_FEATURES" | grep -qi "avx2"; then
+            SSE="-O3 -march=haswell -ffp-contract=fast"
+            ac_sse="yes (AVX2)"
+        elif echo "$CPU_FEATURES" | grep -qi "avx"; then
+            SSE="-O3 -march=sandybridge"
+            ac_sse="yes (AVX)"
+        elif echo "$CPU_FEATURES" | grep -qi "sse4.2"; then
+            SSE="-O3 -march=nehalem -mfpmath=sse"
+            ac_sse="yes (SSE4.2)"
+        elif echo "$CPU_FEATURES" | grep -qi "sse2"; then
+            SSE="-O3 -msse2 -mfpmath=sse"
+            ac_sse="yes (SSE2)"
+        else
+            SSE="-O3"
+            ac_sse="no"
+        fi
+    else
+        # Fallback for Linux or other OS types
+        if grep -q "sse2" /proc/cpuinfo 2>/dev/null; then
+            SSE="-O3 -msse2 -mfpmath=sse"
+            ac_sse="yes"
+        else
+            SSE="-O3"
+            ac_sse="no"
+        fi
+    fi
 fi
 
+# 2. AltiVec Detection (PowerPC)
 if test -z "$ALTIVEC"; then
-if test "$OS_NAME" == Haiku; then
-SSE=$(sysinfo -cpu | grep -i "altivec")
-else
-ALTIVEC=$(cat /proc/cpuinfo | grep altivec)
-fi
-if test -z "$ALTIVEC"; then
-ALTIVEC=""
-ac_altivec="no"
-else
-ALTIVEC="-maltivec"
-ac_altivec="yes"
-fi
-fi
+    if test "$OS_NAME" = "Haiku"; then
+        # Check if sysinfo returns any altivec string
+        HAVE_ALTIVEC=$(sysinfo -cpu | grep -i "altivec")
+    else
+        HAVE_ALTIVEC=$(cat /proc/cpuinfo 2>/dev/null | grep -i altivec)
+    fi
+
+    if test -z "$HAVE_ALTIVEC"; then
+        ALTIVEC=""
+        ac_altivec="no"
+    else
+        ALTIVEC="-maltivec"
+        ac_altivec="yes"
+    fi
 fi
 
+# 3. Final Flag Assembly
 LIBS="`$FLTKCONFIG --use-images --ldflags` $LIBS"
 CXXFLAGS="-Wall $SSE $ALTIVEC -ffast-math -pipe $ADDS -fsigned-char `$FLTKCONFIG --use-images --cxxflags` `pkg-config --cflags sndfile` `pkg-config --cflags jack` $CXXFLAGS"
+
 ac_config_files="$ac_config_files Makefile src/Makefile man/Makefile data/Makefile icons/Makefile doc/Makefile doc/help/Makefile doc/help/imagenes/Makefile doc/help/css/Makefile extra/Makefile"
 
 cat >confcache <<\_ACEOF
@@ -9316,6 +9330,7 @@ printf "%s\n" "$as_me: WARNING: unrecognized options: $ac_unrecognized_opts" >&2
 fi
 
 
+
 haiku_rakarrack_msg="Bypassed"
 
 echo
@@ -9325,7 +9340,8 @@ echo
 echo  " Optimizations__________________________________________________"
 echo  " Use altivec. . . . . . . . . . . . . . . . . . . . . . .: $ac_altivec"
 echo  " Use sse  . . . . . . . . . . . . . . . . . . . . . . . .: $ac_sse"
-echo  " Use sse2 . . . . . . . . . . . . . . . . . . . . . . . .: $ac_sse2"
+echo  " High-Performance SIMD  . . . . . . . . . . . . . . . . .: $ac_sse"
+
 echo
 echo  " Library________________________________________________________"
 echo  " X11 support  . . . . . . . . . . . . . . . . . . . . . .: $ac_X11"
