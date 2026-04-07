@@ -12,7 +12,7 @@ To clean the build run ``` make -f haiku.makefile clean``` <br>
 
 Things to keep in mind: <br>
 
-Input/Output frequency & Sample rate can be configured after running ```make -f haiku.makefile config`` by adding the flags<br>
+Input/Output frequency & Sample rate can be configured after running ```make -f haiku.makefile config``` by adding the flags<br>
  ``` make -f haiku.makefile RATE=48000.0 FRAMES=16 ```. <br>
 Update Input/Output frequency in Haiku Media Prefernces to match.<br>
 
