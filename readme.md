@@ -6,9 +6,6 @@ To build run ``` make -f haiku.makefile ``` <br>
 
 If build goes all okay you will have ./rakarrack in the root directory <br>
 
-If make -f haiku.makefile fails the first time just rerun ```make -f haiku.makefile config``` again.  That usually works for stale autoconf variables. <br>
-
-
 To clean the build run ``` make -f haiku.makefile clean``` <br>
 
 
