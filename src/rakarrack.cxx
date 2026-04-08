@@ -7,7 +7,7 @@ extern "C" char** jack_get_ports(void *, const char *, const char *, unsigned lo
 #include <X11/xpm.h>
 #include <Entry.h>
 #include <Roster.h>
-
+#include <stdint.h>
 
 #include "rakarrack.h"
 #include "icono_rakarrack_128x128.xpm"
@@ -868,7 +868,7 @@ void RKRGUI::cb_Load_Skin(Fl_Menu_* o, void* v) {
 void RKRGUI::cb_Save_Skin_i(Fl_Menu_*, void*) {
   char *filename;
 #define EXT ".rkrs"
-filename=fl_file_chooser("Save Skin:","(*"EXT")","",0);
+filename=fl_file_chooser("Save Skin:","(*" EXT ")","",0);
 if (filename==NULL) return;
 filename=fl_filename_setext(filename,EXT);
 #undef EXT
@@ -902,7 +902,7 @@ void RKRGUI::cb_Load_MTable(Fl_Menu_* o, void* v) {
 void RKRGUI::cb_Save_MTable_i(Fl_Menu_*, void*) {
   char *filename;
 #define EXT ".rmt"
-filename=fl_file_chooser("Save MIDI Table:","(*"EXT")","",0);
+filename=fl_file_chooser("Save MIDI Table:","(*" EXT ")","",0);
 if (filename==NULL) return;
 filename=fl_filename_setext(filename,EXT);
 #undef EXT
@@ -9327,7 +9327,7 @@ void RKRGUI::cb_MIDI_LABEL_i(Fl_Box*, void*) {
 char *filename;
 
 #define EXT ".rkrb"
-filename=fl_file_chooser("Save Bank File:","(*"EXT")",rkr->Bank_Saved,0);
+filename=fl_file_chooser("Save Bank File:","(*" EXT ")",rkr->Bank_Saved,0);
 if (filename==NULL) return;
 filename=fl_filename_setext(filename,EXT);
 #undef EXT
@@ -9530,7 +9530,7 @@ void RKRGUI::cb_L_preset(Fl_Button* o, void* v) {
 void RKRGUI::cb_S_preset_i(Fl_Button*, void*) {
   char *filename;
 #define EXT ".rkr"
-filename=fl_file_chooser("Save Preset:","(*"EXT")",rkr->Preset_Name,0);
+filename=fl_file_chooser("Save Preset:","(*" EXT ")",rkr->Preset_Name,0);
 if (filename==NULL) return;
 filename=fl_filename_setext(filename,EXT);
 #undef EXT
@@ -22975,7 +22975,8 @@ for (j=1; j<5; j++)
       butX->labelcolor(label_color);
       butX->labelsize(14);
       butX->align(68|FL_ALIGN_INSIDE);
-      butX->user_data((void*) (num));
+      //butX->user_data((void*) (num));
+      butX->user_data((void*)(uintptr_t)(num));
       butX->value(0);
       butX->when(FL_WHEN_CHANGED |FL_WHEN_RELEASE_ALWAYS);
       butX->callback((Fl_Callback *)preset_click);
@@ -23822,8 +23823,12 @@ if ((fp = fopen ("/proc/asound/seq/clients", "r")) != NULL)
  
  const char **ports;
   
+   //if ((ports = jack_get_ports (rkr->jackclient, NULL, JACK_DEFAULT_AUDIO_TYPE, 
+   //                            JackPortIsInput)) == NULL) {
+   //             fprintf(stderr, "Cannot find any Input port\n");
   
-   if ((ports = jack_get_ports (rkr->jackclient, NULL, JACK_DEFAULT_AUDIO_TYPE, 
+  
+   if ((ports = (const char **)jack_get_ports (rkr->jackclient, NULL, JACK_DEFAULT_AUDIO_TYPE, 
                                JackPortIsInput)) == NULL) {
                 fprintf(stderr, "Cannot find any Input port\n");
     
@@ -23851,7 +23856,9 @@ JackIn->clear();
  
  const char **iports;  
   
-   if ((iports = jack_get_ports (rkr->jackclient, NULL, JACK_DEFAULT_AUDIO_TYPE, 
+   //if ((iports = jack_get_ports (rkr->jackclient, NULL, JACK_DEFAULT_AUDIO_TYPE, 
+   //                            JackPortIsOutput)) == NULL) {
+   if ((iports = (const char **)jack_get_ports (rkr->jackclient, NULL, JACK_DEFAULT_AUDIO_TYPE,
                                JackPortIsOutput)) == NULL) {
                 fprintf(stderr, "Cannot find any Output port\n");
     
@@ -27293,14 +27300,16 @@ void RKRGUI::make_table_window() {
     cb->add("2");
     cb->add("3");
     cb->add("U");
-    cb->user_data((void *) (1000+y));
+    //cb->user_data((void *) (1000+y));
+    cb->user_data((void *)(uintptr_t)(1000+y));
     cb->callback((Fl_Callback *)bank_click); 
     scroll->add(cb);
     
     Fl_Choice* cp = new Fl_Choice(260,y*25+25,220,20);
     cp->copy_label("Preset");
     cp->labelcolor(FL_WHITE);
-    cp->user_data((void *) (2000+y));
+    //cp->user_data((void *) (2000+y));
+    cp->user_data((void *)(uintptr_t)(2000+y));
     cp->callback((Fl_Callback *)p_click); 
     scroll->add(cp);
   

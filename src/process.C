@@ -92,9 +92,8 @@ RKR::RKR ()
   actuvol= 0;
   OnCounter=0;
   sprintf (temp, "rakarrack");
-  jackclient = jack_client_open (temp, options, &status, NULL);
-
-  if (jackclient == NULL)
+  //jackclient = jack_client_open (temp, options, &status, NULL);
+  jackclient = (void**)jack_client_open (temp, options, &status, NULL);  if (jackclient == NULL)
     {
       fprintf (stderr, "Cannot make a jack client, is jackd running?\n");
       nojack = 1;
