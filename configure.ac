@@ -368,8 +368,8 @@ echo  " High-Performance SIMD  . . . . . . . . . . . . . . . . .: $ac_sse"
 
 echo  
 echo  " Library________________________________________________________"
-echo  " X11 support  . . . . . . . . . . . . . . . . . . . . . .: $haiku_rakarrack_msg"
-echo  " Xpm support (libxpm) . . . . . . . . . . . . . . . . . .: $haiku_rakarrack_msg"
+echo  " X11 support  . . . . . . . . . . . . . . . . . . . . . .: $ac_X11""
+echo  " Xpm support (libxpm) . . . . . . . . . . . . . . . . . .: $ac_Xpm""
 echo  " Xft support  . . . . . . . . . . . . . . . . . . . . . .: $ac_libXft"
 echo  " Xrender support  . . . . . . . . . . . . . . . . . . . .: $haiku_rakarrack_msg"
 echo  " Fontconfig support . . . . . . . . . . . . . . . . . . .: $ac_fontconfig"
