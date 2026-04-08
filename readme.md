@@ -1,17 +1,12 @@
 ### Rakarrack Haiku is a port in progress of the great [rakarrack project](https://rakarrack.sourceforge.net/)
 
-I've basically stripped out all the jack and linux code dependencies with the help of AI to bring this wonderful app to a wonder operating system.<br>
-... and it sounds amazing!
 
-Dependencies can be installed  with pkgman <br>
-```pkgman install fltk_devel fontconfig_devel freetype_devel libxfont2_devel libsndfile_devel libsamplerate_devel libxpm_devel```
-<br><br>
-To configure: ```make -f haiku.makefile config ```<br>
-To build: ``` make -f haiku.makefile ``` <br>
+To configure run ```make -f haiku.makefile config ```<br>
+To build run ``` make -f haiku.makefile ``` <br>
 
 If build goes all okay you will have ./rakarrack in the root directory <br>
 
-To clean the build: ``` make -f haiku.makefile clean``` <br>
+To clean the build run ``` make -f haiku.makefile clean``` <br>
 
 
 
@@ -22,5 +17,5 @@ Update Input/Output frequency in Haiku Media Preferences to match.<br>
 
 Known bugs: <br>
 rakkarack media node sticks around after closing rakarrack. <br>
-The app will remind you to restart the media server to clear the zombie node unless you do it manually.<br>
+Restart media server to clear the zombie node else it won't connect again.<br>
 

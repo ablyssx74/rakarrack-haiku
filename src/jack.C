@@ -730,55 +730,56 @@ status_t ConnectHardwareToRakarrack() {
 extern "C" void HaikuAudioShutdown() {
     printf("Rakarrack: Entering HaikuAudioShutdown...\n");
     BMediaRoster* roster = BMediaRoster::Roster();
+    if (!roster) return;
 
-    // 1. Stop and Cleanup Output
+    // 1. FORCE DISCONNECT FIRST
+    if (inNode && gInputNode.node > 0) {
+        media_input connectedInput;
+        int32 inputCount = 0;
+        media_node myNode = inNode->Node();
+
+        // Attempt to find the link from our side
+        if (roster->GetConnectedInputsFor(myNode, &connectedInput, 1, &inputCount) == B_OK && inputCount > 0) {
+            printf("Rakarrack: Breaking active link via our input...\n");
+            roster->Disconnect(gInputNode.node, connectedInput.source, myNode.node, connectedInput.destination);
+        } else {
+            // Fallback: Search from the Hardware side
+            printf("Rakarrack: Searching via Hardware Node %d...\n", (int)gInputNode.node);
+            media_output hwOutputs[8]; // Array for multiple outputs
+            int32 hwOutCount = 0;
+            if (roster->GetConnectedOutputsFor(gInputNode, hwOutputs, 8, &hwOutCount) == B_OK && hwOutCount > 0) {
+                for (int i = 0; i < hwOutCount; i++) {
+                    // Match by the 'port' ID which is the unique destination identifier
+                    if (hwOutputs[i].destination.port == inNode->ControlPort()) {
+                         printf("Rakarrack: Found hardware output! Severing link...\n");
+                         roster->Disconnect(hwOutputs[i].node.node, hwOutputs[i].source, myNode.node, hwOutputs[i].destination);
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. STOP AND RELEASE
     if (outPlayer) {
-        printf("Rakarrack: Stopping outPlayer...\n");
-        outPlayer->Stop();
+        printf("Rakarrack: Stopping outPlayer (Sync)...\n");
+        outPlayer->Stop(true, true); // Synchronous wait
         delete outPlayer;
         outPlayer = NULL;
     }
 
-    // 2. Disconnect and Unregister Input
-    if (roster && inNode && gInputNode.node > 0) {
-        media_input connectedInput;
-        int32 inputCount = 0;
-
-        // Check if we are connected to something
-        if (roster->GetConnectedInputsFor(inNode->Node(), &connectedInput, 1, &inputCount) == B_OK && inputCount > 0) {
-            printf("Rakarrack: Disconnecting Hardware (Node %d) -> Input...\n", (int)gInputNode.node);
-
-            // FIX: Use 'gInputNode.node' for the source ID, because media_source doesn't have it.
-            status_t err = roster->Disconnect(
-                gInputNode.node,            // Source Node ID (Hardware)
-                connectedInput.source,      // Source Output Pin
-                inNode->Node().node,        // Dest Node ID (Us)
-                connectedInput.destination  // Dest Input Pin
-            );
-
-            if (err != B_OK) {
-                printf("Rakarrack: [WARNING] Disconnect failed: %s\n", strerror(err));
-            }
-        }
-
-        // 3. Stop and Unregister OUR Node
-        // Important: Do not stop 'gInputNode' (Hardware), or you kill system audio!
-        printf("Rakarrack: Stopping and Unregistering RakInputNode...\n");
+    if (inNode) {
+        printf("Rakarrack: Stopping and Releasing inNode...\n");
         roster->StopNode(inNode->Node(), 0, true);
-        roster->UnregisterNode(inNode);
-
-        // 4. Delete the Object
-        delete inNode;
+        inNode->Release(); // Incremental cleanup
         inNode = NULL;
     }
-
-    // 5. Cleanup Buffers
-    if (rbInputLeft) { delete rbInputLeft; rbInputLeft = NULL; }
-    if (rbInputRight) { delete rbInputRight; rbInputRight = NULL; }
-    if (rbOutputLeft) { delete rbOutputLeft; rbOutputLeft = NULL; }
-    if (rbOutputRight) { delete rbOutputRight; rbOutputRight = NULL; }
     
+    printf("Rakarrack: Shutdown complete.\n");
 }
+
+
+
+
 
 
 

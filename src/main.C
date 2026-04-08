@@ -20,6 +20,8 @@
   Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 
 */
+#include <app/Looper.h>d
+#include <app/Application.h>
 
 #include <signal.h>
 #include <unistd.h>
@@ -72,8 +74,8 @@ show_help ()
 int
 main (int argc, char *argv[])
 {
- Fl::lock(); 
-
+Fl::lock(); 
+BApplication myApp("application/x-vnd.rakarrack-haiku");
 // Read command Line
 
   fprintf (stderr,
@@ -221,7 +223,6 @@ printf("Rakarrack loop ended. Cleaning up audio...\n");
 
 
 HaikuAudioShutdown();
-printf("Rakarrack: Shutdown complete.\n");
 fflush(stdout);
 exit(0); 
 }
