@@ -6,7 +6,7 @@ SHELL := /bin/bash
 CPU_FEATURES := $(shell sysinfo -cpu)
 
 # Default values if not specified on the command line
-FRAMES ?= 16
+FRAMES ?= 128
 RATE   ?= 48000.0
 
 
