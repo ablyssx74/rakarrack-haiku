@@ -1,5 +1,7 @@
 ### Rakarrack Haiku is a port in progress of the great [rakarrack project](https://rakarrack.sourceforge.net/)
 
+Requires: fltk_devel libsamplerate_devel libsndfile_devel libxfont_devel libxfont2_devel libxpm_devel
+
 
 To configure run ```make -f haiku.makefile config ```
 
