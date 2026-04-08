@@ -1,12 +1,14 @@
 ### Rakarrack Haiku is a port in progress of the great [rakarrack project](https://rakarrack.sourceforge.net/)
 
-
-To configure run ```make -f haiku.makefile config ```<br>
-To build run ``` make -f haiku.makefile ``` <br>
+Dependencies can be installed  with pkgman 
+``` pkgman install fltk_devel 	fontconfig_devel 	freetype_devel 	libxfont2_devel 	libsndfile_devel 	libsamplerate_devel libxpm_devel	```
+<br>
+To configure: ```make -f haiku.makefile config ```<br>
+To build: ``` make -f haiku.makefile ``` <br>
 
 If build goes all okay you will have ./rakarrack in the root directory <br>
 
-To clean the build run ``` make -f haiku.makefile clean``` <br>
+To clean the build: ``` make -f haiku.makefile clean``` <br>
 
 
 
