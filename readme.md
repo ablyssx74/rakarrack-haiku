@@ -2,7 +2,7 @@
 
 Dependencies can be installed  with pkgman <br>
 ``` pkgman install fltk_devel 	fontconfig_devel 	freetype_devel 	libxfont2_devel 	libsndfile_devel 	libsamplerate_devel libxpm_devel	```
-<br>
+<br><br>
 To configure: ```make -f haiku.makefile config ```<br>
 To build: ``` make -f haiku.makefile ``` <br>
 
