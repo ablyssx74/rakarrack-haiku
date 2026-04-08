@@ -1,6 +1,6 @@
 ### Rakarrack Haiku is a port in progress of the great [rakarrack project](https://rakarrack.sourceforge.net/)
 
-Dependencies can be installed  with pkgman 
+Dependencies can be installed  with pkgman <br>
 ``` pkgman install fltk_devel 	fontconfig_devel 	freetype_devel 	libxfont2_devel 	libsndfile_devel 	libsamplerate_devel libxpm_devel	```
 <br>
 To configure: ```make -f haiku.makefile config ```<br>
