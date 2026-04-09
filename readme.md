@@ -2,6 +2,8 @@
 
 Requires: Haiku 64bit fltk_devel fontconfig_devel freetype_devel libxfont2_devel libsndfile_devel libsamplerate_devel libxpm_devel
 
+To see get help run ```make -f haiku.makefile help```
+
 To configure run ```make -f haiku.makefile config ```
 
 To build run ``` make -f haiku.makefile ``` 
