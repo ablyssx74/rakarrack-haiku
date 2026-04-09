@@ -27,3 +27,7 @@ requires {
 urls {
 	"https://github.com/ablyssx74/rakarrack-haiku"
 }
+source-urls {
+# Download
+	"https://github.com/ablyssx74/rakarrack-haiku/archive/refs/tags/v1.0.0.tar.gz"
+}
