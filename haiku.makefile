@@ -2,12 +2,6 @@
 # Optimized Haiku Build Script
 SHELL := /bin/bash
 #----------------------------------------------------------
-
-
-#----------------------------------------------------------
-# Required packages- Informational purposes 
-#----------------------------------------------------------
-REQUIRED_PKGS = fltk_devel fontconfig_devel freetype_devel libxfont2_devel libsndfile_devel libsamplerate_devel libxpm_devel
                
 
 #----------------------------------------------------------
@@ -35,7 +29,7 @@ BUILD_FLAGS = $(SIMD_FLAGS) -ffast-math -ffunction-sections -fdata-sections -s
 LD_OPTIMIZE = -Wl,--gc-sections
 HAIKU_FIXES = -include $(PWD)/haiku_fixes.h
 HAIKU_LIBS = -lmedia -lbe -ltranslation -lnetwork -lroot -lpthread
-EXTRA_LIBS = -lX11 -lsamplerate -lsndfile -lfltk_images -lfltk_forms -lpng -lz
+EXTRA_LIBS = -lsamplerate -lsndfile -lfltk_images -lfltk -lfltk_forms -lpng -lz
 
 #----------------------------------------------------------
 # Not used here but saving anyway
@@ -49,7 +43,8 @@ HAIKU_LIB = -L/boot/system/develop/lib
 FLTK_CXX = $$(fltk-config --cxxflags)
 FLTK_LD  = $$(fltk-config --ldflags)
 
-.PHONY: all config build clean
+.PHONY: all config build clean help deps
+
 
 all: build
 
@@ -96,8 +91,8 @@ build: haiku_stubs.o
 	g++ -o rakarrack src/*.o haiku_stubs.o \
 		$(BUILD_FLAGS) \
 		-include $(PWD)/jack/jack.h \
-		-lfltk_images -lfltk $(EXTRA_LIBS) $(HAIKU_LIBS) $(LD_OPTIMIZE)
-	mimeset -f src/rakarrack
+		$(EXTRA_LIBS) $(HAIKU_LIBS) $(LD_OPTIMIZE)
+	mimeset -f rakarrack
 
 haiku_stubs.o: haiku_stubs.cpp
 	g++ -c $< -o $@ -I$(PWD)/jack -I. -I./src $(BUILD_FLAGS) -fpermissive
@@ -106,7 +101,7 @@ haiku_stubs.o: haiku_stubs.cpp
 clean:
 	@echo "Performing deep clean (distclean)..."
 	rm -f rakarrack haiku_stubs.o
-	-[ -f Makefile ] && $(MAKE) distclean
+	@if [ -f Makefile ]; then $(MAKE) distclean; fi
 	rm -rf *.hpkg build autom4te.cache config.cache config.log config.status Makefile src/Makefile \
 	       man/Makefile data/Makefile icons/Makefile doc/Makefile \
 	       doc/help/Makefile doc/help/imagenes/Makefile doc/help/css/Makefile extra/Makefile
@@ -127,7 +122,8 @@ NAME = rakarrack
 VERSION = 0.6.1
 
 package: all
-	rm -rf $(PACKAGE_DIR)
+	@[ -n "$(PACKAGE_DIR)" ] || { echo "PACKAGE_DIR is undefined"; exit 1; }
+	rm -rf "./$(PACKAGE_DIR)"
 	mkdir -p $(PACKAGE_DIR)
 	sed -e 's/$$(NAME)/$(NAME)/g' -e 's/$$(VERSION)/$(VERSION)/g' -e 's/$$(ARCH)/$(ARCH)/' -e 's/$$(YEAR)/$(shell date +%Y)/' PackageInfo.tpl > $(PACKAGE_DIR)/.PackageInfo
 	mkdir -p $(PACKAGE_DIR)/apps
@@ -153,6 +149,17 @@ package: all
 	ln -s ../../../../apps/$(NAME) $(PACKAGE_DIR)/data/deskbar/menu/Applications/Rakarrack
 	package create -C $(PACKAGE_DIR) $(NAME)-$(VERSION)-1-$(ARCH).hpkg
 	
+	
+#----------------------------------------------------------
+# Required packages- Informational purposes 
+#----------------------------------------------------------
+REQUIRED_PKGS = fltk_devel fontconfig_devel freetype_devel libxfont2_devel libsndfile_devel libsamplerate_devel libxpm_devel
+         
+deps:
+	@echo "Install these via pkgman:"
+	@echo "pkgman install $(REQUIRED_PKGS)"     	
+
+#----------------------------------------------------------	
 # Help
 #----------------------------------------------------------
 help:
@@ -160,13 +167,18 @@ help:
 	@echo " Building Rakarrack for Haiku 64bit"
 	@echo ""
 	@echo ""
-	@echo " 1. Configure with Defaults: make -f haiku.makefile config"
-	@echo " 2. Configure with custom flags: FRAMES=64 SIMD_FLAGS=\"-O3 -march=native\""
-	@echo "    - Run haiku.makefile clean prior when updating custom flags"
+	@echo " 1. Default Build: make -f haiku.makefile config"
+	@echo ""
+	@echo " 2. Custom Build:"
+	@echo "     make -fhaiku.makefile clean "
+	@echo "     make -f haiku.makefile config FRAMES=64 SIMD_FLAGS=\"-O3 -march=native\""
+	@echo ""
 	@echo " 3. Build: make -f haiku.makefile"
-	@echo " 4. Create Haiku Hpkg: make -f haiku.makefile package"
-	@echo " 5. Clean build folder: haiku.makefile clean"
 	@echo ""
+	@echo " 4. Package: make -f haiku.makefile package"
 	@echo ""
+	@echo " 5. Clean: make -f haiku.makefile clean"
+	@echo ""
+	@echo " 6. List Required Libs: make -f haiku.makefile deps"
 	@echo ""
 	@echo "============================================================================"	

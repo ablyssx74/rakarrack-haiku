@@ -54,10 +54,11 @@ AC_CHECK_PROG([FLTKCONFIG], [fltk-config], [fltk-config])
 if test -z "$FLTKCONFIG"; then
   AC_MSG_ERROR([fltk not installed!])
 fi
-AC_CHECK_PROG([ACONNECT],[aconnect],[aconnect])
-if test -z "$ACONNECT"; then
-  AC_MSG_ERROR([aconnect not installed!])
-fi
+#AC_CHECK_PROG([ACONNECT],[aconnect],[aconnect])
+#if test -z "$ACONNECT"; then
+#  AC_MSG_ERROR([aconnect not installed!])
+#fi
+AC_PATH_PROG(ACONNECT, aconnect, /bin/true)
 
 # Checks gcc version
 
@@ -368,7 +369,7 @@ echo  " High-Performance SIMD  . . . . . . . . . . . . . . . . .: $ac_sse"
 
 echo  
 echo  " Library________________________________________________________"
-echo  " X11 support  . . . . . . . . . . . . . . . . . . . . . .: $ac_X11"
+echo  " X11 support  . . . . . . . . . . . . . . . . . . . . . .: $haiku_rakarrack_msg"
 echo  " Xpm support (libxpm) . . . . . . . . . . . . . . . . . .: $ac_Xpm"
 echo  " Xft support  . . . . . . . . . . . . . . . . . . . . . .: $ac_libXft"
 echo  " Xrender support  . . . . . . . . . . . . . . . . . . . .: $haiku_rakarrack_msg"

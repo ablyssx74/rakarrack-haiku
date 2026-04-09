@@ -5699,18 +5699,24 @@ fi
 if test -z "$FLTKCONFIG"; then
   as_fn_error $? "fltk not installed!" "$LINENO" 5
 fi
+#AC_CHECK_PROG([ACONNECT],[aconnect],[aconnect])
+#if test -z "$ACONNECT"; then
+#  AC_MSG_ERROR([aconnect not installed!])
+#fi
 # Extract the first word of "aconnect", so it can be a program name with args.
 set dummy aconnect; ac_word=$2
 { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for $ac_word" >&5
 printf %s "checking for $ac_word... " >&6; }
-if test ${ac_cv_prog_ACONNECT+y}
+if test ${ac_cv_path_ACONNECT+y}
 then :
   printf %s "(cached) " >&6
 else case e in #(
-  e) if test -n "$ACONNECT"; then
-  ac_cv_prog_ACONNECT="$ACONNECT" # Let the user override the test.
-else
-as_save_IFS=$IFS; IFS=$PATH_SEPARATOR
+  e) case $ACONNECT in
+  [\\/]* | ?:[\\/]*)
+  ac_cv_path_ACONNECT="$ACONNECT" # Let the user override the test with a path.
+  ;;
+  *)
+  as_save_IFS=$IFS; IFS=$PATH_SEPARATOR
 for as_dir in $PATH
 do
   IFS=$as_save_IFS
@@ -5721,7 +5727,7 @@ do
   esac
     for ac_exec_ext in '' $ac_executable_extensions; do
   if as_fn_executable_p "$as_dir$ac_word$ac_exec_ext"; then
-    ac_cv_prog_ACONNECT="aconnect"
+    ac_cv_path_ACONNECT="$as_dir$ac_word$ac_exec_ext"
     printf "%s\n" "$as_me:${as_lineno-$LINENO}: found $as_dir$ac_word$ac_exec_ext" >&5
     break 2
   fi
@@ -5729,10 +5735,12 @@ done
   done
 IFS=$as_save_IFS
 
-fi ;;
+  test -z "$ac_cv_path_ACONNECT" && ac_cv_path_ACONNECT="/bin/true"
+  ;;
+esac ;;
 esac
 fi
-ACONNECT=$ac_cv_prog_ACONNECT
+ACONNECT=$ac_cv_path_ACONNECT
 if test -n "$ACONNECT"; then
   { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $ACONNECT" >&5
 printf "%s\n" "$ACONNECT" >&6; }
@@ -5742,9 +5750,6 @@ printf "%s\n" "no" >&6; }
 fi
 
 
-if test -z "$ACONNECT"; then
-  as_fn_error $? "aconnect not installed!" "$LINENO" 5
-fi
 
 # Checks gcc version
 
@@ -9388,7 +9393,7 @@ echo  " High-Performance SIMD  . . . . . . . . . . . . . . . . .: $ac_sse"
 
 echo
 echo  " Library________________________________________________________"
-echo  " X11 support  . . . . . . . . . . . . . . . . . . . . . .: $ac_X11"
+echo  " X11 support  . . . . . . . . . . . . . . . . . . . . . .: $haiku_rakarrack_msg"
 echo  " Xpm support (libxpm) . . . . . . . . . . . . . . . . . .: $ac_Xpm"
 echo  " Xft support  . . . . . . . . . . . . . . . . . . . . . .: $ac_libXft"
 echo  " Xrender support  . . . . . . . . . . . . . . . . . . . .: $haiku_rakarrack_msg"

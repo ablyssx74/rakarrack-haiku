@@ -5745,6 +5745,7 @@ fi
 if test -z "$ACONNECT"; then
   as_fn_error $? "aconnect not installed!" "$LINENO" 5
 fi
+#AC_PATH_PROG(ACONNECT, aconnect, /bin/true)
 
 # Checks gcc version
 
@@ -9388,7 +9389,7 @@ echo  " High-Performance SIMD  . . . . . . . . . . . . . . . . .: $ac_sse"
 
 echo
 echo  " Library________________________________________________________"
-echo  " X11 support  . . . . . . . . . . . . . . . . . . . . . .: $ac_X11"
+echo  " X11 support  . . . . . . . . . . . . . . . . . . . . . .: $haiku_rakarrack_msg"
 echo  " Xpm support (libxpm) . . . . . . . . . . . . . . . . . .: $ac_Xpm"
 echo  " Xft support  . . . . . . . . . . . . . . . . . . . . . .: $ac_libXft"
 echo  " Xrender support  . . . . . . . . . . . . . . . . . . . .: $haiku_rakarrack_msg"
