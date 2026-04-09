@@ -1,25 +1,12 @@
 /*
+  rakarrack - a guitar efects software
 
-  APhaser.C  - Approximate digital model of an analog JFET phaser.
-  Analog modeling implemented by Ryan Billing aka Transmogrifox.
-  November, 2009
-  
-  Credit to:
-  ///////////////////
-  ZynAddSubFX - a software synthesizer
- 
-  Phaser.C - Phaser effect
-  Copyright (C) 2002-2005 Nasca Octavian Paul
-  Author: Nasca Octavian Paul
+  jack.C  -   jack I/O
+  Copyright (C) 2008-2010 Josep Andreu
+  Author: Josep Andreu
 
-  Modified for rakarrack by Josep Andreu
-  
-  DSP analog modeling theory & practice largely influenced by various CCRMA publications, particularly works by Julius O. Smith.
-  ////////////////////
-  
-  
   This program is free software; you can redistribute it and/or modify
-  it under the terms of version 2 of the GNU General Public License 
+  it under the terms of version 2 of the GNU General Public License
   as published by the Free Software Foundation.
 
   This program is distributed in the hope that it will be useful,
@@ -27,10 +14,14 @@
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License (version 2) for more details.
 
-  You should have received a copy of the GNU General Public License (version 2)
+  You should have received a copy of the GNU General Public License
+(version2)
   along with this program; if not, write to the Free Software Foundation,
   Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
-
+  
+  
+  Updated by Kris Beazley aka ablyss for Haiku OS with the help of AI
+  Copyright 2026
 */
 
 #include <math.h>

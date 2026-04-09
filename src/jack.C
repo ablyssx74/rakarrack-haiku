@@ -18,7 +18,10 @@
 (version2)
   along with this program; if not, write to the Free Software Foundation,
   Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
-
+  
+  
+  Updated by Kris Beazley aka ablyss for Haiku OS with the help of AI
+  Copyright 2026
 */
 
 
@@ -65,7 +68,6 @@ bool gDebugMode = false;
 #include <media/MediaNode.h>
 
 #include <media/BufferGroup.h>
-//#include <new>
 #include <xmmintrin.h>
 
 // Forward Declarations
@@ -88,7 +90,7 @@ static BSoundPlayer *outPlayer = NULL;
 //static BSoundPlayer *inPlayer = NULL;
 extern pthread_mutex_t jmutex;
 extern RKR *JackOUT;
-extern float* current_haiku_buffer;
+//extern float* current_haiku_buffer;
 
 // Persistent handles for shutdown
 media_node   gInputNode;
@@ -452,7 +454,7 @@ jack_client_t *jackclient;
 jack_port_t *outport_left, *outport_right;
 jack_port_t *inputport_left, *inputport_right, *inputport_aux;
 jack_port_t *jack_midi_in, *jack_midi_out;
-void *dataout;
+//void *dataout; // delete ?
 
 int jackprocess (jack_nframes_t nframes, void *arg);
 
@@ -776,13 +778,4 @@ extern "C" void HaikuAudioShutdown() {
     
     printf("Rakarrack: Shutdown complete.\n");
 }
-
-
-
-
-
-
-
-
-
 

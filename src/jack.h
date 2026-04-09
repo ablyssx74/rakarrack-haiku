@@ -1,7 +1,7 @@
 /*
-  rakarrak - a guitar efects software
+  rakarrack - a guitar efects software
 
-  jack.h  -  some jack definitions
+  jack.C  -   jack I/O
   Copyright (C) 2008-2010 Josep Andreu
   Author: Josep Andreu
 
@@ -18,7 +18,10 @@
 (version2)
   along with this program; if not, write to the Free Software Foundation,
   Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
-
+  
+  
+  Updated by Kris Beazley aka ablyss for Haiku OS with the help of AI
+  Copyright 2026
 */
 #ifndef JACK_OUTPUT_H
 #define JACK_OUTPUT_H

@@ -1,9 +1,9 @@
 /*
   rakarrack - a guitar efects software
 
-  main.C  -  Main file of the organ
+  jack.C  -   jack I/O
   Copyright (C) 2008-2010 Josep Andreu
-  Author: Josep Andreu & Douglas McClendon
+  Author: Josep Andreu
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of version 2 of the GNU General Public License
@@ -18,7 +18,10 @@
 (version2)
   along with this program; if not, write to the Free Software Foundation,
   Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
-
+  
+  
+  Updated by Kris Beazley aka ablyss for Haiku OS with the help of AI
+  Copyright 2026
 */
 #include <app/Looper.h>
 #include <app/Application.h>

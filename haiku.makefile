@@ -131,13 +131,13 @@ package: all
 	mkdir -p $(PACKAGE_DIR)/data/deskbar/menu/Applications
 	mkdir -p $(PACKAGE_DIR)/data/$(NAME)/share/doc/$(NAME)
 	mkdir -p $(PACKAGE_DIR)/data/$(NAME)/share/man
-	mkdir -p $(PACKAGE_DIR)/data/$(NAME)/share/pixmaps
+	#mkdir -p $(PACKAGE_DIR)/data/$(NAME)/share/pixmaps
 	mkdir -p $(PACKAGE_DIR)/data/$(NAME)/share/man/man1
 	mkdir -p $(PACKAGE_DIR)/data/$(NAME)/share/$(NAME)
 	xres -o $(NAME) icon.rsrc  
 	mimeset -f $(NAME)
 	cp man/$(NAME).1 $(PACKAGE_DIR)/data/$(NAME)/share/man/man1
-	cp icons/*.png $(PACKAGE_DIR)/data/$(NAME)/share/pixmaps
+	#cp icons/*.png $(PACKAGE_DIR)/data/$(NAME)/share/pixmaps
 	cp data/*.{rvb,dly,png,rkrb,wav} $(PACKAGE_DIR)/data/$(NAME)/share/$(NAME)
 	cp -r doc/help $(PACKAGE_DIR)/data/$(NAME)/share/doc/$(NAME)/html
 	cp -r AUTHORS $(PACKAGE_DIR)/data/$(NAME)/share/doc/$(NAME)/

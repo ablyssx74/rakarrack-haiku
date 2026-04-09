@@ -1,19 +1,12 @@
 /*
-  Rakarrack Audio FX
- 
-  Dual_Flange.h - Super Flanger
-  Copyright (C) 2010 Ryan Billing
-  Authors: 
-  Ryan Billing (a.k.a Transmogrifox)  --  Signal Processing
-  Copyright (C) 2010 Ryan Billing
+  rakarrack - a guitar efects software
 
-  Nasca Octavian Paul -- Remnants of ZynAddSubFX Echo.h structure and utility routines common to ZynSubFX source
-  Copyright (C) 2002-2005 Nasca Octavian Paul
-  
-  Higher intensity flanging accomplished by picking two points out of the delay line to create a wider notch filter.
-    
+  jack.C  -   jack I/O
+  Copyright (C) 2008-2010 Josep Andreu
+  Author: Josep Andreu
+
   This program is free software; you can redistribute it and/or modify
-  it under the terms of version 2 of the GNU General Public License 
+  it under the terms of version 2 of the GNU General Public License
   as published by the Free Software Foundation.
 
   This program is distributed in the hope that it will be useful,
@@ -21,10 +14,14 @@
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License (version 2) for more details.
 
-  You should have received a copy of the GNU General Public License (version 2)
+  You should have received a copy of the GNU General Public License
+(version2)
   along with this program; if not, write to the Free Software Foundation,
   Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
-
+  
+  
+  Updated by Kris Beazley aka ablyss for Haiku OS with the help of AI
+  Copyright 2026
 */
 
 #ifndef DUAL_FLANGE_H
