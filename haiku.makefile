@@ -165,7 +165,7 @@ help:
 	@echo "    - Run haiku.makefile clean prior when updating custom flags"
 	@echo " 3. Build: make -f haiku.makefile"
 	@echo " 4. Create Haiku Hpkg: make -f haiku.makefile package"
-	@echo " 5. Clean build folder:  haiku.makefile clean"
+	@echo " 5. Clean build folder: haiku.makefile clean"
 	@echo ""
 	@echo ""
 	@echo ""
