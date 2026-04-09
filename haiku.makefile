@@ -1,5 +1,27 @@
+#----------------------------------------------------------
 # Optimized Haiku Build Script
 SHELL := /bin/bash
+#----------------------------------------------------------
+
+# Help
+#----------------------------------------------------------
+help:
+	@echo "============================================================================"
+	@echo " Building Rakarrack for Haiku 64bit"
+	@echo ""
+	@echo ""
+	@echo " 1. Configure with Defaults: make -f haiku.makefile config"
+	@echo " 2. Configure with custom flags: FRAMES=64 SIMD_FLAGS=\"-O3 -march=native\""
+	@echo "    - Run haiku.makefile clean prior when updating custom flags"
+	@echo " 3. Build: make -f haiku.makefile"
+	@echo " 4. Create Haiku Hpkg: make -f haiku.makefile package"
+	@echo " 5. Clean build folder:  haiku.makefile clean"
+	@echo ""
+	@echo ""
+	@echo ""
+	@echo "============================================================================"
+	
+#----------------------------------------------------------	
 #----------------------------------------------------------
 # Required packages- Informational purposes 
 #----------------------------------------------------------
