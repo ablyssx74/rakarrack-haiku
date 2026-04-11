@@ -16,11 +16,22 @@ float temp_buffer_R[8192];
 
 pthread_mutex_t jmutex;
 RKR *JackOUT = NULL;
-float* current_haiku_buffer = NULL;
 
-extern float* current_haiku_buffer; 
+
+//float* current_haiku_buffer = NULL;
+//extern float* current_haiku_buffer; 
+
 
 extern "C" {
+	 __attribute__((weak)) float G_FRAME_RATE = 48000.0f; 
+     __attribute__((weak)) uint32 G_BUFFER_SIZE_BYTES = 2048;
+
+	
+	//extern float G_FRAME_RATE;
+    //extern uint32 G_BUFFER_SIZE_BYTES;
+    extern float* current_haiku_buffer; 
+	 __attribute__((weak))  float* current_haiku_buffer = NULL;
+	
 	int snd_seq_event_output_direct(snd_seq_t *seq, snd_seq_event_t *ev) { 
         return 0; 
 	}
@@ -42,11 +53,11 @@ extern "C" {
 		}
 
 	 uint32_t jack_get_sample_rate(jack_client_t) { 
-    	return (uint32_t)DEFAULT_FRAME_RATE; 
+    	return (uint32_t)G_FRAME_RATE; 
 		}
 
 	 jack_nframes_t jack_get_buffer_size(jack_client_t) { 
-    	return (jack_nframes_t)DEFAULT_BUFFER_FRAMES; 
+    	return (jack_nframes_t)G_BUFFER_SIZE_BYTES; 
 		}
 
 	void* jack_port_get_buffer(jack_port_t port, jack_nframes_t nframes) {
@@ -138,3 +149,15 @@ char *strsep(char **stringp, const char *delim) {
         } while (sc != 0);
     }
 }
+
+// Dummy definitions to satisfy sub-utility linking
+// We use the class scope because RKR and Looper are classes
+__attribute__((weak)) void RKR::Update_tempo() {}
+__attribute__((weak)) void RKR::jack_process_midievents(jack_midi_event_t* ev) {}
+__attribute__((weak)) void RKR::Alg(float* l, float* r, float* tl, float* tr, int i) {}
+
+__attribute__((weak)) void Looper::changepar(int a, int b) {}
+
+__attribute__((weak)) int stecla = 0;
+
+

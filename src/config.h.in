@@ -6,12 +6,6 @@
 /* DATADIR */
 #undef DATADIR
 
-/* Default buffer frame count */
-#undef DEFAULT_BUFFER_FRAMES
-
-/* Default audio frame rate */
-#undef DEFAULT_FRAME_RATE
-
 /* Define to 1 if you have the <dirent.h> header file, and it defines 'DIR'.
    */
 #undef HAVE_DIRENT_H

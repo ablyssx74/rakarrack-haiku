@@ -318,35 +318,6 @@ if test -z "$ALTIVEC"; then
     fi
 fi
 
-dnl ===========================================================================
-dnl Custom Argument: Frame Rate
-dnl Usage: ./configure --with-frame-rate=44100.0
-dnl ===========================================================================
-AC_ARG_WITH([frame-rate],
-    [AS_HELP_STRING([--with-frame-rate=RATE], 
-    [Set the default audio frame rate (default: 48000.0)])],
-    [frame_rate="$withval"],
-    [frame_rate="48000.0"])
-
-dnl Define the value in config.h (UNQUOTED lets you pass numbers/formulas)
-AC_DEFINE_UNQUOTED([DEFAULT_FRAME_RATE], [$frame_rate], [Default audio frame rate])
-
-
-dnl ===========================================================================
-dnl Custom Argument: Buffer Frame Count (default: 128)
-dnl Usage: ./configure --with-buffer-frames="128"
-dnl ===========================================================================
-AC_ARG_WITH([buffer-frames],
-    [AS_HELP_STRING([--with-buffer-frames=N], 
-    [Set the default audio buffer frame count (default: 128)])],
-    [buffer_frames="$withval"],
-    [buffer_frames="128"])
-
-
-AC_DEFINE_UNQUOTED([DEFAULT_BUFFER_FRAMES], [$buffer_frames], [Default buffer frame count])
-
-
-
 
 # 3. Final Flag Assembly
 LIBS="`$FLTKCONFIG --use-images --ldflags` $LIBS"
@@ -381,8 +352,7 @@ echo  " JACK Audio Connection Kit library  . . . . . . . . . . .: $haiku_rakarra
 echo  " ALSA MIDI Sequencer support  . . . . . . . . . . . . . .: $haiku_rakarrack_msg"
 echo  " Samplerate conversion (libsamplerate). . . . . . . . . .: $ac_samplerate"
 echo  " General audio file (libsndfile)  . . . . . . . . . . . .: $ac_sndfile"
-echo  " Buffer Frame Count . . . . . . . . . . . . . . . . . . .: $buffer_frames"
-echo  " Frame Rate . . . . . . . . . . . . . . . . . . . . . . .: $frame_rate" 
+
 
 echo  
 echo  " Now you can run 'make -f haiku.makefile' to build the sources."

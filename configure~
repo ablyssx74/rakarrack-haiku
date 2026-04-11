@@ -765,8 +765,6 @@ enable_altivec
 enable_dependency_tracking
 enable_datadir
 enable_docdir
-with_frame_rate
-with_buffer_frames
 '
       ac_precious_vars='build_alias
 host_alias
@@ -1419,13 +1417,6 @@ Optional Features:
                           speeds up one-time build
   --enable-datadir=yes/no use datadir (default=no)
   --enable-docdir=yes/no  use docdir (default=no)
-
-Optional Packages:
-  --with-PACKAGE[=ARG]    use PACKAGE [ARG=yes]
-  --without-PACKAGE       do not use PACKAGE (same as --with-PACKAGE=no)
-  --with-frame-rate=RATE  Set the default audio frame rate (default: 48000.0)
-  --with-buffer-frames=N  Set the default audio buffer frame count (default:
-                          128)
 
 Some influential environment variables:
   CXX         C++ compiler command
@@ -7858,40 +7849,6 @@ if test -z "$ALTIVEC"; then
 fi
 
 
-# Check whether --with-frame-rate was given.
-if test ${with_frame_rate+y}
-then :
-  withval=$with_frame_rate; frame_rate="$withval"
-else case e in #(
-  e) frame_rate="48000.0" ;;
-esac
-fi
-
-
-
-printf "%s\n" "#define DEFAULT_FRAME_RATE $frame_rate" >>confdefs.h
-
-
-
-
-# Check whether --with-buffer-frames was given.
-if test ${with_buffer_frames+y}
-then :
-  withval=$with_buffer_frames; buffer_frames="$withval"
-else case e in #(
-  e) buffer_frames="128" ;;
-esac
-fi
-
-
-
-
-printf "%s\n" "#define DEFAULT_BUFFER_FRAMES $buffer_frames" >>confdefs.h
-
-
-
-
-
 # 3. Final Flag Assembly
 LIBS="`$FLTKCONFIG --use-images --ldflags` $LIBS"
 CXXFLAGS="-Wall $SSE $ALTIVEC -ffast-math -pipe $ADDS -fsigned-char `$FLTKCONFIG --use-images --cxxflags` `pkg-config --cflags sndfile` `pkg-config --cflags jack` $CXXFLAGS"
@@ -9405,8 +9362,7 @@ echo  " JACK Audio Connection Kit library  . . . . . . . . . . .: $haiku_rakarra
 echo  " ALSA MIDI Sequencer support  . . . . . . . . . . . . . .: $haiku_rakarrack_msg"
 echo  " Samplerate conversion (libsamplerate). . . . . . . . . .: $ac_samplerate"
 echo  " General audio file (libsndfile)  . . . . . . . . . . . .: $ac_sndfile"
-echo  " Buffer Frame Count . . . . . . . . . . . . . . . . . . .: $buffer_frames"
-echo  " Frame Rate . . . . . . . . . . . . . . . . . . . . . . .: $frame_rate"
+
 
 echo
 echo  " Now you can run 'make -f haiku.makefile' to build the sources."
