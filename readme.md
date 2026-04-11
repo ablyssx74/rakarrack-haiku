@@ -14,7 +14,7 @@ To clean the build run ``` make -f haiku.makefile clean```
 
 Notes: <br>
 
-Input/Output frequency needs to match else rakarrack app will crash.  <br>
+Both Input/Output frequencies need to match else rakarrack app will crash.  <br>
 48kHz is ideal for Haiku Media setttings for rakarrack engine to sound the best in my experience but you can test others if you want.<br>
 
 
