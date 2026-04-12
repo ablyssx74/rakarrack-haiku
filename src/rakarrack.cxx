@@ -21,6 +21,11 @@ extern "C" char** jack_get_ports(void *, const char *, const char *, unsigned lo
 #define XpmCreatePixmapFromData(a,b,c,d,e,f) (0)
 #endif
 
+// Haiku Save 
+
+//Fl_Choice *RateChoice = NULL;
+//Fl_Choice *FramesChoice = NULL;
+
 
 static Fl_Tiled_Image *back; 
 static Fl_Color leds_color; 
@@ -21429,6 +21434,54 @@ R average.");
         } // Fl_Scroll* scroll
         MIDI_SET->end();
       } // Fl_Group* MIDI_SET
+      
+      
+         { JACK_SET = new Fl_Group(5, 26, 630, 502, "Audio"); // Renamed from "Jack"
+        JACK_SET->box(FL_PLASTIC_DOWN_FRAME);
+        JACK_SET->labelfont(1);
+        JACK_SET->labelcolor(FL_BACKGROUND2_COLOR);
+        JACK_SET->user_data((void*)(1));
+        JACK_SET->align(FL_ALIGN_LEFT);
+        JACK_SET->hide();
+        
+        { Fondo9 = new Fl_Box(5, 26, 630, 502);
+        } // Fl_Box* Fondo9
+
+        // --- Sample Rate Selection ---
+        { RateChoice = new Fl_Choice(10, 60, 200, 25, "Sample Rate (Hz)");
+          RateChoice->labelsize(11);
+          RateChoice->labelcolor(FL_BACKGROUND2_COLOR);
+          RateChoice->align(FL_ALIGN_TOP_LEFT);
+          RateChoice->add("44100|48000|88200|96000|192000");
+          RateChoice->value(4); // Default to 192000
+          RateChoice->textcolor(FL_BLACK);
+        }
+
+        // --- Buffer Size Selection ---
+        { FramesChoice = new Fl_Choice(10, 115, 200, 25, "Buffer Size (Frames)");
+          FramesChoice->labelsize(11);
+          FramesChoice->labelcolor(FL_BACKGROUND2_COLOR);
+          FramesChoice->align(FL_ALIGN_TOP_LEFT);
+          FramesChoice->add("128|256|512|1024|2048");
+          FramesChoice->value(3); // Default to 1024
+          FramesChoice->textcolor(FL_BLACK);
+        }
+
+        // --- Apply Button ---
+        { ApplyAudioBtn = new Fl_Button(10, 165, 120, 30, "Apply Settings");
+          ApplyAudioBtn->labelsize(12);
+          ApplyAudioBtn->callback((Fl_Callback*)cb_ApplyHaikuAudio, this); 
+          ApplyAudioBtn->box(FL_GTK_UP_BOX);
+        }
+
+        JACK_SET->end();
+      } // Fl_Group* JACK_SET   
+      
+      
+      
+      
+      
+      /*
       { JACK_SET = new Fl_Group(5, 26, 630, 502, "Jack");
         JACK_SET->box(FL_PLASTIC_DOWN_FRAME);
         JACK_SET->labelfont(1);
@@ -21472,6 +21525,7 @@ R average.");
         } // Fl_Browser* JackIn
         JACK_SET->end();
       } // Fl_Group* JACK_SET
+      */
       { MISC_SET = new Fl_Group(5, 26, 630, 502, "Misc");
         MISC_SET->box(FL_PLASTIC_DOWN_FRAME);
         MISC_SET->labelfont(1);
@@ -22063,7 +22117,9 @@ void RKRGUI::put_icon(Fl_Window* window) {
 
 
 void RKRGUI::load_stat() {
-  int x,y,w,h,k,b,f,l,a;
+
+	
+int x,y,w,h,k,b,f,l,a;
 
 Fl_Preferences rakarrack (Fl_Preferences::USER, WEBSITE, PACKAGE);
 
@@ -22509,8 +22565,7 @@ rakarrack.set(rkr->PrefNom("Auto Connect Jack In"),rkr->aconnect_JIA);
 
 rakarrack.set(rkr->PrefNom("MIDI Implementation"),rkr->MIDIway);
 rakarrack.set(rkr->PrefNom("MIDI Table"),rkr->midi_table);
-
-
+//Haiku Was Here !
 
 i = BMidiIn->value();
 char *temp;
@@ -22539,7 +22594,7 @@ for(i=0; i<128;i++)
 }
 
 
-
+/*
 for(i=1; i<=JackCo->size();i++)
 { 
  
@@ -22571,7 +22626,7 @@ for(i=1; i<=JackIn->size();i++)
       
  rakarrack.set(rkr->PrefNom("Auto Connect In Num"),k-1); 
     
-
+*/
 
 
 }
@@ -23786,102 +23841,68 @@ visor->show();
 
 void RKRGUI::MiraClientes() {
   int i;
-char temp[128];
-char temp1[128];
-char *masque;
-char *name;
-FILE *fp;
+  char temp[128];
+  char temp1[128];
+  char *masque;
+  char *name;
+  FILE *fp;
 
-BMidiIn->clear();
+  // Keep the MIDI part as it seems separate from the Jack UI browsers
+  BMidiIn->clear();
 
-
-if ((fp = fopen ("/proc/asound/seq/clients", "r")) != NULL)
-{
-    memset (temp, 0, sizeof (temp));
-
-    while (fgets (temp, sizeof temp, fp) != NULL)
-    {
-        if (strstr(temp,"Port") != NULL)
-        {  
-            strcpy(temp1,temp);
-            strtok(temp1,"\"");
-            name=strtok(NULL,"\"");
-            masque=strtok(NULL,")");
-            
-            if ((masque[2]=='R') && (strstr(name,"rakarrack MC OUT")==0)) 
-                BMidiIn->add(name);
-        } 
-    } 
-    fclose(fp); // Moved inside the 'if' block
-}
-   
- //  fclose(fp);
- 
- 
-   
- JackCo->clear();
- 
- const char **ports;
-  
-   //if ((ports = jack_get_ports (rkr->jackclient, NULL, JACK_DEFAULT_AUDIO_TYPE, 
-   //                            JackPortIsInput)) == NULL) {
-   //             fprintf(stderr, "Cannot find any Input port\n");
-  
-  
-   if ((ports = (const char **)jack_get_ports (rkr->jackclient, NULL, JACK_DEFAULT_AUDIO_TYPE, 
-                               JackPortIsInput)) == NULL) {
-                fprintf(stderr, "Cannot find any Input port\n");
-    
-                
-        }
-  
-  else
+  if ((fp = fopen ("/proc/asound/seq/clients", "r")) != NULL)
   {
-  i=0;
-  
-  while (ports[i] != NULL)
-     {
-      if((strstr(ports[i],"rakarrack:in_1")==0) && (strstr(ports[i],"rakarrack:in_2")==0))
-      JackCo->add(ports[i]);
-      i++; 
-     }
-     
-    
-         
-   }  
+      memset (temp, 0, sizeof (temp));
+      while (fgets (temp, sizeof temp, fp) != NULL)
+      {
+          if (strstr(temp,"Port") != NULL)
+          {  
+              strcpy(temp1,temp);
+              strtok(temp1,"\"");
+              name=strtok(NULL,"\"");
+              masque=strtok(NULL,")");
+              
+              if ((masque[2]=='R') && (strstr(name,"rakarrack MC OUT")==0)) 
+                  BMidiIn->add(name);
+          } 
+      } 
+      fclose(fp);
+  }
    
-   free(ports);
-   
-JackIn->clear();
- 
- const char **iports;  
+  /* --- COMMENTED OUT ALL JACK LOGIC TO PREVENT CRASH ON HAIKU ---
   
-   //if ((iports = jack_get_ports (rkr->jackclient, NULL, JACK_DEFAULT_AUDIO_TYPE, 
-   //                            JackPortIsOutput)) == NULL) {
-   if ((iports = (const char **)jack_get_ports (rkr->jackclient, NULL, JACK_DEFAULT_AUDIO_TYPE,
-                               JackPortIsOutput)) == NULL) {
-                fprintf(stderr, "Cannot find any Output port\n");
-    
-                
-        }
-  
-  else
+  const char **ports;
+  if ((ports = (const char **)jack_get_ports (rkr->jackclient, NULL, JACK_DEFAULT_AUDIO_TYPE, 
+                               JackPortIsInput)) != NULL) 
   {
-  i=0;
-  
-  while (iports[i] != NULL)
-     {
-      if((strstr(iports[i],"rakarrack:out_1")==0) && (strstr(iports[i],"rakarrack:out_2")==0))
-      JackIn->add(iports[i]);
-      i++; 
-     }
-     
-    
-         
-   }  
-   
-   free(iports);
+      i=0;
+      while (ports[i] != NULL)
+      {
+          // This line was causing the crash because JackCo no longer exists!
+          // if((strstr(ports[i],"rakarrack:in_1")==0) && (strstr(ports[i],"rakarrack:in_2")==0))
+          // JackCo->add(ports[i]); 
+          i++; 
+      }
+      free(ports);
+  }
+
+  const char **iports;  
+  if ((iports = (const char **)jack_get_ports (rkr->jackclient, NULL, JACK_DEFAULT_AUDIO_TYPE,
+                               JackPortIsOutput)) != NULL) 
+  {
+      i=0;
+      while (iports[i] != NULL)
+      {
+          // This line was also causing a crash because JackIn no longer exists!
+          // if((strstr(iports[i],"rakarrack:out_1")==0) && (strstr(iports[i],"rakarrack:out_2")==0))
+          // JackIn->add(iports[i]);
+          i++; 
+      }
+      free(iports);
+  }
+  ---------------------------------------------------------------- */
 }
+
 
 void RKRGUI::MiraConfig() {
   int i = 1;
@@ -23894,26 +23915,7 @@ i++;
 
 i=1;
 
-while (JackCo->text(i) != NULL)
-{
 
-for (k=0; k < rkr->cuan_jack; k++)
-if (strcmp(JackCo->text(i),rkr->jack_po[k].name)==0 ) JackCo->select(i,1);
-
-i++; 
-}
-
-
-i=1;
-
-while (JackIn->text(i) != NULL)
-{
-
-for (k=0; k < rkr->cuan_ijack; k++)
-if (strcmp(JackIn->text(i),rkr->jack_poi[k].name)==0 ) JackIn->select(i,1);
-
-i++; 
-}
 
 
 
@@ -23996,9 +23998,9 @@ T_TIMEOUT->value(rkr->t_timeout);
 
 Upr_Amo->value(rkr->UpAmo);
 L_SIZE->value(rkr->looper_size);
-D_A_Connect->value(rkr->aconnect_MI);
-D_J_Connect->value(rkr->aconnect_JA);
-D_IJ_Connect->value(rkr->aconnect_JIA);
+//D_A_Connect->value(rkr->aconnect_MI);
+//D_J_Connect->value(rkr->aconnect_JA);
+//D_IJ_Connect->value(rkr->aconnect_JIA);
 
 Midi_In_Counter->value(rkr->MidiCh+1);
 Har_In_Counter->value(rkr->HarCh+1);
@@ -24047,14 +24049,14 @@ switch(rkr->SteQual)
 
 
 
-if (rkr->aconnect_MI) BMidiIn->activate();
-else BMidiIn->deactivate();
+//if (rkr->aconnect_MI) BMidiIn->activate();
+//else BMidiIn->deactivate();
 
-if (rkr->aconnect_JA) JackCo->activate();
-else JackCo->deactivate();
+//if (rkr->aconnect_JA) JackCo->activate();
+//else JackCo->deactivate();
 
-if (rkr->aconnect_JIA) JackIn->activate();
-else JackIn->deactivate();
+//if (rkr->aconnect_JIA) JackIn->activate();
+//else JackIn->deactivate();
 
 Fl_Menu_Item *p;  
 unsigned int SR_value=SAMPLE_RATE;
@@ -27688,3 +27690,34 @@ Put_Loaded();
 ActivarGeneral->value(1);
 ActivarGeneral->do_callback();
 }
+void RKRGUI::cb_ApplyHaikuAudio(Fl_Button* o, void* v) {
+  // Directly cast 'v' to the class instance
+  if (v) ((RKRGUI*)v)->cb_ApplyHaikuAudio_i(o,v);
+}
+
+
+void RKRGUI::cb_ApplyHaikuAudio_i(Fl_Button*, void*) {
+    // 1. Get the values safely
+    int r_idx = RateChoice->value();
+    int f_idx = FramesChoice->value();
+    
+    if (r_idx < 0 || f_idx < 0) return;
+
+    const char* r = RateChoice->text(r_idx);
+    const char* f = FramesChoice->text(f_idx);
+
+    // 2. Open preferences manually just for this save
+    Fl_Preferences rakarrack(Fl_Preferences::USER, WEBSITE, PACKAGE);
+    
+    // 3. Save the keys using the direct strings
+    rakarrack.set("Haiku_SampleRate", r);
+    rakarrack.set("Haiku_BufferSize", f);
+    rakarrack.flush();
+
+    // 4. Save everything else (window position, etc.)
+    save_stat(0); 
+
+    fl_message("Settings Saved:\nRate: %s\nBuffer: %s\n\nPlease restart Rakarrack.", r, f);
+}
+
+

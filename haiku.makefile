@@ -7,11 +7,12 @@ SHELL := /bin/bash
 #----------------------------------------------------------
 # Default values if not specified on the command line
 # E.g., custom build: 
-# make -f haiku.makefile clean && make -f haiku.makefile config SIMD_FLAGS=\"-O3 -march=native\" ; make -f haiku.makefile"
+# make -f haiku.makefile clean && make -f haiku.makefile config FRAMES=64 SIMD_FLAGS="-O3 -march=native && make -f haiku.makefile"
 # To make rakarrack.hpkg
 # haiku.makefile package
 #----------------------------------------------------------
-
+FRAMES ?= 2048
+RATE   ?= 48000
 SIMD_FLAGS ?= -O3 -march=x86-64 -mtune=generic -msse2 # Public Build Default
 	
 #----------------------------------------------------------
@@ -101,11 +102,10 @@ clean:
 	@echo "Performing deep clean (distclean)..."
 	rm -f rakarrack haiku_stubs.o
 	@if [ -f Makefile ]; then $(MAKE) distclean; fi
-	rm -rf *.hpkg build config.cache config.log config.status Makefile src/Makefile \
+	rm -rf *.hpkg build autom4te.cache config.cache config.log config.status Makefile src/Makefile \
 	       man/Makefile data/Makefile icons/Makefile doc/Makefile \
 	       doc/help/Makefile doc/help/imagenes/Makefile doc/help/css/Makefile extra/Makefile
 	autoreconf -vif
-	rm -rf autom4te.cache
 	@echo "Deep clean complete."
 	
 # Small hack since 32bit Haiku refuses to install packages without _gcc2 appendix.
@@ -171,7 +171,7 @@ help:
 	@echo ""
 	@echo " 2. Custom Build:"
 	@echo "     make -fhaiku.makefile clean "
-	@echo "     make -f haiku.makefile config SIMD_FLAGS=\"-O3 -march=native\""
+	@echo "     make -f haiku.makefile config FRAMES=64 SIMD_FLAGS=\"-O3 -march=native\""
 	@echo ""
 	@echo " 3. Build: make -f haiku.makefile"
 	@echo ""

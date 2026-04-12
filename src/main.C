@@ -28,7 +28,6 @@
 
 #include <signal.h>
 #include <unistd.h>
-#include <fcntl.h>
 
 #include <getopt.h>
 #include <sched.h>
@@ -83,7 +82,7 @@ BApplication myApp("application/x-vnd.rakarrack-haiku");
 // Read command Line
 
   fprintf (stderr,
-	   "\n%s %s - Copyright (c) Josep Andreu - Ryan Billing - Douglas McClendon - Arnout Engelen\n\nUpdated by Kris Beazley aka ablyss for Haiku OS with the help of AI Copyright 2026\n",
+	   "\n%s %s - Copyright (c) Josep Andreu - Ryan Billing - Douglas McClendon - Arnout Engelen\n",
 	   PACKAGE, VERSION);
 
   if (argc == 1)
@@ -100,14 +99,9 @@ BApplication myApp("application/x-vnd.rakarrack-haiku");
     {"help", 0, NULL, 'h'},
     {0, 0, 0, 0}
   };
-/*
-    int devNull = open("/dev/null", O_WRONLY);
-    if (devNull >= 0) {
-        dup2(devNull, STDERR_FILENO);
-        close(devNull);
-    }
 
-*/
+
+
   Pexitprogram = 0;
   commandline = 0;
   gui = 1;

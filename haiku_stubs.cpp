@@ -7,6 +7,7 @@
 #include <string.h>
 #include <SupportDefs.h>
 #include <OS.h>
+#include <FL/Fl_Preferences.H>
 
 // Planar buffers for Rakarrack to write into
 float input_buffer_L[8192];
@@ -16,22 +17,11 @@ float temp_buffer_R[8192];
 
 pthread_mutex_t jmutex;
 RKR *JackOUT = NULL;
+float* current_haiku_buffer = NULL;
 
-
-//float* current_haiku_buffer = NULL;
-//extern float* current_haiku_buffer; 
-
+extern float* current_haiku_buffer; 
 
 extern "C" {
-	 __attribute__((weak)) float G_FRAME_RATE = 48000.0f; 
-     __attribute__((weak)) uint32 G_BUFFER_SIZE_BYTES = 2048;
-
-	
-	//extern float G_FRAME_RATE;
-    //extern uint32 G_BUFFER_SIZE_BYTES;
-    extern float* current_haiku_buffer; 
-	 __attribute__((weak))  float* current_haiku_buffer = NULL;
-	
 	int snd_seq_event_output_direct(snd_seq_t *seq, snd_seq_event_t *ev) { 
         return 0; 
 	}
@@ -51,15 +41,50 @@ extern "C" {
    		 // Also return the name as the "handle"
    		 return (jack_port_t*)strdup(name);
 		}
+		
 
+
+    uint32_t jack_get_sample_rate(jack_client_t) { 
+        static uint32_t cached_rate = 0;
+        if (cached_rate == 0) {
+            char val[32];
+            // Convert the macro to a string for the fallback argument
+            char fallback[32];
+            snprintf(fallback, sizeof(fallback), "%d", DEFAULT_FRAME_RATE);
+
+            Fl_Preferences prefs(Fl_Preferences::USER, "rakarrack.sf.net", "rakarrack");
+            prefs.get("Haiku_SampleRate", val, fallback, 32);
+            cached_rate = (uint32_t)atoi(val);
+        }
+        return cached_rate; 
+    }
+
+    jack_nframes_t jack_get_buffer_size(jack_client_t) { 
+        static uint32_t cached_frames = 0;
+        if (cached_frames == 0) {
+            char val[32];
+            // Convert the macro to a string for the fallback argument
+            char fallback[32];
+            snprintf(fallback, sizeof(fallback), "%d", DEFAULT_BUFFER_FRAMES);
+
+            Fl_Preferences prefs(Fl_Preferences::USER, "rakarrack.sf.net", "rakarrack");
+            prefs.get("Haiku_BufferSize", val, fallback, 32);
+            cached_frames = (jack_nframes_t)atoi(val);
+        }
+        return cached_frames; 
+    }
+		
+		
+		
+/*
 	 uint32_t jack_get_sample_rate(jack_client_t) { 
-    	return (uint32_t)G_FRAME_RATE; 
+    	return (uint32_t)DEFAULT_FRAME_RATE; 
 		}
 
 	 jack_nframes_t jack_get_buffer_size(jack_client_t) { 
-    	return (jack_nframes_t)G_BUFFER_SIZE_BYTES; 
+    	return (jack_nframes_t)DEFAULT_BUFFER_FRAMES; 
 		}
-
+*/
 	void* jack_port_get_buffer(jack_port_t port, jack_nframes_t nframes) {
     const char* name = jack_port_name(port);
     // Use the dummy buffers if the engine isn't fully alive yet
@@ -149,15 +174,3 @@ char *strsep(char **stringp, const char *delim) {
         } while (sc != 0);
     }
 }
-
-// Dummy definitions to satisfy sub-utility linking
-// We use the class scope because RKR and Looper are classes
-__attribute__((weak)) void RKR::Update_tempo() {}
-__attribute__((weak)) void RKR::jack_process_midievents(jack_midi_event_t* ev) {}
-__attribute__((weak)) void RKR::Alg(float* l, float* r, float* tl, float* tr, int i) {}
-
-__attribute__((weak)) void Looper::changepar(int a, int b) {}
-
-__attribute__((weak)) int stecla = 0;
-
-

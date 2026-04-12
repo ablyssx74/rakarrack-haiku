@@ -4036,7 +4036,13 @@ public:
   Fl_Group *MISC_SET;
   Fl_Box *Fondo10;
   Fl_Input *Username;
+  Fl_Choice *RateChoice = NULL;
+  Fl_Choice *FramesChoice = NULL;
+  Fl_Button *ApplyAudioBtn = NULL;
 private:
+  void cb_ApplyHaikuAudio_i(Fl_Button*, void*);
+  static void cb_ApplyHaikuAudio(Fl_Button*, void*);
+
   void cb_Username_i(Fl_Input*, void*);
   static void cb_Username(Fl_Input*, void*);
 public:
