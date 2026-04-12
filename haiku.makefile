@@ -171,7 +171,7 @@ help:
 	@echo ""
 	@echo " 2. Custom Build:"
 	@echo "     make -fhaiku.makefile clean "
-	@echo "     make -f haiku.makefile config FRAMES=64 SIMD_FLAGS=\"-O3 -march=native\""
+	@echo "     make -f haiku.makefile config SIMD_FLAGS=\"-O3 -march=native\""
 	@echo ""
 	@echo " 3. Build: make -f haiku.makefile"
 	@echo ""
