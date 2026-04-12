@@ -16,6 +16,6 @@ To clean the build run ``` make -f haiku.makefile clean```
 
 Notes: <br>
 
-Update Input/Output frequency in Haiku Media Preferences to match 48kHz if engine is built to use 48kHz<br><br>
+Update Input/Output frequency in Haiku Media Preferences to match.<br><br>
 
 <img width="400" height="460" alt="screenshot" src="https://github.com/user-attachments/assets/1c5eb8c9-33a9-4d51-bb37-7387207e271f" />
