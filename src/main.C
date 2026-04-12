@@ -123,7 +123,7 @@ BApplication myApp("application/x-vnd.rakarrack-haiku");
 
   while (1)
     {
-      opt = getopt_long (argc, argv, "l:b:p:nxh", opts, &option_index);
+      opt = getopt_long (argc, argv, "l:b:p:nDxh", opts, &option_index);
       char *optarguments = optarg;
 
       if (opt == -1)
@@ -176,7 +176,8 @@ BApplication myApp("application/x-vnd.rakarrack-haiku");
       return (0);
     };
 
-
+        argc -= (optind - 1);
+		argv += (optind - 1);
 
   // Launch GUI
 

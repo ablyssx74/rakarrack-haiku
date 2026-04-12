@@ -21,10 +21,31 @@ extern "C" char** jack_get_ports(void *, const char *, const char *, unsigned lo
 #define XpmCreatePixmapFromData(a,b,c,d,e,f) (0)
 #endif
 
-// Haiku Save 
+// Haiku  
 
-//Fl_Choice *RateChoice = NULL;
-//Fl_Choice *FramesChoice = NULL;
+// Variables to hold the current active settings
+int Haiku_SampleRate = 0;
+int Haiku_BufferSize = 0;
+
+// Persistent buffer for the status label text
+static char audio_status_buf[128]; 
+
+// Local variables for preference loading
+int saved_rate = 0;
+int saved_frames = 0;
+
+#ifndef DEFAULT_FRAME_RATE
+#define DEFAULT_FRAME_RATE 48000
+#endif
+
+#ifndef DEFAULT_BUFFER_FRAMES
+#define DEFAULT_BUFFER_FRAMES 1024
+#endif
+
+// Macro to convert numeric values to strings for rkr_prefs.get() fallbacks
+#define STR_HELPER(x) #x
+#define STR(x) STR_HELPER(x)
+
 
 
 static Fl_Tiled_Image *back; 
@@ -21435,8 +21456,9 @@ R average.");
         MIDI_SET->end();
       } // Fl_Group* MIDI_SET
       
+      	// Haiku Was Here !
       
-         { JACK_SET = new Fl_Group(5, 26, 630, 502, "Audio"); // Renamed from "Jack"
+         { JACK_SET = new Fl_Group(5, 26, 630, 502, "Haiku Audio"); // Renamed from "Jack"
         JACK_SET->box(FL_PLASTIC_DOWN_FRAME);
         JACK_SET->labelfont(1);
         JACK_SET->labelcolor(FL_BACKGROUND2_COLOR);
@@ -21473,7 +21495,31 @@ R average.");
           ApplyAudioBtn->callback((Fl_Callback*)cb_ApplyHaikuAudio, this); 
           ApplyAudioBtn->box(FL_GTK_UP_BOX);
         }
+		{ 
+          AudioStatus = new Fl_Box(10, 205, 300, 20);
+          AudioStatus->labelsize(11);
+          AudioStatus->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
 
+          // Using standard FLTK preferences as a reliable fallback
+          Fl_Preferences prefs(Fl_Preferences::USER, "rakarrack.sf.net", "rakarrack");
+    
+          char s_rate[32], s_frames[32];
+    
+          // Get the values (uses your Makefile defaults if nothing is saved)
+          prefs.get("Haiku_SampleRate", s_rate, STR(DEFAULT_FRAME_RATE), 32);
+          prefs.get("Haiku_BufferSize", s_frames, STR(DEFAULT_BUFFER_FRAMES), 32);
+    
+          Haiku_SampleRate = atoi(s_rate);
+          Haiku_BufferSize = atoi(s_frames);
+
+          if (Haiku_SampleRate > 0 && Haiku_BufferSize > 0) {
+          snprintf(audio_status_buf, sizeof(audio_status_buf), 
+                 "Active: %d Hz / %d Frames", Haiku_SampleRate, Haiku_BufferSize);
+           AudioStatus->label(audio_status_buf);
+          } else {
+          AudioStatus->label("Active: Default (System)");
+         	 }
+          }
         JACK_SET->end();
       } // Fl_Group* JACK_SET   
       
@@ -27714,10 +27760,17 @@ void RKRGUI::cb_ApplyHaikuAudio_i(Fl_Button*, void*) {
     rakarrack.set("Haiku_BufferSize", f);
     rakarrack.flush();
 
-    // 4. Save everything else (window position, etc.)
+    // 4. Update the UI Label in Real-Time
+    // (Assuming AudioStatus is a member of RKRGUI)
+    snprintf(audio_status_buf, sizeof(audio_status_buf), "Active: %s Hz / %s Frames", r, f);
+    AudioStatus->label(audio_status_buf);
+    AudioStatus->redraw(); 
+
+    // 5. Save everything else
     save_stat(0); 
 
     fl_message("Settings Saved:\nRate: %s\nBuffer: %s\n\nPlease restart Rakarrack.", r, f);
 }
+
 
 

@@ -384,14 +384,14 @@ public:
     size_t sampleSize = (type == 0x24) ? sizeof(float) : sizeof(int16);
     size_t frames = size / (2 * sampleSize); // <--- This defines 'frames'
     
-        static int out_log = 0;
+        /* Uncomment if needed  // Needs update - Reading from empty frames.
         if (gDebugMode) {
         static int out_log = 0;
         if (out_log++ % 50 == 0) {
         printf("[Debug-Output] Reading from Engine... Available Frames: %d\n", rbOutputLeft->Available());
     		}
         }
-        
+        */
         if (gDebugMode) {
    		 uint32_t realFrames = size / (format.channel_count * sampleSize);
         static int size_check_count = 0;
@@ -434,12 +434,14 @@ public:
 	float probeSample = 0.0f;
 	if (type == 0x24) probeSample = ((float*)buffer)[0];
 	else probeSample = ((int16*)buffer)[0] / 32767.0f;
+		/*  Uncomment if needed
 	 	if (gDebugMode) {
 			static int out_log_count = 0;
 				if (out_log_count++ % 50 == 0) {
     				printf("[Debug-Out-Check] Sending to Speaker: %.6f\n", probeSample);
 					}
  				}
+ 				*/
     pthread_mutex_unlock(&jmutex);
 }
 

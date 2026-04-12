@@ -4036,6 +4036,7 @@ public:
   Fl_Group *MISC_SET;
   Fl_Box *Fondo10;
   Fl_Input *Username;
+  Fl_Box *AudioStatus;
   Fl_Choice *RateChoice = NULL;
   Fl_Choice *FramesChoice = NULL;
   Fl_Button *ApplyAudioBtn = NULL;

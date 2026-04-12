@@ -9409,7 +9409,8 @@ echo  " Buffer Frame Count ( can be changed later in the ui ). .: $buffer_frames
 echo  " Frame Rate . . . . ( can be changed later in the ui ). .: $frame_rate"
 
 echo
-echo  " Now you can run 'make -f haiku.makefile' to build the sources."
+echo  " Now you can run 'make -f haiku.makefile build' to build the sources."
+echo  " For custom build run 'make -f haiku.makefile help' to see how."
 echo
 echo
 

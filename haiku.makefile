@@ -82,7 +82,7 @@ config:
 build: haiku_stubs.o
 	@echo "=========================================================="
 	@echo " Building Rakarrack for Haiku [$(FRAMES) frames @ $(RATE)Hz]"
-	@echo " SIMD Level: $(shell echo $(SIMD_FLAGS) | grep -o 'march=[^ ]*')"
+	@echo " SIMD Level: $(shell echo $(SIMD_FLAGS))"
 	@echo "=========================================================="
 	touch configure.in aclocal.m4 Makefile.am Makefile.in configure config.status
 	$(MAKE) -j4 \
@@ -171,7 +171,8 @@ help:
 	@echo ""
 	@echo " 2. Custom Build:"
 	@echo "     make -fhaiku.makefile clean "
-	@echo "     make -f haiku.makefile config SIMD_FLAGS=\"-O3 -march=native\""
+	@echo "     make -f haiku.makefile config"
+	@echo "     make -f haiku.makefile build SIMD_FLAGS=\"-O3 -march=native\""
 	@echo ""
 	@echo " 3. Build: make -f haiku.makefile"
 	@echo ""
