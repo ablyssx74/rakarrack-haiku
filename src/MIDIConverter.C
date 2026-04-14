@@ -61,6 +61,9 @@ MIDIConverter::MIDIConverter ()
   schmittInit (32);
   port = NULL; 
   stable_count = 0; 
+  p_trigfact = 0.5f;
+  p_stable_threshold = 2;
+  p_off_count_max = 5;
 };
 
 
@@ -143,7 +146,7 @@ MIDIConverter::displayFrequency (float ffreq)
   }
 
   // Only send Note Off if we've seen "silence" or "invalid pitch" for 10 consecutive cycles
-  if (off_count > 5 && hay)
+  if (off_count > p_off_count_max && hay)
     {
       MIDI_Send_Note_Off (nota_actual);
       hay = 0;
@@ -171,7 +174,7 @@ MIDIConverter::displayFrequency (float ffreq)
 
       // 1. High Threshold for Note Changes (requires 4 consistent frames)
       // 2. Only kill the old note if the new note is truly stable
-      if (stable_count >= 2 && lanota != nota_actual) 
+      if (stable_count >= p_stable_threshold && lanota != nota_actual)
       {
           // We found a new, stable note.
          //printf(">>> STABLE CHANGE: %s%d (%d)\n", notes[note], octave, lanota);
@@ -205,7 +208,7 @@ void
 MIDIConverter::schmittS16LE (int nframes, signed short int *indata)
 {
   int i, j;
-  float trigfact = 0.5f;
+  float trigfact = p_trigfact;
 
 
   for (i = 0; i < nframes; i++)

@@ -88,6 +88,9 @@ public:
   BMidiLocalProducer* fHaikuMidiOut; 
   void MIDI_Send_Note_On (int nota);  
   void MIDI_Send_Note_Off (int nota); 
+  int p_off_count_max;   // To replace the fixed '5'
+  int p_stable_threshold; // To replace the fixed '2'
+  float p_trigfact;       // To replace the fixed '0.5f'
 
 private:
   int stable_count;  

@@ -40,6 +40,8 @@
 #include <FL/Fl_File_Chooser.H>
 #include <FL/Fl_Color_Chooser.H>
 
+
+
 class Analyzer : public Fl_Box {
 public:
   Analyzer(int x,int y, int w, int h, const char *label=0);
@@ -3988,9 +3990,16 @@ private:
   static void cb_BMidiIn(Fl_Browser*, void*);
 public:
   Fl_Counter *Midi_In_Counter;
+  Fl_Counter *Conv_Trig_Counter;
+  Fl_Counter *Conv_Stable_Counter;
+  Fl_Counter *Conv_Off_Counter;
 private:
   void cb_Midi_In_Counter_i(Fl_Counter*, void*);
   static void cb_Midi_In_Counter(Fl_Counter*, void*);
+  static void cb_Conv_Trig_Counter(Fl_Counter*, void*);
+  static void cb_Conv_Stable_Counter(Fl_Counter*, void*);
+  static void cb_Conv_Off_Counter(Fl_Counter*, void*);
+  
 public:
   Fl_Counter *Har_In_Counter;
 private:

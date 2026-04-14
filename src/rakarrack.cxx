@@ -11194,6 +11194,32 @@ void RKRGUI::cb_aux_max(SliderW* o, void* v) {
   ((RKRGUI*)(o->parent()->user_data()))->cb_aux_max_i(o,v);
 }
 
+//Haiku Midi Callback logic
+void RKRGUI::cb_Conv_Trig_Counter(Fl_Counter* o, void* v) {
+  // Cast the 'v' pointer back to our GUI class
+  RKRGUI *gui = (RKRGUI*)v;
+  // Access the engine 'rkr' through the gui instance
+  if (gui && gui->rkr && gui->rkr->efx_MIDIConverter) {
+      gui->rkr->efx_MIDIConverter->p_trigfact = (float)o->value();
+  }
+}
+
+void RKRGUI::cb_Conv_Stable_Counter(Fl_Counter* o, void* v) {
+  RKRGUI *gui = (RKRGUI*)v;
+  if (gui && gui->rkr && gui->rkr->efx_MIDIConverter) {
+      gui->rkr->efx_MIDIConverter->p_stable_threshold = (int)o->value();
+  }
+}
+
+void RKRGUI::cb_Conv_Off_Counter(Fl_Counter* o, void* v) {
+  RKRGUI *gui = (RKRGUI*)v;
+  if (gui && gui->rkr && gui->rkr->efx_MIDIConverter) {
+      gui->rkr->efx_MIDIConverter->p_off_count_max = (int)o->value();
+  }
+}
+
+
+
 Fl_Double_Window* RKRGUI::make_window() {
   { Principal = new Fl_Double_Window(800, 600);
     Principal->box(FL_DOWN_BOX);
@@ -21395,12 +21421,10 @@ R average.");
           Wave_Up_Qua->menu(menu_Upr_Qual);
         }
 
-        AUDIO_SET->end();
-
-        
-        
-        
+        AUDIO_SET->end();      
       } // Fl_Group* AUDIO_SET
+      
+      
 { MIDI_SET = new Fl_Group(5, 26, 630, 502, "MIDI");
   MIDI_SET->box(FL_PLASTIC_DOWN_FRAME);
   MIDI_SET->labelfont(1);
@@ -21417,7 +21441,7 @@ R average.");
     D_A_Connect->callback((Fl_Callback*)cb_D_A_Connect);
     D_A_Connect->align(FL_ALIGN_TOP_LEFT); 
   } 
-  { BMidiIn = new Fl_Browser(10, 110, 200, 120, "Haiku Midi Ports");
+   { BMidiIn = new Fl_Browser(10, 110, 200, 70, "Haiku Midi Ports");
     BMidiIn->type(2);
     BMidiIn->selection_color(FL_FOREGROUND_COLOR);
     BMidiIn->labelsize(11);
@@ -21427,9 +21451,46 @@ R average.");
     BMidiIn->callback((Fl_Callback*)cb_BMidiIn);
     BMidiIn->align(FL_ALIGN_TOP_LEFT);
   }
+ 
+    // --- NEW: MIDI CONVERTER TUNING PARAMETERS ---
+  // Placed in the gap created by shrinking the browser
+  { Conv_Trig_Counter = new Fl_Counter(185, 195, 60, 22, "Trigger Sensitivity");
+    Conv_Trig_Counter->type(1);
+    Conv_Trig_Counter->labelsize(10);
+    Conv_Trig_Counter->labelcolor(FL_BACKGROUND2_COLOR);
+    Conv_Trig_Counter->step(0.05); // Fine steps for float
+    Conv_Trig_Counter->bounds(0.1, 1.0);
+    Conv_Trig_Counter->value(0.5);
+    Conv_Trig_Counter->callback((Fl_Callback*)cb_Conv_Trig_Counter, (void*)this);
+    Conv_Trig_Counter->align(FL_ALIGN_LEFT);
+  }
+
+  { Conv_Stable_Counter = new Fl_Counter(185, 225, 60, 22, "Stability Threshold");
+    Conv_Stable_Counter->type(1);
+    Conv_Stable_Counter->labelsize(10);
+    Conv_Stable_Counter->labelcolor(FL_BACKGROUND2_COLOR);
+    Conv_Stable_Counter->step(1);
+    Conv_Stable_Counter->bounds(1, 10);
+    Conv_Stable_Counter->value(2);
+    Conv_Stable_Counter->callback((Fl_Callback*)cb_Conv_Stable_Counter, (void*)this);
+    Conv_Stable_Counter->align(FL_ALIGN_LEFT);
+  }
+
+  { Conv_Off_Counter = new Fl_Counter(185, 255, 60, 22, "Note-Off Grace");
+    Conv_Off_Counter->type(1);
+    Conv_Off_Counter->labelsize(10);
+    Conv_Off_Counter->labelcolor(FL_BACKGROUND2_COLOR);
+    Conv_Off_Counter->step(1);
+    Conv_Off_Counter->bounds(1, 30);
+    Conv_Off_Counter->value(5);
+    Conv_Off_Counter->callback((Fl_Callback*)cb_Conv_Off_Counter, (void*)this);
+    Conv_Off_Counter->align(FL_ALIGN_LEFT);
+  }
+  
+ 
         // --- MIDI Channel Selection ---
         // Shifted X to 185 to clear the long "Harmonizer" label on the left
-        { Midi_In_Counter = new Fl_Counter(185, 260, 60, 24, "Receive Channel");
+        { Midi_In_Counter = new Fl_Counter(185, 290, 60, 24, "Receive Channel");
           Midi_In_Counter->type(1);
           Midi_In_Counter->color((Fl_Color)25);
           Midi_In_Counter->labelsize(10);
@@ -21444,7 +21505,7 @@ R average.");
         } 
         
         // Shifted X to 185 to match the top counter
-        { Har_In_Counter = new Fl_Counter(185, 295, 60, 24, "Harmonizer Receive Channel");
+        { Har_In_Counter = new Fl_Counter(185, 325, 60, 24, "Harmonizer Receive Channel");
           Har_In_Counter->type(1);
           Har_In_Counter->color((Fl_Color)25);
           Har_In_Counter->labelsize(10);
@@ -21460,13 +21521,13 @@ R average.");
 
 
         // --- MIDI Implementation Group ---
-        // Shifted X to 10 and Y to 345
-        { wMIDI = new Fl_Group(10, 345, 273, 23, "MIDI implementation");
+        { wMIDI = new Fl_Group(10, 365, 273, 25, "MIDI implementation");
           wMIDI->box(FL_PLASTIC_DOWN_FRAME);
           wMIDI->labelsize(10);
           wMIDI->labelcolor(FL_BACKGROUND2_COLOR);
           wMIDI->align(FL_ALIGN_TOP_LEFT);
-          { Mw0 = new Fl_Check_Button(65, 347, 18, 18, "Default");
+          
+          { Mw0 = new Fl_Check_Button(65, 368, 18, 18, "Default"); // Adjusted Y to fit inside 365
             Mw0->type(102);
             Mw0->down_box(FL_DOWN_BOX);
             Mw0->labelsize(11);
@@ -21474,7 +21535,7 @@ R average.");
             Mw0->callback((Fl_Callback*)cb_Mw0);
             Mw0->align(FL_ALIGN_LEFT);
           } 
-          { Mw1 = new Fl_Check_Button(175, 347, 18, 18, "MIDI Learn");
+          { Mw1 = new Fl_Check_Button(175, 368, 18, 18, "MIDI Learn"); // Fixed name and Y
             Mw1->type(102);
             Mw1->down_box(FL_DOWN_BOX);
             Mw1->labelsize(11);
@@ -21486,8 +21547,7 @@ R average.");
         } 
 
         // --- Bottom Checkboxes ---
-        // Shifted to x=185 to align perfectly with the Counters above
-        { AAssign = new Fl_Check_Button(185, 375, 16, 15, "Auto Assign MIDI Learn");
+        { AAssign = new Fl_Check_Button(185, 395, 16, 15, "Auto Assign MIDI Learn");
           AAssign->down_box(FL_DOWN_BOX);
           AAssign->labelsize(10);
           AAssign->labelcolor(FL_BACKGROUND2_COLOR);
@@ -21495,7 +21555,7 @@ R average.");
           AAssign->align(FL_ALIGN_LEFT);
         } 
         
-        { MTable = new Fl_Check_Button(185, 395, 16, 15, "MIDI Program Change Table");
+        { MTable = new Fl_Check_Button(185, 415, 16, 15, "MIDI Program Change Table");
           MTable->down_box(FL_DOWN_BOX);
           MTable->labelsize(10);
           MTable->labelcolor(FL_BACKGROUND2_COLOR);
@@ -21503,9 +21563,10 @@ R average.");
           MTable->align(FL_ALIGN_LEFT);
         } 
 
+
         // --- Scroll Area ---
         // Keeping this at x=10 as it spans most of the window width
-        { scroll = new Fl_Scroll(10, 425, 585, 97);
+         { scroll = new Fl_Scroll(10, 440, 585, 82); // Slightly shortened height
           scroll->type(6);
           scroll->user_data((void*)(5000));
           scroll->end();
@@ -21515,6 +21576,9 @@ R average.");
 
       } // Fl_Group* MIDI_SET
       
+      
+      
+       
       	// Haiku Was Here !
       
          { JACK_SET = new Fl_Group(5, 26, 630, 502, "Hardware Settings"); // Renamed from "Jack"
@@ -22031,6 +22095,10 @@ int num_fonts=0;
 num_fonts = Fl::set_fonts(0);
 rkr=rkr_;
 
+Conv_Trig_Counter = NULL;
+Conv_Stable_Counter = NULL;
+Conv_Off_Counter = NULL;
+
 back = NULL;
 old = NULL;
 make_window();
@@ -22367,6 +22435,28 @@ RC_Opti->do_callback();
 
 rakarrack.get(rkr->PrefNom("Midi Out Channel"),k,1);
 Midi_out_Counter->value(k);
+
+// --- Load MIDI Converter Preferences ---
+float f_val;
+int i_val;
+
+// Trigger Sensitivity
+rakarrack.get(rkr->PrefNom("MIDI Conv TrigFact"), f_val, 0.5f);
+Conv_Trig_Counter->value(f_val);
+if (rkr->efx_MIDIConverter) rkr->efx_MIDIConverter->p_trigfact = f_val;
+
+// Stability Threshold
+rakarrack.get(rkr->PrefNom("MIDI Conv Stability"), i_val, 2);
+Conv_Stable_Counter->value(i_val);
+if (rkr->efx_MIDIConverter) rkr->efx_MIDIConverter->p_stable_threshold = i_val;
+
+// Note-Off Grace
+rakarrack.get(rkr->PrefNom("MIDI Conv OffGrace"), i_val, 5);
+Conv_Off_Counter->value(i_val);
+if (rkr->efx_MIDIConverter) rkr->efx_MIDIConverter->p_off_count_max = i_val;
+
+
+
 Midi_out_Counter->do_callback();
 
 rkr->efx_MIDIConverter->setmidichannel(k);
