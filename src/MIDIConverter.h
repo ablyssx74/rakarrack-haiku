@@ -33,6 +33,8 @@
 #include <stdlib.h>
 #include <jack/midiport.h>
 #include <alsa/asoundlib.h>
+#include <midi2/Midi2Defs.h>
+#include <midi2/MidiProducer.h>
 
 
 struct Midi_Event
@@ -83,14 +85,17 @@ public:
   snd_seq_t *port;
 
 
+  BMidiLocalProducer* fHaikuMidiOut; 
+  void MIDI_Send_Note_On (int nota);  
+  void MIDI_Send_Note_Off (int nota); 
+
 private:
 
   void displayFrequency (float freq);
   void schmittInit (int size);
   void schmittS16LE (int nframes, signed short int *indata);
   void schmittFree ();
-  void MIDI_Send_Note_On (int note);
-  void MIDI_Send_Note_Off (int note);
+
 
   int blockSize;
 

@@ -71,6 +71,8 @@ bool gDebugMode = false;
 #include <media/MediaNode.h>
 
 #include <media/BufferGroup.h>
+#include <MidiProducer.h>
+#include <MidiConsumer.h>
 #include <xmmintrin.h>
 
 // Forward Declarations
@@ -93,6 +95,12 @@ static BSoundPlayer *outPlayer = NULL;
 //static BSoundPlayer *inPlayer = NULL;
 extern pthread_mutex_t jmutex;
 extern RKR *JackOUT;
+extern "C" RKR *rk;
+
+
+
+
+
 //extern float* current_haiku_buffer;
 
 // Persistent handles for shutdown
@@ -784,6 +792,15 @@ extern "C" void HaikuAudioShutdown() {
             }
         }
     }
+    
+    printf("Rakarrack: Cleaning up MIDI resources...\n");
+
+
+// 1. MIDI DISCONNECT
+    if (rk) {
+        rk->MidiShutdown();
+    }
+
 
     // 2. STOP AND RELEASE
     if (outPlayer) {
@@ -792,7 +809,7 @@ extern "C" void HaikuAudioShutdown() {
         delete outPlayer;
         outPlayer = NULL;
     }
-
+	
     if (inNode) {
         printf("Rakarrack: Stopping and Releasing inNode...\n");
         roster->StopNode(inNode->Node(), 0, true);

@@ -84,8 +84,11 @@ Recognize::Recognize (float *efxoutl_, float *efxoutr_, float trig)
 }
 
 Recognize::~Recognize ()
-
 {
+  schmittFree();
+  delete Sus;
+  delete lpfl; delete lpfr;
+  delete hpfl; delete hpfr;
 }
 
 

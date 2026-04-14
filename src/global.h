@@ -25,6 +25,10 @@
 */
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+#include <midi2/MidiProducer.h>
+#include <midi2/MidiConsumer.h>
+
+typedef unsigned char uchar;
 
 
 #ifndef DXEMU_H
@@ -184,18 +188,28 @@ extern float freqs[12];
 extern float lfreqs[12];
 extern float aFreq;
 
+// Haiku was here!
+class BMidiProducer;
+class BMidiLocalConsumer;
 
 class RKR
 {
-
-
 
 public:
 
   RKR ();
   ~RKR ();
-
- // void Alg (float *inl, float *inr,float *origl, float *origr ,void *);
+  
+   // --- Haiku MIDI Members ---
+  friend class RkrHaikuMidiIn;
+  BMidiProducer* fMidiProd;          
+  BMidiLocalConsumer* fMidiInPort;    
+  void Conecta();
+  void conectaaconnect();
+  void disconectaaconnect();  
+  void SendHaikuMidi(uchar status, uchar data1, uchar data2);  
+  int MidiCh;
+  void MidiShutdown();
   void Alg (float *inl, float *inr, float *origl, float *origr, int nframes);
   
   void Control_Gain (float *origl, float *origr);
@@ -247,9 +261,7 @@ public:
   int ret_Tempo(int value);
   int ret_LPF(int value);
   int ret_HPF(int value);
-  void Conecta ();
-  void disconectaaconnect ();
-  void conectaaconnect ();
+
   int BigEndian();
   void fix_endianess();
   void copy_IO();
@@ -438,7 +450,6 @@ public:
   int new_order[16];
   int availables[60];
   int active[12];
-  int MidiCh;
   int HarCh;
   int init_state;
   int actuvol;
@@ -704,9 +715,8 @@ public:
     char name[128];
   } jack_po[16],jack_poi[16];
 
-
-
-
+private:
+    BMidiLocalProducer* fMidiOutPort;
 };
 
 

@@ -33,6 +33,9 @@
 #include <unistd.h>
 #include <FL/Fl_Preferences.H>
 #include "global.h"
+#include <MidiProducer.h>
+#include <MidiConsumer.h>
+
 
 #define MAX_RKR_PERIOD 8192
 
@@ -68,7 +71,9 @@ XWMHints *hints;
 
 RKR::RKR ()
 {
-
+  fMidiOutPort = NULL;
+  fMidiProd = NULL;
+  fMidiInPort = NULL;
   char temp[128];
   ML_filter=0;
   error_num = 0;
@@ -810,7 +815,17 @@ memset(m_ticks, 0, sizeof(float) * MAX_RKR_PERIOD);
 
 RKR::~RKR ()
 {
+    if (fMidiProd) {
+        fMidiProd->Release();
+        fMidiProd = NULL;
+    }
+    if (fMidiInPort) {
+        fMidiInPort->Unregister();
+        fMidiInPort->Release();
+        fMidiInPort = NULL;
+    }
 };
+;
 
 
 

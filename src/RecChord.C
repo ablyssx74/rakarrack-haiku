@@ -26,6 +26,10 @@
 
 
 #include "RecChord.h"
+#include "global.h"
+
+extern RKR *rk;    
+extern int MidiCh;  
 
 
 RecChord::RecChord ()
@@ -297,7 +301,7 @@ RecChord::~RecChord()
 {
 }
 
-
+/*
 void
 RecChord::cleanup ()
 {
@@ -312,6 +316,42 @@ RecChord::cleanup ()
 
   cc = 1;
 
+}
+*/
+void
+RecChord::cleanup ()
+{
+	
+    //fprintf(stderr, "GUITAR CLEANUP: Sending Note Offs...\n");
+    for (int i = 0; i < POLY; i++) {
+        if (note_active[i] && rnote[i] > 0) {
+            fprintf(stderr, "CLEANUP: Note Off for %d\n", rnote[i]);
+            rk->SendHaikuMidi(0x80 | rk->MidiCh, rnote[i], 0);
+        }
+    }	
+	
+  int i;
+
+  // 1. Send Note Off to Haiku for every note that was active
+  for (i = 0; i < POLY; i++)
+    {
+      if (note_active[i] && rnote[i] > 0) {
+          // Send Note Off (0x80) for the specific note stored in rnote
+          rk->SendHaikuMidi(0x80 | rk->MidiCh, rnote[i], 0);
+
+      }
+    }
+
+  // 2. Now clear the internal Rakarrack state
+  memset (NombreAcorde, 0, sizeof (NombreAcorde));
+  for (i = 0; i < POLY; i++)
+    {
+      note_active[i] = 0;
+      rnote[i] = 0;
+      gate[i] = 0;
+    }
+
+  cc = 1;
 }
 
 void
@@ -720,6 +760,10 @@ RecChord::Vamos (int voz, int interval)
   int nota;
   int harmo;
   int typo;
+  
+  
+  
+  
 
   nota = reconota % 12;
 
@@ -731,6 +775,21 @@ RecChord::Vamos (int voz, int interval)
   harmo = (12 + nota + interval) % 12;
   if (harmo > 12)
     harmo %= 12;
+    
+    
+  // 1. Calculate the actual note to send to Haiku
+  // 'fundi' is the root note (0-11), we add the chord interval 
+  // and usually a base octave (like 48 or 60)
+  int midi_note = (fundi + interval) + 48; 
+
+  // 2. Broadcast to Haiku MidiSynth
+  // Assuming 'rk' is your global RKR pointer
+      fprintf(stderr, "GUITAR TRIGGER: Voice %d, Note %d (Fund: %d, Int: %d)\n", voz, midi_note, fundi, interval);
+  if (rk) {
+      rk->SendHaikuMidi(0x90 | rk->MidiCh, midi_note, 100);
+
+  }    
+    
 
 
 

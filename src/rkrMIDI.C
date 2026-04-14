@@ -27,244 +27,50 @@
 
 #include "global.h"
 
+// Haiku Headers
+#include <app/Looper.h>
+#include <app/Application.h>
+#include <Archivable.h>
+
+
+// MidiKit headers
+#include <MidiRoster.h>
+#include <MidiProducer.h>
+#include <MidiConsumer.h>
+#include <string.h> 
+
+#include "rakarrack.h" 
+extern RKRGUI *rakgui; 
+
 
 void
 RKR::InitMIDI ()
 {
 
-  // Open Alsa Seq
-
-  int alsaport_in;
-
-  int err = snd_seq_open (&midi_in, "default", SND_SEQ_OPEN_INPUT, 0);
-  if (err < 0)
-    printf ("Cannot activate ALSA seq client\n");
-  snd_seq_set_client_name (midi_in, "rakarrack");
-  snd_config_update_free_global ();
-
-
-
- char portname[50];
-
-  // Create Alsa Seq Client
-
-  sprintf (portname, "rakarrack IN");
-  alsaport_in = snd_seq_create_simple_port (midi_in, portname,
-					    SND_SEQ_PORT_CAP_WRITE |
-					    SND_SEQ_PORT_CAP_SUBS_WRITE,
-					    SND_SEQ_PORT_TYPE_SYNTH);
-
-
-}
-
-
-
-void
-RKR::miramidi ()
-{
-
-  if (snd_seq_event_input_pending (midi_in, 1))
-    {
-      do
-	{
-	  midievents ();
-
-	}
-      while (snd_seq_event_input_pending (midi_in, 0));
-    }
+    // Left empty for Haiku; initialization now happens in Conecta()
 
 };
-
-
-
-
-
-
-
 
 void
 RKR::midievents()
 {
 
-  int i;
-  snd_seq_event_t *midievent;
-  midievent = NULL;
-  snd_seq_event_input (midi_in, &midievent);
-  if (midievent == NULL)
-    return;
-  if (midievent->type == 42)
-    return;
-
-  
-   if((Tap_Bypass) && (Tap_Selection == 3) && (midievent->type == SND_SEQ_EVENT_CLOCK))
-   {
-    mtc_counter++;
-    if (mtc_counter >= 24)
-    {
-      Tap_TempoSet=TapTempo();
-      mtc_counter= 0;
-    }
-
-   } 
-
-   if((Looper_Bypass) && (Tap_Selection==3))
-     {
-       if (midievent->type == SND_SEQ_EVENT_START)
-          {
-           efx_Looper->changepar(1,1);
-           stecla=5;
-          }
-            
-       if (midievent->type == SND_SEQ_EVENT_STOP)
-          {
-           efx_Looper->changepar(2,1);
-           stecla=5;
-          }
-            
-     }
-
-  if ((midievent->type == SND_SEQ_EVENT_NOTEON)
-      || (midievent->type == SND_SEQ_EVENT_NOTEOFF))
-    {
-      int cmdnote = midievent->data.note.note;
-      int cmdvelo = midievent->data.note.velocity;
-
-      if((Tap_Bypass) && (Tap_Selection == 1) && (midievent->type == SND_SEQ_EVENT_NOTEON) && (cmdvelo != 0))
-      Tap_TempoSet=TapTempo();                  
-	
-
-      if (midievent->data.note.channel == HarCh)
-	{
-	  for (i = 0; i < POLY; i++)
-	    {
-	      if ((midievent->type == SND_SEQ_EVENT_NOTEON) && (cmdvelo != 0))
-		{
-          	  if (note_active[i] == 0)
-		    {
-		      note_active[i] = 1;
-		      rnote[i] = cmdnote;
-		      gate[i] = 1;
-		      RC->MiraChord ();
-		      break;
-		    }
-
-		}
-
-
-	      if ((midievent->type == SND_SEQ_EVENT_NOTEON) && (cmdvelo == 0))
-		{
-
-		  if ((note_active[i]) && (rnote[i] == cmdnote))
-		    {
-		      note_active[i] = 0;
-		      gate[i] = 0;
-		      break;
-		    }
-
-		}
-
-
-	      if (midievent->type == SND_SEQ_EVENT_NOTEOFF)
-		{
-
-		  if ((note_active[i]) && (rnote[i] == cmdnote))
-		    {
-		      note_active[i] = 0;
-		      gate[i] = 0;
-		      break;
-		    }
-
-		}
-	    }
-
-
-
-	}
-
-
-    }
-
-
-
-
-
-  if (midievent->type == SND_SEQ_EVENT_PGMCHANGE)
-    {
-
-      if (midievent->data.control.channel == MidiCh)
-	{
-
-       if(!midi_table)
-        {
-	  if ((midievent->data.control.value > 0)
-	      && (midievent->data.control.value < 61))
-	    preset = midievent->data.control.value;
-
-          if (midievent->data.control.value == 81)
-          if (Selected_Preset >1) preset = Selected_Preset-1;
-        
-          if (midievent->data.control.value == 82)
-          if (Selected_Preset<60) preset = Selected_Preset+1;
-         }  	   
-        else 
-          preset = midievent->data.control.value;
-
-	}
-    }
-
-
-
-  if (midievent->type == SND_SEQ_EVENT_CONTROLLER)
-    {
-      if (midievent->data.control.channel == MidiCh)
-	{
-
-           if(RControl)
-	    {
-	      ControlGet = (int)midievent->data.control.param;
-	      return; 
-	    } 
-	
-          if(MIDIway)
-           {
-             for(i=0; i<20;i++)
-               {
-                 if (XUserMIDI[(int)midievent->data.control.param][i])
- 	         process_midi_controller_events(XUserMIDI[(int)midievent->data.control.param][i],
-					 (int)midievent->data.control.value);
-                 else break;
-               } 
-           }
-           else 
-	  process_midi_controller_events((int)midievent->data.control.param,
-					 (int)midievent->data.control.value);
-
-
-	}
-
-    }
-
-
-
+    // Left empty for Haiku; initialization now happens in Conecta()
 };
 
 
 void
 RKR::ActOnOff()
 {
-
 if(OnOffC<63) OnOffC++;
-
 } 
 
 void
 RKR::ActiveUn(int value)
 {
-
   int numef;
   int inoff=0;
   int miraque=0;
-
 
 if(value < 20)
 {
@@ -629,246 +435,288 @@ return(1);
 
 }
 
+// --- THE INPUT HANDLER ---
+class RkrHaikuMidiIn : public BMidiLocalConsumer {
+public:
+    RkrHaikuMidiIn(const char* name, RKR* processor) 
+        : BMidiLocalConsumer(name), fProcessor(processor) {}
+
+    void NoteOn(uchar channel, uchar note, uchar velocity, bigtime_t time) {
+        uchar data[3] = { (uchar)(0x90 | channel), note, velocity };
+        jack_midi_event_t event;
+        event.buffer = (jack_midi_data_t*)data;
+        event.size = 3;
+        event.time = time;
+        fProcessor->jack_process_midievents(&event);
+
+    if (fProcessor->fMidiOutPort) {
+        if (velocity > 0) {
+            fProcessor->fMidiOutPort->SprayNoteOn(channel, note, velocity, time);
+        } else {
+            fProcessor->fMidiOutPort->SprayNoteOff(channel, note, 0, time);
+        }
+      }
+    }
+
+    void NoteOff(uchar channel, uchar note, uchar velocity, bigtime_t time) {
+        uchar data[3] = { (uchar)(0x80 | channel), note, velocity };
+        jack_midi_event_t event;
+        event.buffer = (jack_midi_data_t*)data;
+        event.size = 3;
+        event.time = time;
+        fProcessor->jack_process_midievents(&event);
+
+        if (fProcessor->fMidiOutPort) {
+            fProcessor->fMidiOutPort->SprayNoteOff(channel, note, velocity, time);
+        }
+    }
+
+    void ControlChange(uchar channel, uchar control, uchar value, bigtime_t time) {
+        uchar data[3] = { (uchar)(0xB0 | channel), control, value };
+        jack_midi_event_t event;
+        event.buffer = (jack_midi_data_t*)data;
+        event.size = 3;
+        event.time = time;
+        fProcessor->jack_process_midievents(&event);
+
+        if (fProcessor->fMidiOutPort) {
+            fProcessor->fMidiOutPort->SprayControlChange(channel, control, value, time);
+        }
+    }
+
+    void DataReceived(const uchar* data, size_t length, bool atomic, bigtime_t time) {
+        if (!fProcessor || length == 0) return;
+        jack_midi_event_t event;
+        event.buffer = (jack_midi_data_t*)data;
+        event.size = length;
+        event.time = time;
+        fProcessor->jack_process_midievents(&event);
+        // Note: Raw system data usually isn't sprayed manually here 
+        // unless you specifically need MIDI Clock/SysEx pass-through.
+    }
+
+private:
+    RKR* fProcessor;
+};
 
 
-void
-RKR::Conecta ()
-{
+void RKR::Conecta() {
+    if (IsCoIn) disconectaaconnect();
 
-  FILE *fp;
-
-  int client = 0;
-  int puerto = 0;
-  char temp[128];
-  char temp1[128];
-  char temp2[128];
-  char *nume;
-
-  if (IsCoIn)
-    disconectaaconnect ();
+    if (fMidiInPort == NULL) {
+        fMidiInPort = new RkrHaikuMidiIn("rakarrack IN", this);
+        fMidiInPort->Register();
+    }
+    if (fMidiOutPort == NULL) {
+        fMidiOutPort = new BMidiLocalProducer("rakarrack OUT");
+        fMidiOutPort->Register();
+    }
 
 
-  if ((fp = fopen ("/proc/asound/seq/clients", "r")) != NULL)
-    {
-      memset (temp, 0, sizeof (temp));
+if (efx_MIDIConverter) {
+    efx_MIDIConverter->fHaikuMidiOut = fMidiOutPort;
+    printf("[Rakarrack] MIDI port linked to efx_MIDIConverter: %p\n", efx_MIDIConverter->fHaikuMidiOut);
+} else {
+    printf("[Rakarrack] ERROR: efx_MIDIConverter is NULL!\n");
+}
 
-      while (fgets (temp, sizeof temp, fp) != NULL)
-	{
 
-	  if (strstr (temp, "Client") != NULL)
 
-	    {
+    BMidiRoster* roster = BMidiRoster::MidiRoster();
+    if (!roster) return;
 
-	      strcpy (temp1, temp);
-	      strtok (temp1, " ");
-	      nume = strtok (NULL, "\"");
-	      sscanf (nume, "%d", &client);
+    // Clear the UI browser list using the rakgui pointer
+    if (rakgui && rakgui->BMidiIn) {
+        rakgui->BMidiIn->clear();
+    }
 
-	    }
+    int32 id = 0;
+    BMidiProducer* prod = NULL;
 
-	  if (strstr (temp, "Port") != NULL)
-	    {
-	      strcpy (temp2, temp);
-	      strtok (temp2, " ");
-	      nume = strtok (NULL, "  ");
-	      sscanf (nume, "%d", &puerto);
-	      if (strstr (temp, "rakarrack IN") != 0)
-		{
-		  Cyoin = client;
-		  Pyoin = puerto;
+    // We use a cleaner loop to ensure Release() is always reachable
+    while ((prod = roster->NextProducer(&id)) != NULL) {
+        
+        // 1. Update UI
+        if (rakgui && rakgui->BMidiIn) {
+            rakgui->BMidiIn->add(prod->Name());
+        }
+
+        // 2. Search for target hardware
+        // We only take the FIRST one that matches and skip our own 'OUT' port
+        if (fMidiProd == NULL && MID != NULL && 
+            strstr(prod->Name(), MID) != NULL &&
+            strcmp(prod->Name(), "rakarrack OUT") != 0) 
+        {
+            fMidiProd = prod; 
+            // We DO NOT release here because fMidiProd now 'owns' it
+            printf("[Rakarrack] MIDI: Found and assigned: %s\n", fMidiProd->Name());
+        } 
+        else 
+        {
+            // 3. If it's not the one we keep, RELEASE IMMEDIATELY
+            prod->Release();
+        }
+    }
+    	/*
+		BMidiConsumer* consumer = NULL;
+		int32 cId = 0;
+
+		while ((consumer = roster->NextConsumer(&cId)) != NULL) {
+    	// Look for the synth by name
+    	if (strstr(consumer->Name(), "MidiSynth") != NULL) {
+        // Connect "rakarrack OUT" (Producer) -> "MidiSynth" (Consumer)
+        fMidiOutPort->Connect(consumer);
+        printf("Rakarrack MIDI: Auto-connected 'rakarrack OUT' to '%s'\n", consumer->Name());
+    	}
+    
+    	consumer->Release();
 		}
-	      if (strstr (temp, MID) != 0)
-		{
-		  Ccin = client;
-		  Pcin = puerto;
-		}
+		*/
 
-	    }
-	}
+    // 4. Finalize
+    conectaaconnect();
+}
+
+
+
+void RKR::conectaaconnect() {
+    if (fMidiProd != NULL && fMidiInPort != NULL) {
+        fMidiProd->Connect(fMidiInPort);
+        IsCoIn = 1; 
     }
+}
 
-  fclose (fp);
-  conectaaconnect ();
-};
-
-
-
-
-void
-RKR::conectaaconnect ()
-{
-  char tempi[128];
-
-  if (MID != NULL)
-    {
-      memset (tempi, 0, sizeof (tempi));
-      sprintf (tempi, "aconnect %d:%d  %d:%d", Ccin, Pcin, Cyoin, Pyoin);
-      system (tempi);
-      IsCoIn = 1;
+void RKR::disconectaaconnect() {
+    if (fMidiProd != NULL && fMidiInPort != NULL) {
+        fMidiProd->Disconnect(fMidiInPort);
+        IsCoIn = 0;
     }
+}
 
-};
 
 
-void
-RKR::disconectaaconnect ()
-{
-  char tempi[128];
-
-  if (MID != NULL)
-    {
-      memset (tempi, 0, sizeof (tempi));
-      sprintf (tempi, "aconnect -d %d:%d  %d:%d", Ccin, Pcin, Cyoin, Pyoin);
-      system (tempi);
-      IsCoIn = 0;
+// Global broadcast function for the rest of your Rakarrack engine
+void RKR::SendHaikuMidi(uchar status, uchar data1, uchar data2) {
+    if (fMidiOutPort) {
+        // DEBUG: See what is being sent out to Haiku
+        fprintf(stderr, "HAIKU MIDI OUT: Status: 0x%02X Data1: %d Data2: %d\n", status, data1, data2);
+        
+        uchar message[3] = { status, data1, data2 };
+        fMidiOutPort->SprayData(message, 3, true); 
+    } else {
+        // DEBUG: Warning if the port isn't initialized
+        fprintf(stderr, "HAIKU MIDI ERROR: fMidiOutPort is NULL!\n");
     }
+}
 
-
-};
-
+void RKR::MidiShutdown() {
+    if (fMidiProd) {
+        if (fMidiInPort) fMidiProd->Disconnect(fMidiInPort);
+        fMidiProd->Release();
+        fMidiProd = nullptr;
+    }
+    if (fMidiInPort) {
+        fMidiInPort->Unregister();
+        fMidiInPort->Release();
+        fMidiInPort = nullptr;
+    }
+    if (fMidiOutPort) {
+        fMidiOutPort->Unregister();
+        fMidiOutPort->Release();
+        fMidiOutPort = nullptr;
+    }
+}
 
 
 void
 RKR::jack_process_midievents (jack_midi_event_t *midievent)
 {
-
   int i;
-  int type = midievent->buffer[0]>>4;
-
+  // This extracts the MIDI message type (8=NoteOff, 9=NoteOn, 11=CC, 12=PC)
+  int type = midievent->buffer[0] >> 4;
   
- if((Tap_Bypass) && (Tap_Selection == 3) && (midievent->buffer[0] == 0xf8))
-   {
+  //Haiku was here!
+  SendHaikuMidi(midievent->buffer[0], midievent->buffer[1], midievent->buffer[2]);
+
+  // 1. MIDI Clock / Tap Tempo
+  if((Tap_Bypass) && (Tap_Selection == 3) && (midievent->buffer[0] == 0xf8))
+  {
     mtc_counter++;
-    if (mtc_counter >= 24)
-    {
-      Tap_TempoSet=TapTempo();
-      mtc_counter= 0;
+    if (mtc_counter >= 24) {
+      Tap_TempoSet = TapTempo();
+      mtc_counter = 0;
     }
+  } 
 
-   } 
-
-
-
+  // 2. Note On / Off (MiraChord)
   if ((type == 8) || (type == 9))
-    {
-      int cmdnote = midievent->buffer[1];
-      int cmdvelo = midievent->buffer[2];
-      int cmdchan = midievent->buffer[0]&15;
+  {
+    int cmdnote = midievent->buffer[1];
+    int cmdvelo = midievent->buffer[2];
+    int cmdchan = midievent->buffer[0] & 15;     
+    
+    if((Tap_Bypass) && (Tap_Selection == 1) && (type == 9) && (cmdvelo != 0)) 
+      Tap_TempoSet = TapTempo();
       
-      if((Tap_Bypass) && (Tap_Selection==1) && (type==9) && (cmdvelo != 0)) Tap_TempoSet = TapTempo();
-
-      
-      if (cmdchan == HarCh)
-	{
-	  for (i = 0; i < POLY; i++)
-	    {
-	      if ((type==9) && (cmdvelo != 0))
-		{
-		  if (note_active[i] == 0)
-		    {
-		      note_active[i] = 1;
-		      rnote[i] = cmdnote;
-		      gate[i] = 1;
-		      RC->MiraChord ();
-		      break;
-		    }
-
-		}
-
-
-	      if ((type==9) && (cmdvelo == 0))
-		{
-
-		  if ((note_active[i]) && (rnote[i] == cmdnote))
-		    {
-		      note_active[i] = 0;
-		      gate[i] = 0;
-		      break;
-		    }
-
-		}
-
-	      if (type==8)
-		{
-
-		  if ((note_active[i]) && (rnote[i] == cmdnote))
-		    {
-		      note_active[i] = 0;
-		      gate[i] = 0;
-		      break;
-		    }
-
-		}
-	    }
-
-
-
-	}
-
-
-    }
-
-
-
-
-
-  if (type == 12)
-    {
-      int cmdvalue= midievent->buffer[1];
-      int cmdchan = midievent->buffer[0]&15;
-      
-      if (cmdchan == MidiCh)
-	{
-         if(!midi_table)
-          {
-	  if ((cmdvalue > 0)
-	      && (cmdvalue < 61))
-	    preset = cmdvalue;
-
-          if (cmdvalue==81) if (Selected_Preset>1) preset = Selected_Preset-1;
-          if (cmdvalue==82) if (Selected_Preset<60) preset = Selected_Preset+1;
+    if (cmdchan == HarCh) {
+      for (i = 0; i < POLY; i++) {
+        if ((type == 9) && (cmdvelo != 0)) {
+          if (note_active[i] == 0) {
+            note_active[i] = 1;
+            rnote[i] = cmdnote;
+            gate[i] = 1;
+            RC->MiraChord();
+            break;
           }
-          else
-            preset = cmdvalue;
-
-	}
-
-
+        } else if (((type == 9) && (cmdvelo == 0)) || (type == 8)) {
+          if ((note_active[i]) && (rnote[i] == cmdnote)) {
+            note_active[i] = 0;
+            gate[i] = 0;
+            break;
+          }
+        }
+      }
     }
+  }
 
-
-
-  if (type == 11)
-    {
-      int cmdcontrol = midievent->buffer[1];
-      int cmdvalue= midievent->buffer[2];
-      int cmdchan = midievent->buffer[0]&15;
-    
-    
-      if (cmdchan == MidiCh)
-	{
-	  if(RControl)
-	    {
-	      ControlGet = cmdcontrol;
-	      return; 
-	    } 
-	
-	
-          if(MIDIway)
-           {
-             for(i=0; i<20;i++)
-               {
-                 if (XUserMIDI[cmdcontrol][i])
- 	         process_midi_controller_events(XUserMIDI[cmdcontrol][i],cmdvalue);
-                 else break;
-               } 
-           }
-           else 
-           process_midi_controller_events(cmdcontrol, cmdvalue);
-	}
+  // 3. Program Change (Presets)
+  if (type == 12) {
+    int cmdvalue = midievent->buffer[1];
+    int cmdchan = midievent->buffer[0] & 15;
+    if (cmdchan == MidiCh) {
+      if(!midi_table) {
+        if (cmdvalue > 0 && cmdvalue < 61) preset = cmdvalue;
+        if (cmdvalue == 81 && Selected_Preset > 1) preset = Selected_Preset - 1;
+        if (cmdvalue == 82 && Selected_Preset < 60) preset = Selected_Preset + 1;
+      } else {
+        preset = cmdvalue;
+      }
     }
+  }
 
-};
+  // 4. Control Change (Parameters)
+  if (type == 11) {
+    int cmdcontrol = midievent->buffer[1];
+    int cmdvalue = midievent->buffer[2];
+    int cmdchan = midievent->buffer[0] & 15;  
+    if (cmdchan == MidiCh) {
+      if(RControl) {
+        ControlGet = cmdcontrol;
+        return; 
+      } 	
+      if(MIDIway) {
+        for(i = 0; i < 20; i++) {
+          if (XUserMIDI[cmdcontrol][i])
+            process_midi_controller_events(XUserMIDI[cmdcontrol][i], cmdvalue);
+          else break;
+        } 
+      } else {
+        process_midi_controller_events(cmdcontrol, cmdvalue);
+      }
+    }
+  }
+}
+
 
 
 /*
@@ -877,7 +725,6 @@ RKR::jack_process_midievents (jack_midi_event_t *midievent)
 void
 RKR::process_midi_controller_events(int parameter, int value)
 {
-   
   int i;
   // for real parameter changes, flag need for a GUI update
   if(parameter > 0)

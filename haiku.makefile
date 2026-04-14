@@ -28,7 +28,7 @@ SIMD_FLAGS ?= -O3 -march=x86-64 -mtune=generic -msse2 # Public Build Default
 BUILD_FLAGS = $(SIMD_FLAGS) -ffast-math -ffunction-sections -fdata-sections -s
 LD_OPTIMIZE = -Wl,--gc-sections
 HAIKU_FIXES = -include $(PWD)/haiku_fixes.h
-HAIKU_LIBS = -lmedia -lbe -ltranslation -lnetwork -lroot -lpthread
+HAIKU_LIBS = -lmedia -lbe -lmidi2 -ltranslation -lnetwork -lroot -lpthread
 EXTRA_LIBS = -lsamplerate -lsndfile -lfltk_images -lfltk -lfltk_forms -lpng -lz
 
 #----------------------------------------------------------

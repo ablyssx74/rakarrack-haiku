@@ -41,6 +41,11 @@
 // Haiku Update
 extern bool gDebugMode;
 extern "C" void HaikuAudioShutdown();
+extern "C" RKR *rk;
+RKR *rk = nullptr; 
+RKRGUI *rakgui = nullptr; 
+
+
 
 void
 show_help ()
@@ -79,6 +84,10 @@ main (int argc, char *argv[])
 {
 Fl::lock(); 
 BApplication myApp("application/x-vnd.rakarrack-haiku");
+
+
+
+
 // Read command Line
 
   fprintf (stderr,
@@ -108,7 +117,7 @@ BApplication myApp("application/x-vnd.rakarrack-haiku");
   opterr = 0;
   int option_index = 0, opt;
   RKR rkr;
-
+  rk = &rkr; 
   if (nojack)
     {
       show_help ();
@@ -182,7 +191,12 @@ BApplication myApp("application/x-vnd.rakarrack-haiku");
   // Launch GUI
 
 
-   if (gui) new RKRGUI (argc, argv, &rkr);
+  // if (gui) new RKRGUI (argc, argv, &rkr);
+    // Launch GUI
+   if (gui) {
+       rakgui = new RKRGUI (argc, argv, &rkr);
+   }
+
 
 
   JACKstart (&rkr, rkr.jackclient);

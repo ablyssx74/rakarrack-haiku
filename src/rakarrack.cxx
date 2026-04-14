@@ -48,6 +48,7 @@ int saved_frames = 0;
 
 
 
+
 static Fl_Tiled_Image *back; 
 static Fl_Color leds_color; 
 static Fl_Color back_color; 
@@ -10776,11 +10777,19 @@ void RKRGUI::cb_Wave_Up_Qua(Fl_Choice* o, void* v) {
 }
 
 void RKRGUI::cb_D_A_Connect_i(Fl_Check_Button* o, void*) {
-  rkr->aconnect_MI=(int) o->value();
+    rkr->aconnect_MI = (int) o->value();
 
-if (rkr->aconnect_MI) BMidiIn->activate();
-else BMidiIn->deactivate();
+    if (rkr->aconnect_MI) {
+        BMidiIn->activate();
+        // HAIKU FIX: Trigger the connection immediately
+        rkr->Conecta(); 
+    } else {
+        // HAIKU FIX: Disconnect if the user unchecks it
+        rkr->disconectaaconnect();
+        BMidiIn->deactivate();
+    }
 }
+
 void RKRGUI::cb_D_A_Connect(Fl_Check_Button* o, void* v) {
   ((RKRGUI*)(o->parent()->parent()->parent()->user_data()))->cb_D_A_Connect_i(o,v);
 }

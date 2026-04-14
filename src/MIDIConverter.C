@@ -28,7 +28,10 @@
 #include <stdlib.h>
 #include <math.h>
 #include "global.h"
-
+#include <Midi2Defs.h>
+#include <MidiEndpoint.h>
+#include <MidiProducer.h>
+ 
 
 
 
@@ -45,6 +48,7 @@ MIDIConverter::MIDIConverter ()
   ponla = 0;
   moutdatasize=0;
   ev_count=0;
+  Moctave = 0; 
   
   schmittBuffer = NULL;
   schmittPointer = NULL;
@@ -54,44 +58,25 @@ MIDIConverter::MIDIConverter ()
   note = 0;
   nfreq = 0;
   afreq = 0;
+  
+  fHaikuMidiOut = NULL;
+  
   schmittInit (32);
 
-
-  // Open Alsa Seq
-
-  int alsaport_out;
-
-
-
-  int err = snd_seq_open (&port, "default", SND_SEQ_OPEN_OUTPUT, 0);
-  if (err < 0)
-    printf ("Cannot activate ALSA seq client\n");
-  snd_seq_set_client_name (port, "rakarrack");
-  snd_config_update_free_global ();
-
-
-
-  char portname[50];
-
-  // Create Alsa Seq Client
-
-  sprintf (portname, "rakarrack MC OUT");
-  alsaport_out = snd_seq_create_simple_port (port, portname,
-					     SND_SEQ_PORT_CAP_READ |
-					     SND_SEQ_PORT_CAP_SUBS_READ,
-					     SND_SEQ_PORT_TYPE_APPLICATION);
-
-
-
-
+  port = NULL; 
 
 };
 
 
 MIDIConverter::~MIDIConverter ()
 {
-  snd_seq_close (port);
+  // Cleanup the Schmitt buffer to avoid memory leaks
+  schmittFree();
+  
+  // ALSA port is no longer used, so we just null it out
+  port = NULL;
 }
+
 
 
 void
@@ -158,7 +143,7 @@ MIDIConverter::displayFrequency (float ffreq)
 
   if ((preparada == lanota) && (lanota != nota_actual))
     {
-
+	 //printf("TRIGGERING MIDI: %d\n", lanota);	
       hay = 1;
       if (nota_actual != -1)
 	{
@@ -266,78 +251,62 @@ MIDIConverter::schmittFloat (int nframes, float *indatal, float *indatar)
 };
 
 
-void
-MIDIConverter::MIDI_Send_Note_On (int nota)
-{
+void MIDIConverter::MIDI_Send_Note_On(int nota) {
+	//printf("CONVERTER TRIGGER: Note %d detected!\n", nota); 
+    int anota = nota + (Moctave * 12);
+    if((anota < 0) || (anota > 127)) return;
 
+    int k = lrintf ((val_sum + 48) * 2);
+    if ((k > 0) && (k < 127))
+        velocity = lrintf((float)k * VelVal);
+   
+  // if (velocity < 10) { 
+  //      return; 
+  //  }
 
-  int k;
-  int anota = nota + (Moctave * 12);
-  if((anota<0) || (anota>127)) return;
+    if (velocity > 127) velocity = 127;
+    if (velocity < 1) velocity = 1;
 
+    // Send to Haiku MidiSynth
+    if (fHaikuMidiOut) {
+        fHaikuMidiOut->SprayNoteOn(channel, anota, velocity, system_time());
+    }
 
-  k = lrintf ((val_sum + 48) * 2);
-  if ((k > 0) && (k < 127))
-    velocity = lrintf((float)k * VelVal);
+    // Keep internal Rakarrack tracking
+    ev_count++;
+    Midi_event[ev_count].dataloc = &moutdata[moutdatasize];
+    Midi_event[ev_count].time = 0;
+    Midi_event[ev_count].len = 3;
 
-  if (velocity > 127)
-    velocity = 127;
-  if (velocity < 1)
-    velocity = 1;
+    moutdata[moutdatasize] = 144 + channel;
+    moutdatasize++;
+    moutdata[moutdatasize] = anota;
+    moutdatasize++;
+    moutdata[moutdatasize] = velocity;
+    moutdatasize++; 
+}
 
+void MIDIConverter::MIDI_Send_Note_Off(int nota) {
+    int anota = nota + (Moctave * 12);
+    if((anota < 0) || (anota > 127)) return;
 
-  snd_seq_event_t ev;
-  snd_seq_ev_clear (&ev);
-  snd_seq_ev_set_noteon (&ev,channel,anota,velocity);
-  snd_seq_ev_set_subs (&ev);
-  snd_seq_ev_set_direct (&ev);
-  snd_seq_event_output_direct (port, &ev);
-
-  ev_count++;
-  Midi_event[ev_count].dataloc=&moutdata[moutdatasize];
-  Midi_event[ev_count].time=0;
-  Midi_event[ev_count].len=3;
-
-  moutdata[moutdatasize]=144+channel;
-  moutdatasize++;
-  moutdata[moutdatasize]=anota;
-  moutdatasize++;
-  moutdata[moutdatasize]=velocity;
-  moutdatasize++;
-
+    if (fHaikuMidiOut) {
+        // Standard NoteOff uses 64 as default release velocity 
+        // but 0 is perfectly fine for most synths.
+        fHaikuMidiOut->SprayNoteOff(channel, anota, 0, system_time());
+    }
   
- 
-};
+    ev_count++;
+    Midi_event[ev_count].dataloc = &moutdata[moutdatasize];
+    Midi_event[ev_count].time = 0;
+    Midi_event[ev_count].len = 2;
 
+    moutdata[moutdatasize] = 128 + channel;
+    moutdatasize++;
+    moutdata[moutdatasize] = anota;
+    moutdatasize++;
+}
 
-void
-MIDIConverter::MIDI_Send_Note_Off (int nota)
-{
-
-  int anota = nota + ( Moctave * 12) ;
-  if((anota<0) || (anota>127)) return;
-
-
- 
-  snd_seq_event_t ev;
-  snd_seq_ev_clear (&ev);
-  snd_seq_ev_set_noteoff (&ev, channel, anota, 0);
-  snd_seq_ev_set_subs (&ev);
-  snd_seq_ev_set_direct (&ev);
-  snd_seq_event_output_direct (port, &ev);
-  
-
-  ev_count++;
-  Midi_event[ev_count].dataloc=&moutdata[moutdatasize];
-  Midi_event[ev_count].time=0;
-  Midi_event[ev_count].len=2;
-
-  moutdata[moutdatasize]=128+channel;
-  moutdatasize++;
-  moutdata[moutdatasize]=anota;
-  moutdatasize++;
-
-};
 
 
 void
