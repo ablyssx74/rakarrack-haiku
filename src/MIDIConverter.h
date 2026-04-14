@@ -90,7 +90,8 @@ public:
   void MIDI_Send_Note_Off (int nota); 
 
 private:
-
+  int stable_count;  
+  int off_count;
   void displayFrequency (float freq);
   void schmittInit (int size);
   void schmittS16LE (int nframes, signed short int *indata);

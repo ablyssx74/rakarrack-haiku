@@ -118,6 +118,7 @@ BApplication myApp("application/x-vnd.rakarrack-haiku");
   int option_index = 0, opt;
   RKR rkr;
   rk = &rkr; 
+  /*
   if (nojack)
     {
       show_help ();
@@ -126,7 +127,7 @@ BApplication myApp("application/x-vnd.rakarrack-haiku");
 		     "Cannot make a jack client, is jackd running?");
       return (0);
     }
-
+*/
   exitwithhelp = 0;
 
 
@@ -201,41 +202,51 @@ BApplication myApp("application/x-vnd.rakarrack-haiku");
 
   JACKstart (&rkr, rkr.jackclient);
   rkr.InitMIDI ();
-
   rkr.ConnectMIDI ();
 
-  if (gui == 0)
-    {
-      rkr.Bypass = 0;
-      //rkr.Bypass = 1;
-      rkr.calculavol (1);
-      rkr.calculavol (2);
+  // --- Haiku UI & Engine Sync ---
+  if (gui != 0) {
+      // Access the specific Rakarrack-Haiku preferences
+      Fl_Preferences prefs(Fl_Preferences::USER, "rakarrack.sf.net", "rakarrack");
+      
+      int fx_init = 0;
+      // Using the exact key string required for the Haiku build
+      prefs.get("Rakarrack-Haiku FX_init_state", fx_init, 0); 
+      
+      if (fx_init == 1) {
+          rakgui->INSTATE->value(1);           // Sync the Settings checkbox
+          rakgui->ActivarGeneral->value(1);    // Set the LED button state
+          rakgui->ActivarGeneral->do_callback(); // Trigger engine & lighting logic
+          rakgui->ActivarGeneral->redraw();    // Force Haiku redraw
+      }
+      
+      // Priming the audio engine
+      rkr.calculavol(1);
+      rkr.calculavol(2);
       rkr.booster = 1.0f;
+  }
 
-    }
-
-//  mlockall (MCL_CURRENT | MCL_FUTURE);
-
-  // Haiku Main Loop update
-  while (Pexitprogram == 0)
-    {
-      if (gui)
-        {
-          // Wait at most 0.1 seconds for an event
+  // --- Haiku Main Loop ---
+  while (Pexitprogram == 0) {
+      if (gui) {
+          // Standard FLTK event handling for Haiku
           Fl::wait(0.1); 
           
-          // Check if the window is gone
           if (Fl::first_window() == NULL) {
               Pexitprogram = 1;
               break; 
           }
-        }
-      else
-        {
-          usleep (1500);
-          // ... preset logic ...
-        }
-    }
+      } else {
+          // Headless mode processing
+          usleep(1500);
+          if (preset != 1000) {
+              if ((preset > 0) && (preset < 61)) rkr.Bank_to_Preset(preset);
+              preset = 1000;
+          }
+      }
+  }
+
+
 
 printf("Rakarrack loop ended. Cleaning up audio...\n");
 

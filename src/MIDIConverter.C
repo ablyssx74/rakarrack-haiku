@@ -48,8 +48,7 @@ MIDIConverter::MIDIConverter ()
   ponla = 0;
   moutdatasize=0;
   ev_count=0;
-  Moctave = 0; 
-  
+  Moctave = 0;   
   schmittBuffer = NULL;
   schmittPointer = NULL;
   static const char *englishNotes[12] =
@@ -57,24 +56,23 @@ MIDIConverter::MIDIConverter ()
   notes = englishNotes;
   note = 0;
   nfreq = 0;
-  afreq = 0;
-  
-  fHaikuMidiOut = NULL;
-  
+  afreq = 0;  
+  fHaikuMidiOut = NULL;  
   schmittInit (32);
-
   port = NULL; 
-
+  stable_count = 0; 
 };
 
 
 MIDIConverter::~MIDIConverter ()
 {
+	
+	
   // Cleanup the Schmitt buffer to avoid memory leaks
-  schmittFree();
-  
+  schmittFree();  
   // ALSA port is no longer used, so we just null it out
   port = NULL;
+  
 }
 
 
@@ -85,7 +83,6 @@ MIDIConverter::displayFrequency (float ffreq)
   int i;
   int noteoff = 0;
   int octave = 4;
-
   float ldf, mldf;
   float lfreq;
 
@@ -116,7 +113,6 @@ MIDIConverter::displayFrequency (float ffreq)
 	  noteoff = 1;
 	  break;
 	}
-
     }
   while (ffreq / nfreq > D_NOTE_SQRT)
     {
@@ -128,40 +124,73 @@ MIDIConverter::displayFrequency (float ffreq)
 	  break;
 	}
     }
-
-
   cents = lrintf (1200.0f * (logf (ffreq / nfreq) / LOG_2));
   lanota = 24 + (octave * 12) + note - 3;
+  /*
+  if (ffreq > 20.0f) { 
+      printf("[MIDI DEBUG] Freq: %7.2f Hz | Note: %s%d (%d) | Offset: %+d cents\n", 
+              ffreq, notes[note], octave, lanota, cents);
+  }
+*/
+  
+  if (noteoff) 
+  {
+      off_count++;
+  } 
+  else 
+  {
+      off_count = 0; 
+  }
 
-
-  if ((noteoff) & (hay))
+  // Only send Note Off if we've seen "silence" or "invalid pitch" for 10 consecutive cycles
+  if (off_count > 5 && hay)
     {
       MIDI_Send_Note_Off (nota_actual);
       hay = 0;
       nota_actual = -1;
-    }
-
-  if ((preparada == lanota) && (lanota != nota_actual))
-    {
-	 //printf("TRIGGERING MIDI: %d\n", lanota);	
-      hay = 1;
-      if (nota_actual != -1)
-	{
-	  MIDI_Send_Note_Off (nota_actual);
-	}
-
-      MIDI_Send_Note_On (lanota);
-      nota_actual = lanota;
+      stable_count = 0;
+      off_count = 0;
     }
 
 
-  if ((lanota > 0 && lanota < 128) && (lanota != nota_actual))
-    preparada = lanota;
+  // --- CONFIDENCE & HARMONIC REJECTION FILTER ---
+  if (lanota > 0 && lanota < 128)
+  {
+  	 if (ffreq > 5000.0f) return; 
+      if (lanota == preparada)
+      {
+          stable_count++;
+      }
+      else
+      {
+          // A harmonic jump happened. 
+          // We DON'T reset nota_actual yet, we just start a new count for the potential new note.
+          preparada = lanota;
+          stable_count = 1;
+      }
+
+      // 1. High Threshold for Note Changes (requires 4 consistent frames)
+      // 2. Only kill the old note if the new note is truly stable
+      if (stable_count >= 2 && lanota != nota_actual) 
+      {
+          // We found a new, stable note.
+         //printf(">>> STABLE CHANGE: %s%d (%d)\n", notes[note], octave, lanota);
+          
+          hay = 1;
+          if (nota_actual != -1)
+          {
+              MIDI_Send_Note_Off(nota_actual);
+          }
+          MIDI_Send_Note_On(lanota);
+          nota_actual = lanota;
+      }
+  }
 
 
 
-
+  // --- STABILITY FILTER END ---
 };
+
 
 void
 MIDIConverter::schmittInit (int size)
@@ -172,13 +201,11 @@ MIDIConverter::schmittInit (int size)
   schmittPointer = schmittBuffer;
 };
 
-
-
 void
 MIDIConverter::schmittS16LE (int nframes, signed short int *indata)
 {
   int i, j;
-  float trigfact = 0.6f;
+  float trigfact = 0.5f;
 
 
   for (i = 0; i < nframes; i++)
@@ -224,9 +251,8 @@ MIDIConverter::schmittS16LE (int nframes, signed short int *indata)
 	      afreq =
 		fSAMPLE_RATE *((float)tc / (float) (endpoint - startpoint));
 	      displayFrequency (afreq);
-
 	    }
-	}
+	  }
     }
 };
 
@@ -236,19 +262,21 @@ MIDIConverter::schmittFree ()
   free (schmittBuffer);
 };
 
-void
-MIDIConverter::schmittFloat (int nframes, float *indatal, float *indatar)
+void MIDIConverter::schmittFloat (int nframes, float *indatal, float *indatar)
 {
   int i;
-
   signed short int buf[nframes];
+  
+  // Increase the multiplier (e.g., from 32768 to 40000) to boost the signal
+  // for the pitch detector without affecting the actual audio output.
   for (i = 0; i < nframes; i++)
-    {
-      buf[i] =
-	(short) ((TrigVal * indatal[i] + TrigVal * indatar[i]) * 32768);
-    }
+  {
+      float mixed = (TrigVal * indatal[i] + TrigVal * indatar[i]);
+      buf[i] = (short) (mixed * 40000); 
+  }
   schmittS16LE (nframes, buf);
 };
+
 
 
 void MIDIConverter::MIDI_Send_Note_On(int nota) {
@@ -271,13 +299,11 @@ void MIDIConverter::MIDI_Send_Note_On(int nota) {
     if (fHaikuMidiOut) {
         fHaikuMidiOut->SprayNoteOn(channel, anota, velocity, system_time());
     }
-
     // Keep internal Rakarrack tracking
     ev_count++;
     Midi_event[ev_count].dataloc = &moutdata[moutdatasize];
     Midi_event[ev_count].time = 0;
     Midi_event[ev_count].len = 3;
-
     moutdata[moutdatasize] = 144 + channel;
     moutdatasize++;
     moutdata[moutdatasize] = anota;
@@ -307,43 +333,31 @@ void MIDIConverter::MIDI_Send_Note_Off(int nota) {
     moutdatasize++;
 }
 
-
-
 void
 MIDIConverter::panic ()
 {
   int i;
-
   for (i = 0; i < 127; i++)
     MIDI_Send_Note_Off (i);
   hay = 0;
   nota_actual = -1;
 }
-
-
 void
 MIDIConverter::setmidichannel (int chan)
 {
   channel = chan;
-
 };
-
 
 void
 MIDIConverter::setTriggerAdjust (int val)
 {
-
   TrigVal = 1.0f / (float)val;
-
 };
-
 
 void
 MIDIConverter::setVelAdjust (int val)
 {
-
   VelVal = 100.0f / (float)val;
-
 };
 
 

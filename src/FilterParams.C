@@ -151,6 +151,9 @@ float FilterParams::getq ()
 float FilterParams::getfreqtracking (float notefreq)
 {
   return (logf (notefreq / 440.0f) * ((float)Pfreqtrack - 64.0f) / (64.0f * LOG_2));
+  // Change 440.0f to 415.3f
+ //return (logf (notefreq / 415.3f) * ((float)Pfreqtrack - 64.0f) / (64.0f * LOG_2));
+
 };
 
 float FilterParams::getgain ()
