@@ -21454,7 +21454,7 @@ R average.");
  
     // --- NEW: MIDI CONVERTER TUNING PARAMETERS ---
   // Placed in the gap created by shrinking the browser
-  { Conv_Trig_Counter = new Fl_Counter(185, 195, 60, 22, "Trigger Sensitivity");
+  { Conv_Trig_Counter = new Fl_Counter(185, 195, 80, 22, "Trigger Sensitivity");
     Conv_Trig_Counter->type(1);
     Conv_Trig_Counter->labelsize(10);
     Conv_Trig_Counter->labelcolor(FL_BACKGROUND2_COLOR);
@@ -21465,18 +21465,18 @@ R average.");
     Conv_Trig_Counter->align(FL_ALIGN_LEFT);
   }
 
-  { Conv_Stable_Counter = new Fl_Counter(185, 225, 60, 22, "Stability Threshold");
-    Conv_Stable_Counter->type(1);
+  { Conv_Stable_Counter = new Fl_Counter(185, 225, 80, 22, "Stability Threshold");
+    Conv_Stable_Counter->type(0);
     Conv_Stable_Counter->labelsize(10);
     Conv_Stable_Counter->labelcolor(FL_BACKGROUND2_COLOR);
-    Conv_Stable_Counter->step(1);
+    Conv_Stable_Counter->step(0.01);
     Conv_Stable_Counter->bounds(1, 10);
     Conv_Stable_Counter->value(2);
     Conv_Stable_Counter->callback((Fl_Callback*)cb_Conv_Stable_Counter, (void*)this);
     Conv_Stable_Counter->align(FL_ALIGN_LEFT);
   }
 
-  { Conv_Off_Counter = new Fl_Counter(185, 255, 60, 22, "Note-Off Grace");
+  { Conv_Off_Counter = new Fl_Counter(185, 255, 80, 22, "Note-Off Grace");
     Conv_Off_Counter->type(1);
     Conv_Off_Counter->labelsize(10);
     Conv_Off_Counter->labelcolor(FL_BACKGROUND2_COLOR);
@@ -21490,7 +21490,7 @@ R average.");
  
         // --- MIDI Channel Selection ---
         // Shifted X to 185 to clear the long "Harmonizer" label on the left
-        { Midi_In_Counter = new Fl_Counter(185, 290, 60, 24, "Receive Channel");
+        { Midi_In_Counter = new Fl_Counter(185, 290, 80, 24, "Receive Channel");
           Midi_In_Counter->type(1);
           Midi_In_Counter->color((Fl_Color)25);
           Midi_In_Counter->labelsize(10);
@@ -21505,7 +21505,7 @@ R average.");
         } 
         
         // Shifted X to 185 to match the top counter
-        { Har_In_Counter = new Fl_Counter(185, 325, 60, 24, "Harmonizer Receive Channel");
+        { Har_In_Counter = new Fl_Counter(185, 325, 80, 24, "Harmonizer Receive Channel");
           Har_In_Counter->type(1);
           Har_In_Counter->color((Fl_Color)25);
           Har_In_Counter->labelsize(10);

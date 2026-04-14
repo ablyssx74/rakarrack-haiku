@@ -52,7 +52,7 @@ public:
   MIDIConverter ();
   ~MIDIConverter ();
 
-
+  void ResetBuffers(); 
   float *efxoutl;
   float *efxoutr;
   signed short int *schmittBuffer;

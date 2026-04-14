@@ -599,7 +599,7 @@ void RKR::disconectaaconnect() {
 void RKR::SendHaikuMidi(uchar status, uchar data1, uchar data2) {
     if (fMidiOutPort) {
         // DEBUG: See what is being sent out to Haiku
-        fprintf(stderr, "HAIKU MIDI OUT: Status: 0x%02X Data1: %d Data2: %d\n", status, data1, data2);
+        //fprintf(stderr, "HAIKU MIDI OUT: Status: 0x%02X Data1: %d Data2: %d\n", status, data1, data2);
         
         uchar message[3] = { status, data1, data2 };
         fMidiOutPort->SprayData(message, 3, true); 

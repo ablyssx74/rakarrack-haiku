@@ -64,6 +64,7 @@ MIDIConverter::MIDIConverter ()
   p_trigfact = 0.5f;
   p_stable_threshold = 2;
   p_off_count_max = 5;
+  
 };
 
 
@@ -283,30 +284,34 @@ void MIDIConverter::schmittFloat (int nframes, float *indatal, float *indatar)
 
 
 void MIDIConverter::MIDI_Send_Note_On(int nota) {
-	//printf("CONVERTER TRIGGER: Note %d detected!\n", nota); 
     int anota = nota + (Moctave * 12);
     if((anota < 0) || (anota > 127)) return;
+
+    // 1. SAFETY CHECK: Prevent overwriting memory
+    if (ev_count >= 2046 || moutdatasize >= 2040) {
+        //printf("[MIDI] Buffer full! Resetting.\n");
+        ResetBuffers();
+    }
 
     int k = lrintf ((val_sum + 48) * 2);
     if ((k > 0) && (k < 127))
         velocity = lrintf((float)k * VelVal);
    
-  // if (velocity < 10) { 
-  //      return; 
-  //  }
-
     if (velocity > 127) velocity = 127;
     if (velocity < 1) velocity = 1;
 
-    // Send to Haiku MidiSynth
+    // 2. Haiku Midi Kit Spray
     if (fHaikuMidiOut) {
         fHaikuMidiOut->SprayNoteOn(channel, anota, velocity, system_time());
     }
-    // Keep internal Rakarrack tracking
-    ev_count++;
+
+    // 3. INTERNAL TRACKING (Fixing the index bug)
+    // We use ev_count FIRST, then increment.
     Midi_event[ev_count].dataloc = &moutdata[moutdatasize];
     Midi_event[ev_count].time = 0;
     Midi_event[ev_count].len = 3;
+    ev_count++; // Move to next slot for next call
+
     moutdata[moutdatasize] = 144 + channel;
     moutdatasize++;
     moutdata[moutdatasize] = anota;
@@ -315,30 +320,50 @@ void MIDIConverter::MIDI_Send_Note_On(int nota) {
     moutdatasize++; 
 }
 
+
 void MIDIConverter::MIDI_Send_Note_Off(int nota) {
+    // 1. Calculate note
     int anota = nota + (Moctave * 12);
     if((anota < 0) || (anota > 127)) return;
 
-    if (fHaikuMidiOut) {
-        // Standard NoteOff uses 64 as default release velocity 
-        // but 0 is perfectly fine for most synths.
-        fHaikuMidiOut->SprayNoteOff(channel, anota, 0, system_time());
+    // 2. Safety Guard: Reset if we are near the end of the 2048 arrays
+    if (ev_count >= 2046 || moutdatasize >= 2040) {
+       // printf("[MIDI WARNING] Buffer full! Resetting.\n");
+        ResetBuffers();
     }
-  
-    ev_count++;
+
+    // 3. Haiku Midi Kit Spray (Direct)
+    if (fHaikuMidiOut) {
+        fHaikuMidiOut->SprayNoteOff(channel, anota, 0, system_time());
+    } else {
+        return; // No sense recording events if there's no output
+    }
+
+    // 4. Record Event (For Internal Tracking/Jack)
+    // Use the current ev_count, then increment AFTER
     Midi_event[ev_count].dataloc = &moutdata[moutdatasize];
     Midi_event[ev_count].time = 0;
     Midi_event[ev_count].len = 2;
+    ev_count++; 
 
+    // Record Data
     moutdata[moutdatasize] = 128 + channel;
     moutdatasize++;
     moutdata[moutdatasize] = anota;
     moutdatasize++;
 }
 
+
+void MIDIConverter::ResetBuffers() {
+    ev_count = 0;
+    moutdatasize = 0;
+}
+
+
 void
 MIDIConverter::panic ()
 {
+ // printf("[MIDI DEBUG] Panic called! Current nota_actual: %d\n", nota_actual);
   int i;
   for (i = 0; i < 127; i++)
     MIDI_Send_Note_Off (i);
