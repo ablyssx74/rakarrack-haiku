@@ -21447,7 +21447,7 @@ R average.");
     BMidiIn->labelsize(11);
     BMidiIn->labelcolor(FL_BACKGROUND2_COLOR);
     BMidiIn->textsize(12);
-    BMidiIn->textcolor(7);
+    BMidiIn->textcolor(0);
     BMidiIn->callback((Fl_Callback*)cb_BMidiIn);
     BMidiIn->align(FL_ALIGN_TOP_LEFT);
   }
