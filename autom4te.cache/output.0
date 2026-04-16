@@ -7893,7 +7893,8 @@ printf "%s\n" "@%:@define DEFAULT_BUFFER_FRAMES $buffer_frames" >>confdefs.h
 
 
 # 3. Final Flag Assembly
-LIBS="`$FLTKCONFIG --use-images --ldflags` $LIBS"
+#LIBS="`$FLTKCONFIG --use-images --ldflags` $LIBS"
+LIBS="`$FLTKCONFIG --use-images --ldflags`"
 CXXFLAGS="-Wall $SSE $ALTIVEC -ffast-math -pipe $ADDS -fsigned-char `$FLTKCONFIG --use-images --cxxflags` `pkg-config --cflags sndfile` `pkg-config --cflags jack` $CXXFLAGS"
 
 ac_config_files="$ac_config_files Makefile src/Makefile man/Makefile data/Makefile icons/Makefile doc/Makefile doc/help/Makefile doc/help/imagenes/Makefile doc/help/css/Makefile extra/Makefile"

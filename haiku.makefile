@@ -78,21 +78,25 @@ config:
 	--with-frame-rate=$(RATE) \
 	--with-buffer-frames="$(FRAMES)"
 	
+haiku_native/haiku-rakarrack.o: haiku_native/haiku-rakarrack.cpp
+	g++ -c $< -o $@ -I$(PWD)/jack -I. -I./src $(BUILD_FLAGS) -fpermissive $(HAIKU_FIXES)
 
-build: haiku_stubs.o
+build: haiku_stubs.o haiku_native/haiku-rakarrack.o
 	@echo "=========================================================="
-	@echo " Building Rakarrack for Haiku [$(FRAMES) frames @ $(RATE)Hz]"
-	@echo " SIMD Level: $(shell echo $(SIMD_FLAGS))"
+	@echo "      Building Rakarrack for Haiku $(SIMD_FLAGS)"
 	@echo "=========================================================="
 	touch configure.in aclocal.m4 Makefile.am Makefile.in configure config.status
 	$(MAKE) -j4 \
 		CXXFLAGS="-include $(PWD)/jack/jack.h $(HAIKU_FIXES) $(FLTK_CXX) $(BUILD_FLAGS) -fpermissive -I. -I$(PWD)/jack" \
-		LIBS="$(FLTK_LD) $(EXTRA_LIBS) $(HAIKU_LIBS) $(LD_OPTIMIZE) $(PWD)/haiku_stubs.o -Wno-int-to-pointer-cast -Wno-write-strings"
-	g++ -o rakarrack src/*.o haiku_stubs.o \
+		LIBS="$(PWD)/haiku_native/haiku-rakarrack.o $(FLTK_LD) $(EXTRA_LIBS) $(HAIKU_LIBS) $(LD_OPTIMIZE) $(PWD)/haiku_stubs.o -Wno-int-to-pointer-cast -Wno-write-strings"
+	
+	# The final link now combines everything correctly
+	g++ -o rakarrack src/*.o haiku_stubs.o haiku_native/haiku-rakarrack.o \
 		$(BUILD_FLAGS) \
 		-include $(PWD)/jack/jack.h \
 		$(EXTRA_LIBS) $(HAIKU_LIBS) $(LD_OPTIMIZE)
 	mimeset -f rakarrack
+
 
 haiku_stubs.o: haiku_stubs.cpp
 	g++ -c $< -o $@ -I$(PWD)/jack -I. -I./src $(BUILD_FLAGS) -fpermissive
@@ -101,6 +105,7 @@ haiku_stubs.o: haiku_stubs.cpp
 clean:
 	@echo "Performing deep clean (distclean)..."
 	rm -f rakarrack haiku_stubs.o
+	rm -f $(PWD)/haiku_native/*.o
 	@if [ -f Makefile ]; then $(MAKE) distclean; fi
 	rm -rf *.hpkg build autom4te.cache config.cache config.log config.status Makefile src/Makefile \
 	       man/Makefile data/Makefile icons/Makefile doc/Makefile \

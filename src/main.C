@@ -36,15 +36,19 @@
 #include "global.h"
 #include "rakarrack.h"
 #include "jack.h"
+#include "rakarrack_haiku_bridge.h"
 
 
 // Haiku Update
+extern "C" void start_haiku_native_interface(void* rkr_ptr);
 extern bool gDebugMode;
 extern "C" void HaikuAudioShutdown();
 extern "C" RKR *rk;
 RKR *rk = nullptr; 
 RKRGUI *rakgui = nullptr; 
 
+extern bool haiku_mode;
+bool haiku_mode = false;  
 
 
 void
@@ -55,6 +59,7 @@ show_help ()
 	   "  -h ,     --help \t\t\t display command-line help and exit\n");
   fprintf (stderr, "  -n ,     --no-gui \t\t\t disable GUI\n");
   fprintf (stderr, "  -D ,     --debug \t\t\t enable verbose debug logging\n"); 
+  fprintf (stderr, "  -H ,     --haiku \t\t\t enable testing haiku native code\n"); 
   fprintf (stderr, "  -l File, --load=File \t\t\t loads preset\n");
   fprintf (stderr, "  -b File, --bank=File \t\t\t loads bank\n");
   fprintf (stderr, "  -p #,    --preset=# \t\t\t set preset\n");
@@ -82,149 +87,97 @@ show_help ()
 int
 main (int argc, char *argv[])
 {
-Fl::lock(); 
-BApplication myApp("application/x-vnd.rakarrack-haiku");
-
-
-
-
-// Read command Line
-
-  fprintf (stderr,
-	   "\n%s %s - Copyright (c) Josep Andreu - Ryan Billing - Douglas McClendon - Arnout Engelen\n",
-	   PACKAGE, VERSION);
-
-  if (argc == 1)
-    fprintf (stderr, "Try 'rakarrack --help' for command-line options.\n");
-
-
-  struct option opts[] = {
-    {"load", 1, NULL, 'l'},
-    {"bank", 1, NULL, 'b'},
-    {"preset",1,NULL, 'p'},
-    {"no-gui", 0, NULL, 'n'},
-    {"debug", 0, 0, 'D'},
-    {"dump-preset-names", 0, NULL, 'x'},
-    {"help", 0, NULL, 'h'},
-    {0, 0, 0, 0}
-  };
-
-
-
-  Pexitprogram = 0;
-  commandline = 0;
-  gui = 1;
-  opterr = 0;
-  int option_index = 0, opt;
-  RKR rkr;
-  rk = &rkr; 
-  /*
-  if (nojack)
-    {
-      show_help ();
-      if (gui)
-	rkr.Message (1,"rakarrack error",
-		     "Cannot make a jack client, is jackd running?");
-      return (0);
-    }
-*/
-  exitwithhelp = 0;
-
-
-  while (1)
-    {
-      opt = getopt_long (argc, argv, "l:b:p:nDxh", opts, &option_index);
-      char *optarguments = optarg;
-
-      if (opt == -1)
-	break;
-
-      switch (opt)
-	{
-	case 'h':
-	  exitwithhelp = 1;
-	  break;
-    case 'D': 
-        gDebugMode = true;
-        printf("[DEBUG] Debug Mode Enabled via Command Line.\n");
-        break;
-	case 'n':
-	  gui = 0;
-	  break;
-	case 'l':
-	  if (optarguments != NULL)
-	    {
-	      commandline = 1;
-	      rkr.loadfile (optarguments);
-	      break;
-	    }
-	case 'b':
-	  if (optarguments != NULL)
-	    {
-	      rkr.loadbank (optarguments);
-	      break;
-	    }  
-        case 'p':
-           if(optarguments != NULL)
-            {
-              preset=atoi(optarguments);
-              break;
-            }  
-        case 'x':
-              rkr.dump_preset_names ();
-              exit(1);
-              break;
-
-          }
-
-     }
-
-
-  if (exitwithhelp != 0)
-    {
-      show_help ();
-      return (0);
+	BApplication* myApp = nullptr; 
+	RKR rkr;
+    rk = &rkr; 
+    int preset = 1000;
+    bool exitwithhelp = false;
+	int gui = 1; 
+	
+    // 1. Parse arguments FIRST
+    struct option opts[] = {
+        {"load", 1, NULL, 'l'},
+        {"bank", 1, NULL, 'b'},
+        {"preset",1,NULL, 'p'},
+        {"no-gui", 0, NULL, 'n'},
+        {"debug", 0, 0, 'D'},
+        {"haiku", 0, 0, 'H'},
+        {"dump-preset-names", 0, NULL, 'x'},
+        {"help", 0, NULL, 'h'},
+        {0, 0, 0, 0}
     };
 
-        argc -= (optind - 1);
-		argv += (optind - 1);
+    int option_index = 0, opt;
+    while ((opt = getopt_long(argc, argv, "l:b:p:nDxhH", opts, &option_index)) != -1) {
+        switch (opt) {
+            case 'H': haiku_mode = true; break;
+            case 'D': gDebugMode = true; break;
+            case 'n': gui = 0; break;
+            case 'h': exitwithhelp = 1; break;
+            case 'l': if (optarg) rkr.loadfile(optarg); break;
+            case 'b': if (optarg) rkr.loadbank(optarg); break;
+            case 'p': if (optarg) preset = atoi(optarg); break;
+            case 'x': rkr.dump_preset_names(); exit(0); break;
+            }           
+       
+    }
+    
 
-  // Launch GUI
+    if (exitwithhelp) {
+        show_help();
+        return 0;
+    }
 
 
-  // if (gui) new RKRGUI (argc, argv, &rkr);
-    // Launch GUI
-   if (gui) {
-       rakgui = new RKRGUI (argc, argv, &rkr);
-   }
+    if (haiku_mode) {
 
+        myApp = new BApplication("application/x-vnd.rakarrack-haiku");
+        
 
+  		JACKstart (&rkr, rkr.jackclient);
+		rkr.InitMIDI ();
+  		rkr.ConnectMIDI ();
 
-  JACKstart (&rkr, rkr.jackclient);
-  rkr.InitMIDI ();
-  rkr.ConnectMIDI ();
+  
+        start_haiku_native_interface(rk);
+        
+		printf("Haiku Native Mode Started.\n");
+        myApp->Run();
 
-  // --- Haiku UI & Engine Sync ---
-  if (gui != 0) {
-      // Access the specific Rakarrack-Haiku preferences
-      Fl_Preferences prefs(Fl_Preferences::USER, "rakarrack.sf.net", "rakarrack");
+        
+    } else {
+        // --- FLTK / Standard Path ---
+        if (be_app == nullptr) {
+            myApp = new BApplication("application/x-vnd.rakarrack-haiku");
+        }
+        Fl::lock();
+        if (gui) rakgui = new RKRGUI(argc, argv, &rkr);
+
+        JACKstart (&rkr, rkr.jackclient);
+        rkr.InitMIDI ();
+        rkr.ConnectMIDI ();
+
+  		// --- Haiku UI & Engine Sync ---
+ 		 if (gui != 0) {
+      	// Access the specific Rakarrack-Haiku preferences
+      	Fl_Preferences prefs(Fl_Preferences::USER, "rakarrack.sf.net", "rakarrack");
       
-      int fx_init = 0;
-      // Using the exact key string required for the Haiku build
-      prefs.get("Rakarrack-Haiku FX_init_state", fx_init, 0); 
+      	int fx_init = 0;
+      	// Using the exact key string required for the Haiku build
+      	prefs.get("Rakarrack-Haiku FX_init_state", fx_init, 0); 
       
-      if (fx_init == 1) {
+      	if (fx_init == 1) {
           rakgui->INSTATE->value(1);           // Sync the Settings checkbox
           rakgui->ActivarGeneral->value(1);    // Set the LED button state
           rakgui->ActivarGeneral->do_callback(); // Trigger engine & lighting logic
           rakgui->ActivarGeneral->redraw();    // Force Haiku redraw
-      }
+      	}
       
-      // Priming the audio engine
-      rkr.calculavol(1);
-      rkr.calculavol(2);
-      rkr.booster = 1.0f;
-  }
+      	// Priming the audio engine
+      	rkr.calculavol(1);
+      	rkr.calculavol(2);
+      	rkr.booster = 1.0f;
+   }
 
   // --- Haiku Main Loop ---
   while (Pexitprogram == 0) {
@@ -243,17 +196,21 @@ BApplication myApp("application/x-vnd.rakarrack-haiku");
               if ((preset > 0) && (preset < 61)) rkr.Bank_to_Preset(preset);
               preset = 1000;
           }
+        }
       }
-  }
+    }
 
+    printf("Rakarrack loop ended. Cleaning up audio...\n");
+    HaikuAudioShutdown();
+    fflush(stdout);
+    if (myApp) {
 
-
-printf("Rakarrack loop ended. Cleaning up audio...\n");
-
-
-HaikuAudioShutdown();
-fflush(stdout);
-exit(0); 
+        if (myApp->Lock()) {
+            myApp->PostMessage(B_QUIT_REQUESTED);
+            myApp->Unlock();
+        }
+    }
+  _exit(0); 
 }
   
 
