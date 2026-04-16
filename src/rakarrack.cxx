@@ -21581,7 +21581,7 @@ R average.");
        
       	// Haiku Was Here !
       
-         { JACK_SET = new Fl_Group(5, 26, 630, 502, "Hardware Settings"); // Renamed from "Jack"
+         { JACK_SET = new Fl_Group(5, 26, 630, 502, "Hardware"); // Renamed from "Jack"
         JACK_SET->box(FL_PLASTIC_DOWN_FRAME);
         JACK_SET->labelfont(1);
         JACK_SET->labelcolor(FL_BACKGROUND2_COLOR);
@@ -21607,7 +21607,7 @@ R average.");
           FramesChoice->labelsize(11);
           FramesChoice->labelcolor(FL_BACKGROUND2_COLOR);
           FramesChoice->align(FL_ALIGN_TOP_LEFT);
-          FramesChoice->add("128|256|512|1024|2048");
+          FramesChoice->add("64|128|256|512|1024|2048");
           FramesChoice->value(3); // Default to 1024
           FramesChoice->textcolor(FL_BLACK);
         }
