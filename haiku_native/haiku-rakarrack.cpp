@@ -184,8 +184,8 @@ public:
     if (value == B_CONTROL_ON) {
         // Based on your test: Checkbox ON needs Bypass = 1
         fRkr->Bypass = 1; 
-        fRkr->calculavol(1);
-        fRkr->calculavol(2);
+       // fRkr->calculavol(1);
+       // fRkr->calculavol(2);
         fRkr->booster = 1.0f;
         printf("[DEBUG] FX ON (Bypass set to 1)\n");
     } else {
