@@ -49,7 +49,7 @@ public:
 
   void Tempo2Delay(int delay);
 
-private:
+
   //Parametrii
   int Pvolume;	//Volumul or E/R
   int Ppanning;	//Panning
@@ -70,7 +70,8 @@ private:
   void sethidamp (int Phidamp);
   void setreverse (int Preverse);
   void setdirect (int Pdirect);
-
+  
+private:
   //Parametrii reali
   void initdelays ();
 

@@ -8,7 +8,7 @@ extern "C" char** jack_get_ports(void *, const char *, const char *, unsigned lo
 #include <Entry.h>
 #include <Roster.h>
 #include <stdint.h>
-
+#include <bsd/string.h>
 #include "rakarrack.h"
 #include "icono_rakarrack_128x128.xpm"
 

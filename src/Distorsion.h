@@ -50,7 +50,7 @@ public:
   float *octoutr;
   float outvolume;
   
-private:
+//private:
   //Parametrii
   int Pvolume;	//Volumul or E/R
   int Ppanning;	//Panning
@@ -71,7 +71,8 @@ private:
   void setoctave (int Poctave);
   void setlpf (int Plpf);
   void sethpf (int Phpf);
-
+  
+  private:
   //Parametrii reali
   float panning, lrcross, octave_memoryl, togglel, octave_memoryr,toggler,octmix;
   AnalogFilter *lpfl, *lpfr, *hpfl, *hpfr, *blockDCl, *blockDCr, *DCl, *DCr;
