@@ -163,7 +163,7 @@ private:
 class RakarrackWindow : public BWindow {
 public:
     RakarrackWindow(BRect frame, RKR* rkr) 
-        : BWindow(frame, "Rakarrack Native", B_TITLED_WINDOW, 
+        : BWindow(frame, "Rakarrack Native", B_DOCUMENT_WINDOW, 
           B_ASYNCHRONOUS_CONTROLS | B_QUIT_ON_WINDOW_CLOSE) {
         
         fRkr = rkr;
@@ -176,7 +176,6 @@ public:
 
         BLayoutBuilder::Group<>(this, B_VERTICAL, 0)
             .Add(scroller)
-            .Add(new BSizeGrabber()) /
             .End();
 
         this->SetSizeLimits(200, 10000, 150, 10000);
