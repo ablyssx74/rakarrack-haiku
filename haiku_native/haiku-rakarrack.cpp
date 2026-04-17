@@ -15,7 +15,9 @@
 #include <syslog.h>
 #include <math.h>
 #include <Alert.h>
-#include "../src/rakarrack_haiku_bridge.h"
+
+//#include "../src/global.h"
+//#include "../src/process.C"
 
 #include <InterfaceDefs.h>
 #include <LayoutBuilder.h>
@@ -43,6 +45,12 @@
 
 
 #include "../src/rakarrack_haiku_bridge.h"
+
+
+// This "weak" function satisfies the linker for small utilities 
+// like rakverb, but gets overridden by the real one in the main app.
+__attribute__((weak)) void RKR::calculavol(int i) { }
+
 
 extern pthread_mutex_t jmutex;
 
@@ -168,6 +176,7 @@ public:
 
         BLayoutBuilder::Group<>(this, B_VERTICAL, 0)
             .Add(scroller)
+            .Add(new BSizeGrabber()) /
             .End();
 
         this->SetSizeLimits(200, 10000, 150, 10000);
@@ -182,16 +191,12 @@ public:
             {
                 int32 value = msg->GetInt32("be:value", B_CONTROL_OFF);
     if (value == B_CONTROL_ON) {
-        // Based on your test: Checkbox ON needs Bypass = 1
         fRkr->Bypass = 1; 
-       // fRkr->calculavol(1);
-       // fRkr->calculavol(2);
+        fRkr->calculavol(1);
+        fRkr->calculavol(2);
         fRkr->booster = 1.0f;
-        printf("[DEBUG] FX ON (Bypass set to 1)\n");
     } else {
-        // Checkbox OFF needs Bypass = 0
         fRkr->Bypass = 0;
-        printf("[DEBUG] FX OFF (Bypass set to 0)\n");
     }
                 break;
             }

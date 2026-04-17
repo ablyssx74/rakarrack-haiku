@@ -219,6 +219,8 @@ private:
   void cb_TITTLE_L_i(Fl_Button*, void*);
   static void cb_TITTLE_L(Fl_Button*, void*);
 public:
+  Fl_Box *latency_ms;
+  Fl_Box *LATENCY_DISP; 
   Fl_Box *LMT_LED;
   Fl_Box *CLIP_LED;
   Fl_Box *UPS_LED;

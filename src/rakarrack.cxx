@@ -1251,15 +1251,39 @@ else
 ActMIDI();
 if(rkr->ACI_Bypass) ActACI();
 
+// CPU Load and Latency Display Timer
 rkr->cpufp++;
-if(rkr->cpufp==40)
-{
-char tmp[8];
-memset(tmp,0, sizeof(tmp));
-sprintf(tmp,"%5.2f%%",rkr->cpuload);
-CPULOAD->copy_label(tmp);
-rkr->cpufp=0;
+
+// 1. Update CPU Load every 40 counts (~1 second)
+if (rkr->cpufp % 40 == 0) {
+    char tmp[16];
+    snprintf(tmp, sizeof(tmp), "%5.2f%%", rkr->cpuload);
+    CPULOAD->copy_label(tmp);
 }
+
+// 2. Update Latency every 120 counts (~3 seconds)
+if (rkr->cpufp >= 120) {
+    char s_rate[32], s_frames[32], l_str[32];
+    Fl_Preferences prefs(Fl_Preferences::USER, "rakarrack.sf.net", "rakarrack");
+    
+    prefs.get("Haiku_SampleRate", s_rate, "44100", 32);
+    prefs.get("Haiku_BufferSize", s_frames, "256", 32);
+
+    float cur_rate = (float)atof(s_rate);
+    float cur_frames = (float)atof(s_frames);
+
+    if (cur_rate > 0) {
+        float ms = (cur_frames / cur_rate) * 1000.0f;
+        snprintf(l_str, sizeof(l_str), "Lat: %.1f ms", ms);
+        LATENCY_DISP->copy_label(l_str);
+    }
+    
+    // Reset the counter so it cycles back to 1
+    rkr->cpufp = 0;
+}
+
+
+
 
 
 
@@ -11250,6 +11274,20 @@ Fl_Double_Window* RKRGUI::make_window() {
       TITTLE_L->callback((Fl_Callback*)cb_TITTLE_L);
       TITTLE_L->align(FL_ALIGN_TOP|FL_ALIGN_INSIDE);
     } // Fl_Button* TITTLE_L
+    
+// Move X much further left (420) and use LEFT alignment
+LATENCY_DISP = new Fl_Box(420, 8, 80, 10, "Lat: 0.0 ms"); 
+LATENCY_DISP->box(FL_NO_BOX);
+LATENCY_DISP->labelsize(10);
+LATENCY_DISP->labelcolor(FL_BACKGROUND2_COLOR);
+
+// Changed to ALIGN_LEFT to keep it away from 'Lmt'
+LATENCY_DISP->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
+
+
+
+    
+    
     { LMT_LED = new Fl_Box(504, 8, 8, 8, "Lmt");
       LMT_LED->box(FL_DOWN_BOX);
       LMT_LED->color((Fl_Color)2);

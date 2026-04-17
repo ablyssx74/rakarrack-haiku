@@ -505,6 +505,12 @@ int JACKstart(RKR * rkr_, jack_client_t * jackclient_) {
     format.frame_rate = (float)final_rate; 
     format.byte_order = B_MEDIA_HOST_ENDIAN;
     format.buffer_size = final_frames * sizeof(float) * 2; 		
+    
+    // Latency sniffer
+  
+	float latency_ms = ((float)final_frames / (float)final_rate) * 1000.0f;
+	
+
 
     // 3. Register Input Node
     BMediaRoster* roster = BMediaRoster::Roster();
