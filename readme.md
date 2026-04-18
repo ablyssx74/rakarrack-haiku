@@ -1,7 +1,7 @@
 ### Rakarrack Haiku is a port in progress of the great [rakarrack project](https://rakarrack.sourceforge.net/)
 
 ### Current Status:
-- Pretty much everthing works with the exception of a few things here there.
+- Pretty much everthing works like effects and even midi with the exception of a few things here there.
 -  Midi velocity - not really needed but may look into it eventually. Low priority.
 -  Background images.  Not really needed but had to remove them because the files caused a crash in 32bit builds likey due to pixel 4 byte misalignment. May add custom bg images another day. Low priority.
 -  ALC - Not really sure even how to use this correctly.  Perhaps requires AUX input for secondary source.  Low priority.
