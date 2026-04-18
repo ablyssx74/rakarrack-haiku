@@ -10,13 +10,14 @@ CXX = g++-x86
 CC = gcc-x86
 LDFLAGS = -L/boot/system/develop/lib/x86 -L/boot/system/lib/x86 
 CPPFLAGS = -I/boot/system/develop/headers/x86 -I$(PWD)
-
+PackageInfo = PackageInfo32.tpl
 MAKE := setarch x86 $(MAKE)   
 else ifeq ($(UNAME_M), x86_64)
 CXX = g++
 CC = gcc
 LDFLAGS = -L/boot/system/develop/lib/ 
 CPPFLAGS = -I$(PWD)
+PackageInfo = PackageInfo64.tpl
 endif
 
 #LDFLAGS="-L/boot/system/develop/lib/x86 -L/boot/system/lib/x86" \
@@ -151,7 +152,7 @@ package: all
 	@[ -n "$(PACKAGE_DIR)" ] || { echo "PACKAGE_DIR is undefined"; exit 1; }
 	rm -rf "./$(PACKAGE_DIR)"
 	mkdir -p $(PACKAGE_DIR)
-	sed -e 's/$$(NAME)/$(NAME)/g' -e 's/$$(VERSION)/$(VERSION)/g' -e 's/$$(ARCH)/$(ARCH)/' -e 's/$$(YEAR)/$(shell date +%Y)/' PackageInfo.tpl > $(PACKAGE_DIR)/.PackageInfo
+	sed -e 's/$$(NAME)/$(NAME)/g' -e 's/$$(VERSION)/$(VERSION)/g' -e 's/$$(ARCH)/$(ARCH)/' -e 's/$$(YEAR)/$(shell date +%Y)/' $(PackageInfo) > $(PACKAGE_DIR)/.PackageInfo
 	mkdir -p $(PACKAGE_DIR)/apps
 	mkdir -p $(PACKAGE_DIR)/bin
 	mkdir -p $(PACKAGE_DIR)/data/deskbar/menu/Applications
