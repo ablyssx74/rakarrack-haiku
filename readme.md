@@ -14,8 +14,8 @@ To clean the build run ``` make -f haiku.makefile clean```
 
 <br>
 GTK Theme<br>
-<img width="400" height="460" alt="screenshot" src="https://github.com/user-attachments/assets/1c5eb8c9-33a9-4d51-bb37-7387207e271f" /><br>
+<img width="460" height="460" alt="screenshot" src="https://github.com/user-attachments/assets/1c5eb8c9-33a9-4d51-bb37-7387207e271f" /><br>
 Plastic Theme<br>
-<img width="400" height="460" alt="Image" src="https://github.com/user-attachments/assets/04c3984a-30de-4aba-96fb-82ead7a4def3" /><br>
+<img width="460" height="460" alt="Image" src="https://github.com/user-attachments/assets/04c3984a-30de-4aba-96fb-82ead7a4def3" /><br>
 Preferences Menu<br>
-<img width="400" height="460" alt="Image" src="https://github.com/user-attachments/assets/f3ba92ce-0ade-4020-8840-ff964cc9cc47" />
+<img width="460" height="460" alt="Image" src="https://github.com/user-attachments/assets/f3ba92ce-0ade-4020-8840-ff964cc9cc47" />
