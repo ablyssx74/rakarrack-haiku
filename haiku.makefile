@@ -11,13 +11,15 @@ CC = gcc-x86
 LDFLAGS = -L/boot/system/develop/lib/x86 -L/boot/system/lib/x86 
 CPPFLAGS = -I/boot/system/develop/headers/x86 -I$(PWD)
 PackageInfo = PackageInfo32.tpl
-MAKE := setarch x86 $(MAKE)   
+MAKE := setarch x86 $(MAKE)
+REQUIRED_PKGS =	fltk_x86 freetype_x86 libxfont2_x86 libsndfile_x86 libsamplerate_x86 libxpm_x86 
 else ifeq ($(UNAME_M), x86_64)
 CXX = g++
 CC = gcc
 LDFLAGS = -L/boot/system/develop/lib/ 
 CPPFLAGS = -I$(PWD)
 PackageInfo = PackageInfo64.tpl
+REQUIRED_PKGS = fltk_devel fontconfig_devel freetype_devel libxfont2_devel libsndfile_devel libsamplerate_devel libxpm_devel
 endif
 
 #LDFLAGS="-L/boot/system/develop/lib/x86 -L/boot/system/lib/x86" \
@@ -180,7 +182,7 @@ package: all
 #----------------------------------------------------------
 # Required packages- Informational purposes 
 #----------------------------------------------------------
-REQUIRED_PKGS = fltk_devel fontconfig_devel freetype_devel libxfont2_devel libsndfile_devel libsamplerate_devel libxpm_devel
+
          
 deps:
 	@echo "Install these via pkgman:"
