@@ -24100,40 +24100,8 @@ void RKRGUI::MiraClientes() {
           } 
       } 
       fclose(fp);
-  }
-   
-  /* --- COMMENTED OUT ALL JACK LOGIC TO PREVENT CRASH ON HAIKU ---
-  
-  const char **ports;
-  if ((ports = (const char **)jack_get_ports (rkr->jackclient, NULL, JACK_DEFAULT_AUDIO_TYPE, 
-                               JackPortIsInput)) != NULL) 
-  {
-      i=0;
-      while (ports[i] != NULL)
-      {
-          // This line was causing the crash because JackCo no longer exists!
-          // if((strstr(ports[i],"rakarrack:in_1")==0) && (strstr(ports[i],"rakarrack:in_2")==0))
-          // JackCo->add(ports[i]); 
-          i++; 
-      }
-      free(ports);
-  }
+  }   
 
-  const char **iports;  
-  if ((iports = (const char **)jack_get_ports (rkr->jackclient, NULL, JACK_DEFAULT_AUDIO_TYPE,
-                               JackPortIsOutput)) != NULL) 
-  {
-      i=0;
-      while (iports[i] != NULL)
-      {
-          // This line was also causing a crash because JackIn no longer exists!
-          // if((strstr(iports[i],"rakarrack:out_1")==0) && (strstr(iports[i],"rakarrack:out_2")==0))
-          // JackIn->add(iports[i]);
-          i++; 
-      }
-      free(iports);
-  }
-  ---------------------------------------------------------------- */
 }
 
 

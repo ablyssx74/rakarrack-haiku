@@ -115,7 +115,7 @@ RKR::RKR ()
   strcpy (jackcliname, jack_get_client_name (jackclient));
   J_SAMPLE_RATE = jack_get_sample_rate (jackclient);
   J_PERIOD = jack_get_buffer_size (jackclient);
-  printf("Rakarrack: Buffer Size (J_PERIOD) is: %d\n", J_PERIOD);
+  printf("[Rakarrack] Buffer Size (J_PERIOD) is: %d\n", J_PERIOD);
   
   rakarrack.get(PrefNom("Disable Warnings"),mess_dis,0);
   rakarrack.get (PrefNom ("Filter DC Offset"), DC_Offset, 0); 
@@ -223,13 +223,7 @@ RKR::RKR ()
 
   bogomips = 0.0f;
 i = Get_Bogomips();
-printf("Rakarrack: J_PERIOD is: %d\n", J_PERIOD);
-printf("Rakarrack: Engine is using PERIOD: %d\n", PERIOD);
-
-
   
-
-
 
 // update allocations:
 efxoutl      = (float *) malloc (sizeof (float) * MAX_RKR_PERIOD);

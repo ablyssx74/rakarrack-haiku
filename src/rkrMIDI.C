@@ -549,7 +549,7 @@ if (efx_MIDIConverter) {
         {
             fMidiProd = prod; 
             // We DO NOT release here because fMidiProd now 'owns' it
-            printf("[Rakarrack] MIDI: Found and assigned: %s\n", fMidiProd->Name());
+            printf("[Rakarrack] MIDI Found and assigned: %s\n", fMidiProd->Name());
         } 
         else 
         {

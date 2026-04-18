@@ -141,7 +141,7 @@ main (int argc, char *argv[])
   
         start_haiku_native_interface(rk);
         
-		printf("Haiku Native Mode Started.\n");
+		printf("[Rakarrack] Haiku Native Mode Started.\n");
         myApp->Run();
 
         
@@ -200,7 +200,7 @@ main (int argc, char *argv[])
       }
     }
 
-    printf("Rakarrack loop ended. Cleaning up audio...\n");
+    printf("[Rakarrack] loop ended. Cleaning up audio...\n");
     HaikuAudioShutdown();
     fflush(stdout);
     if (myApp) {

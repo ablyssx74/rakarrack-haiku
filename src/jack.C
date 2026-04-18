@@ -768,7 +768,7 @@ status_t ConnectHardwareToRakarrack() {
 // Shutdown
 
 extern "C" void HaikuAudioShutdown() {
-    printf("Rakarrack: Entering HaikuAudioShutdown...\n");
+    printf("[Rakarrack] Entering HaikuAudioShutdown...\n");
     BMediaRoster* roster = BMediaRoster::Roster();
     if (!roster) return;
 
@@ -780,18 +780,18 @@ extern "C" void HaikuAudioShutdown() {
 
         // Attempt to find the link from our side
         if (roster->GetConnectedInputsFor(myNode, &connectedInput, 1, &inputCount) == B_OK && inputCount > 0) {
-            printf("Rakarrack: Breaking active link via our input...\n");
+            printf("[Rakarrack] Breaking active link via our input...\n");
             roster->Disconnect(gInputNode.node, connectedInput.source, myNode.node, connectedInput.destination);
         } else {
             // Fallback: Search from the Hardware side
-            printf("Rakarrack: Searching via Hardware Node %d...\n", (int)gInputNode.node);
+            printf("[Rakarrack] Searching via Hardware Node %d...\n", (int)gInputNode.node);
             media_output hwOutputs[8]; // Array for multiple outputs
             int32 hwOutCount = 0;
             if (roster->GetConnectedOutputsFor(gInputNode, hwOutputs, 8, &hwOutCount) == B_OK && hwOutCount > 0) {
                 for (int i = 0; i < hwOutCount; i++) {
                     // Match by the 'port' ID which is the unique destination identifier
                     if (hwOutputs[i].destination.port == inNode->ControlPort()) {
-                         printf("Rakarrack: Found hardware output! Severing link...\n");
+                         printf("[Rakarrack] Found hardware output! Severing link...\n");
                          roster->Disconnect(hwOutputs[i].node.node, hwOutputs[i].source, myNode.node, hwOutputs[i].destination);
                     }
                 }
@@ -799,7 +799,7 @@ extern "C" void HaikuAudioShutdown() {
         }
     }
     
-    printf("Rakarrack: Cleaning up MIDI resources...\n");
+    printf("[Rakarrack] Cleaning up MIDI resources...\n");
 
 
 // 1. MIDI DISCONNECT
@@ -810,19 +810,19 @@ extern "C" void HaikuAudioShutdown() {
 
     // 2. STOP AND RELEASE
     if (outPlayer) {
-        printf("Rakarrack: Stopping outPlayer (Sync)...\n");
+        printf("[Rakarrack] Stopping outPlayer (Sync)...\n");
         outPlayer->Stop(true, true); // Synchronous wait
         delete outPlayer;
         outPlayer = NULL;
     }
 	
     if (inNode) {
-        printf("Rakarrack: Stopping and Releasing inNode...\n");
+        printf("[Rakarrack] Stopping and Releasing inNode...\n");
         roster->StopNode(inNode->Node(), 0, true);
         inNode->Release(); // Incremental cleanup
         inNode = NULL;
     }
     
-    printf("Rakarrack: Shutdown complete.\n");
+    printf("[Rakarrack] Shutdown complete.\n");
 }
 
