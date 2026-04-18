@@ -1,6 +1,6 @@
 ### Rakarrack Haiku is a port in progress of the great [rakarrack project](https://rakarrack.sourceforge.net/)
 
-Requires: Haiku 32bit 
+Requires: Haiku 64bit or 32bit 
 
 To see help run ```make -f haiku.makefile help```
 
