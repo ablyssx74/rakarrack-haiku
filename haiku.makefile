@@ -185,7 +185,7 @@ package: all
 
          
 deps:
-	@echo "Install these via pkgman:"
+	@echo "Install these via pkgman to build source:"
 	@echo "pkgman install $(REQUIRED_PKGS)"     	
 
 #----------------------------------------------------------	
