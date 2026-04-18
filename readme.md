@@ -1,4 +1,4 @@
-### Rakarrack Haiku is a port in progress of the great [rakarrack project](https://rakarrack.sourceforge.net/)
+### Rakarrack Haiku is a port-in-progress of the great [rakarrack project](https://rakarrack.sourceforge.net/)
 
 ### Current Status:
 - Pretty much everthing works like effects and even midi with the exception of a few things here there.
