@@ -21,44 +21,32 @@ CPPFLAGS = -I$(PWD)
 PackageInfo = PackageInfo64.tpl
 REQUIRED_PKGS = fltk_devel fontconfig_devel freetype_devel libxfont2_devel libsndfile_devel libsamplerate_devel libxpm_devel
 endif
-
-#LDFLAGS="-L/boot/system/develop/lib/x86 -L/boot/system/lib/x86" \
-#CPPFLAGS="-I/boot/system/develop/headers/x86 -I$(PWD)" \
-
-      
+     
 
 #----------------------------------------------------------
-# Default values if not specified on the command line
-# E.g., custom build: 
-# make -f haiku.makefile clean && make -f haiku.makefile config FRAMES=64 SIMD_FLAGS="-O3 -march=native && make -f haiku.makefile"
-# To make rakarrack.hpkg
-# haiku.makefile package
+# Default buffer and rame rate. Can be changed later in the UI
 #----------------------------------------------------------
 FRAMES ?= 2048
 RATE   ?= 48000
-SIMD_FLAGS ?= -O3 -mtune=generic -msse2 # Public Build Default
-	
-#----------------------------------------------------------
-# CPU Features - Select native if building for personal use and maximum local speed	
-# SIMD_FLAGS :=  -O3 -march=native
 #----------------------------------------------------------
 
+	
+#----------------------------------------------------------
+# CPU Features - Use native if building for personal use and maximum local speed	
+# SIMD_FLAGS :=  -O3 -march=native
+#----------------------------------------------------------
+SIMD_FLAGS ?= -O3 -mtune=generic -msse2 # Public Build Default
 
 #----------------------------------------------------------
 # Optimization & Size Settings
-# We use SIMD_FLAGS instead of a generic -O3
 #----------------------------------------------------------
 BUILD_FLAGS = $(SIMD_FLAGS) -ffast-math -ffunction-sections -fdata-sections -s
 LD_OPTIMIZE = -Wl,--gc-sections
 HAIKU_FIXES = -include $(PWD)/haiku_fixes.h
 HAIKU_LIBS = -lmedia -lbe -lmidi2 -ltranslation -lnetwork -lroot -lpthread
 EXTRA_LIBS = -lsamplerate -lsndfile -lfltk_images -lfltk -lfltk_forms -lpng -lz
+#----------------------------------------------------------
 
-#----------------------------------------------------------
-# Not used here but saving anyway
-#----------------------------------------------------------
-HAIKU_INC = -I/boot/system/develop/headers/os -I/boot/system/develop/headers/posix
-HAIKU_LIB = -L/boot/system/develop/lib 
 
 #----------------------------------------------------------
 # Lazy evaluation: These will only run when the recipes actually execute
@@ -66,11 +54,9 @@ HAIKU_LIB = -L/boot/system/develop/lib
 FLTK_CXX = $$(fltk-config --cxxflags)
 FLTK_LD  = $$(fltk-config --ldflags)
 
+
 .PHONY: all config build clean help deps
-
-
 all: build
-
 #----------------------------------------------------------
 # Configure with overrides
 #----------------------------------------------------------
@@ -119,7 +105,7 @@ build: haiku_stubs.o haiku_native/haiku-rakarrack.o
 		$(BUILD_FLAGS) \
 		-include $(PWD)/jack/jack.h \
 		$(EXTRA_LIBS) $(HAIKU_LIBS) $(LD_OPTIMIZE)
-	mimeset -f rakarrack
+		mimeset -f rakarrack
 
 
 haiku_stubs.o: haiku_stubs.cpp
@@ -167,6 +153,8 @@ package: all
 	mimeset -f $(NAME)
 	cp man/$(NAME).1 $(PACKAGE_DIR)/data/$(NAME)/share/man/man1
 	#cp icons/*.png $(PACKAGE_DIR)/data/$(NAME)/share/pixmaps
+	# Removed png background files as they crash 32bit likey due to pixel 4 byte misalignment
+	# Todo: add new custom 32bit RGBA (with alpha alignment) background files that have proper alignment and don't crash 32bit builds
 	cp data/*.{rvb,dly,rkrb,wav} $(PACKAGE_DIR)/data/$(NAME)/share/$(NAME)
 	cp -r doc/help $(PACKAGE_DIR)/data/$(NAME)/share/doc/$(NAME)/html
 	cp -r AUTHORS $(PACKAGE_DIR)/data/$(NAME)/share/doc/$(NAME)/
