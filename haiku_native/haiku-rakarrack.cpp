@@ -163,7 +163,7 @@ private:
 class RakarrackWindow : public BWindow {
 public:
     RakarrackWindow(BRect frame, RKR* rkr) 
-        : BWindow(frame, "Rakarrack Native", B_DOCUMENT_WINDOW, 
+        : BWindow(frame, "Haikurack", B_DOCUMENT_WINDOW, 
           B_ASYNCHRONOUS_CONTROLS | B_QUIT_ON_WINDOW_CLOSE) {
         
         fRkr = rkr;
