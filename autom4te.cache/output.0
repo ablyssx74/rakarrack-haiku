@@ -5699,24 +5699,18 @@ fi
 if test -z "$FLTKCONFIG"; then
   as_fn_error $? "fltk not installed!" "$LINENO" 5
 fi
-#AC_CHECK_PROG([ACONNECT],[aconnect],[aconnect])
-#if test -z "$ACONNECT"; then
-#  AC_MSG_ERROR([aconnect not installed!])
-#fi
 # Extract the first word of "aconnect", so it can be a program name with args.
 set dummy aconnect; ac_word=$2
 { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for $ac_word" >&5
 printf %s "checking for $ac_word... " >&6; }
-if test ${ac_cv_path_ACONNECT+y}
+if test ${ac_cv_prog_ACONNECT+y}
 then :
   printf %s "(cached) " >&6
 else case e in @%:@(
-  e) case $ACONNECT in
-  [\\/]* | ?:[\\/]*)
-  ac_cv_path_ACONNECT="$ACONNECT" # Let the user override the test with a path.
-  ;;
-  *)
-  as_save_IFS=$IFS; IFS=$PATH_SEPARATOR
+  e) if test -n "$ACONNECT"; then
+  ac_cv_prog_ACONNECT="$ACONNECT" # Let the user override the test.
+else
+as_save_IFS=$IFS; IFS=$PATH_SEPARATOR
 for as_dir in $PATH
 do
   IFS=$as_save_IFS
@@ -5727,7 +5721,7 @@ do
   esac
     for ac_exec_ext in '' $ac_executable_extensions; do
   if as_fn_executable_p "$as_dir$ac_word$ac_exec_ext"; then
-    ac_cv_path_ACONNECT="$as_dir$ac_word$ac_exec_ext"
+    ac_cv_prog_ACONNECT="aconnect"
     printf "%s\n" "$as_me:${as_lineno-$LINENO}: found $as_dir$ac_word$ac_exec_ext" >&5
     break 2
   fi
@@ -5735,12 +5729,10 @@ done
   done
 IFS=$as_save_IFS
 
-  test -z "$ac_cv_path_ACONNECT" && ac_cv_path_ACONNECT="/bin/true"
-  ;;
-esac ;;
+fi ;;
 esac
 fi
-ACONNECT=$ac_cv_path_ACONNECT
+ACONNECT=$ac_cv_prog_ACONNECT
 if test -n "$ACONNECT"; then
   { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $ACONNECT" >&5
 printf "%s\n" "$ACONNECT" >&6; }
@@ -5750,6 +5742,9 @@ printf "%s\n" "no" >&6; }
 fi
 
 
+if test -z "$ACONNECT"; then
+  as_fn_error $? "aconnect not installed!" "$LINENO" 5
+fi
 
 # Checks gcc version
 
@@ -6519,6 +6514,68 @@ then :
 fi
 
 
+
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for main in -lnetwork" >&5
+printf %s "checking for main in -lnetwork... " >&6; }
+if test ${ac_cv_lib_network_main+y}
+then :
+  printf %s "(cached) " >&6
+else case e in @%:@(
+  e) ac_check_lib_save_LIBS=$LIBS
+LIBS="-lnetwork  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+
+int
+main (void)
+{
+return main ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"
+then :
+  ac_cv_lib_network_main=yes
+else case e in @%:@(
+  e) ac_cv_lib_network_main=no ;;
+esac
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.beam \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS ;;
+esac
+fi
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_network_main" >&5
+printf "%s\n" "$ac_cv_lib_network_main" >&6; }
+if test "x$ac_cv_lib_network_main" = xyes
+then :
+  printf "%s\n" "@%:@define HAVE_LIBNETWORK 1" >>confdefs.h
+
+  LIBS="-lnetwork $LIBS"
+
+fi
+
+case "$host_os" in
+    *haiku*)
+        case "$host_cpu" in
+            x86_64)
+                if test -d "/boot/system/develop/lib"; then
+                    LDFLAGS="$LDFLAGS -L/boot/system/develop/lib -L/boot/system/lib"
+                    CPPFLAGS="$CPPFLAGS -I/boot/system/develop/headers -I/boot/system/develop/headers/X11"
+                fi
+                ;;
+            i?86)
+                # 32-bit (x86) logic
+                if test -d "/boot/system/develop/lib/x86"; then
+                    LDFLAGS="$LDFLAGS -L/boot/system/develop/lib/x86 -L/boot/system/lib/x86"
+                    CPPFLAGS="$CPPFLAGS -I/boot/system/develop/headers/x86 -I/boot/system/develop/headers/x86/X11"
+                fi
+                ;;
+        esac
+        ;;
+esac
 
 
 
@@ -7334,7 +7391,7 @@ fi
 
 if test "x$prefix" = "xNONE"; then
 
-printf "%s\n" "@%:@define PREFIX \"/boot/home/config/rakarrack\"" >>confdefs.h
+printf "%s\n" "@%:@define PREFIX \"/boot/home/rakarrack\"" >>confdefs.h
 
 else
 
@@ -7747,7 +7804,7 @@ fi
 
 
 if test "x$prefix" = "xNONE"; then
-prefix=/boot/home/config/rakarrack
+prefix=/boot/home/rakarrack
 fi
 
 
@@ -7893,8 +7950,8 @@ printf "%s\n" "@%:@define DEFAULT_BUFFER_FRAMES $buffer_frames" >>confdefs.h
 
 
 # 3. Final Flag Assembly
-#LIBS="`$FLTKCONFIG --use-images --ldflags` $LIBS"
 LIBS="`$FLTKCONFIG --use-images --ldflags`"
+#LIBS="`$FLTKCONFIG --use-images --ldflags` $LIBS"
 CXXFLAGS="-Wall $SSE $ALTIVEC -ffast-math -pipe $ADDS -fsigned-char `$FLTKCONFIG --use-images --cxxflags` `pkg-config --cflags sndfile` `pkg-config --cflags jack` $CXXFLAGS"
 
 ac_config_files="$ac_config_files Makefile src/Makefile man/Makefile data/Makefile icons/Makefile doc/Makefile doc/help/Makefile doc/help/imagenes/Makefile doc/help/css/Makefile extra/Makefile"
@@ -9406,8 +9463,8 @@ echo  " JACK Audio Connection Kit library  . . . . . . . . . . .: $haiku_rakarra
 echo  " ALSA MIDI Sequencer support  . . . . . . . . . . . . . .: $haiku_rakarrack_msg"
 echo  " Samplerate conversion (libsamplerate). . . . . . . . . .: $ac_samplerate"
 echo  " General audio file (libsndfile)  . . . . . . . . . . . .: $ac_sndfile"
-echo  " Buffer Frame Count ( can be changed later in the ui ). .: $buffer_frames"
-echo  " Frame Rate . . . . ( can be changed later in the ui ). .: $frame_rate" 
+echo  " Buffer Frame Count ( can be changed later in the UI ). .: $buffer_frames"
+echo  " Frame Rate . . . . ( can be changed later in the UI ). .: $frame_rate" 
 
 echo  
 echo  " Now you can run 'make -f haiku.makefile build' to build the sources."

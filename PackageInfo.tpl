@@ -16,18 +16,17 @@ provides {
 }
 requires {
 	haiku
-    fltk_devel 
-	fontconfig_devel 
-	freetype_devel 
-	libxfont2_devel 
-	libsndfile_devel 
-	libsamplerate_devel 
-	libxpm_devel	
-}
+	fltk_x86
+	freetype_x86
+	libxfont2_x86
+	libsndfile_x86
+	libsamplerate_x86
+	libxpm_x86
+}	
 urls {
-	"https://github.com/ablyssx74/rakarrack-haiku"
+	"https://github.com/ablyssx74/rakarrack-haiku-32bit-hybrid"
 }
 source-urls {
 # Download
-	"https://github.com/ablyssx74/rakarrack-haiku/archive/refs/tags/v1.0.0.tar.gz"
+	"https://github.com/ablyssx74/rakarrack-haiku-32bit-hybrid/archive/refs/tags/v1.0.3.tar.gz"
 }

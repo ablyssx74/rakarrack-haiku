@@ -1260,7 +1260,6 @@ if (rkr->cpufp % 40 == 0) {
     snprintf(tmp, sizeof(tmp), "%5.2f%%", rkr->cpuload);
     CPULOAD->copy_label(tmp);
 }
-
 /*
 // 2. Update Latency every 120 counts (~3 seconds)
 if (rkr->cpufp >= 120) {
@@ -1281,6 +1280,7 @@ if (rkr->cpufp >= 120) {
     
     // Reset the counter so it cycles back to 1
     rkr->cpufp = 0;
+    
 }
 */
 
@@ -11275,6 +11275,7 @@ Fl_Double_Window* RKRGUI::make_window() {
       TITTLE_L->callback((Fl_Callback*)cb_TITTLE_L);
       TITTLE_L->align(FL_ALIGN_TOP|FL_ALIGN_INSIDE);
     } // Fl_Button* TITTLE_L
+    
 /*    
 // Move X much further left (420) and use LEFT alignment
 LATENCY_DISP = new Fl_Box(420, 8, 80, 10, "Lat: 0.0 ms"); 
@@ -11284,11 +11285,9 @@ LATENCY_DISP->labelcolor(FL_BACKGROUND2_COLOR);
 
 // Changed to ALIGN_LEFT to keep it away from 'Lmt'
 LATENCY_DISP->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
-*/
 
-
-    
-    
+*/   
+   
     { LMT_LED = new Fl_Box(504, 8, 8, 8, "Lmt");
       LMT_LED->box(FL_DOWN_BOX);
       LMT_LED->color((Fl_Color)2);

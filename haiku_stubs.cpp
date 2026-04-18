@@ -159,8 +159,10 @@ extern "C" {
     void snd_seq_ev_set_subs(snd_seq_event_t* ev) {}
     void snd_seq_ev_set_direct(snd_seq_event_t* ev) {}
 }
-/*
-// --- Helper Functions ---
+#if defined(__x86_64__)
+    // Do notta
+#elif defined(__i386__)
+    // --- Helper Functions ---
 char *strsep(char **stringp, const char *delim) {
     char *s; const char *spanp; int c, sc; char *tok;
     if ((s = *stringp) == NULL) return NULL;
@@ -174,4 +176,6 @@ char *strsep(char **stringp, const char *delim) {
         } while (sc != 0);
     }
 }
-*/
+#endif
+
+

@@ -54,11 +54,10 @@ AC_CHECK_PROG([FLTKCONFIG], [fltk-config], [fltk-config])
 if test -z "$FLTKCONFIG"; then
   AC_MSG_ERROR([fltk not installed!])
 fi
-#AC_CHECK_PROG([ACONNECT],[aconnect],[aconnect])
-#if test -z "$ACONNECT"; then
-#  AC_MSG_ERROR([aconnect not installed!])
-#fi
-AC_PATH_PROG(ACONNECT, aconnect, /bin/true)
+AC_CHECK_PROG([ACONNECT],[aconnect],[aconnect])
+if test -z "$ACONNECT"; then
+  AC_MSG_ERROR([aconnect not installed!])
+fi
 
 # Checks gcc version
 
@@ -82,6 +81,27 @@ AC_FUNC_MALLOC
 AC_FUNC_SELECT_ARGTYPES
 AC_CHECK_FUNCS([floor memset memmove pow select sqrt strdup strstr])
 
+
+AC_CHECK_LIB([network], [main])
+case "$host_os" in
+    *haiku*)
+        case "$host_cpu" in
+            x86_64)
+                if test -d "/boot/system/develop/lib"; then
+                    LDFLAGS="$LDFLAGS -L/boot/system/develop/lib -L/boot/system/lib"
+                    CPPFLAGS="$CPPFLAGS -I/boot/system/develop/headers -I/boot/system/develop/headers/X11"
+                fi
+                ;;
+            i?86)
+                # 32-bit (x86) logic
+                if test -d "/boot/system/develop/lib/x86"; then
+                    LDFLAGS="$LDFLAGS -L/boot/system/develop/lib/x86 -L/boot/system/lib/x86"
+                    CPPFLAGS="$CPPFLAGS -I/boot/system/develop/headers/x86 -I/boot/system/develop/headers/x86/X11"
+                fi
+                ;;
+        esac
+        ;;
+esac
 
 
 
@@ -213,7 +233,7 @@ else
 fi
 
 if test "x$prefix" = "xNONE"; then
-AC_DEFINE_UNQUOTED(PREFIX, "/boot/home/config/rakarrack", [Install prefix])
+AC_DEFINE_UNQUOTED(PREFIX, "/boot/home/rakarrack", [Install prefix])
 else
 AC_DEFINE_UNQUOTED(PREFIX, "$prefix", [Install prefix])
 fi
@@ -226,7 +246,7 @@ AC_SUBST(SAMPLERATE_LIBS)
 
 
 if test "x$prefix" = "xNONE"; then
-prefix=/boot/home/config/rakarrack
+prefix=/boot/home/rakarrack
 fi
 
 
@@ -349,8 +369,8 @@ AC_DEFINE_UNQUOTED([DEFAULT_BUFFER_FRAMES], [$buffer_frames], [Default buffer fr
 
 
 # 3. Final Flag Assembly
-#LIBS="`$FLTKCONFIG --use-images --ldflags` $LIBS"
 LIBS="`$FLTKCONFIG --use-images --ldflags`"
+#LIBS="`$FLTKCONFIG --use-images --ldflags` $LIBS"
 CXXFLAGS="-Wall $SSE $ALTIVEC -ffast-math -pipe $ADDS -fsigned-char `$FLTKCONFIG --use-images --cxxflags` `pkg-config --cflags sndfile` `pkg-config --cflags jack` $CXXFLAGS"
 
 AC_CONFIG_FILES([Makefile src/Makefile man/Makefile data/Makefile icons/Makefile doc/Makefile doc/help/Makefile doc/help/imagenes/Makefile doc/help/css/Makefile extra/Makefile])
@@ -382,8 +402,8 @@ echo  " JACK Audio Connection Kit library  . . . . . . . . . . .: $haiku_rakarra
 echo  " ALSA MIDI Sequencer support  . . . . . . . . . . . . . .: $haiku_rakarrack_msg"
 echo  " Samplerate conversion (libsamplerate). . . . . . . . . .: $ac_samplerate"
 echo  " General audio file (libsndfile)  . . . . . . . . . . . .: $ac_sndfile"
-echo  " Buffer Frame Count ( can be changed later in the ui ). .: $buffer_frames"
-echo  " Frame Rate . . . . ( can be changed later in the ui ). .: $frame_rate" 
+echo  " Buffer Frame Count ( can be changed later in the UI ). .: $buffer_frames"
+echo  " Frame Rate . . . . ( can be changed later in the UI ). .: $frame_rate" 
 
 echo  
 echo  " Now you can run 'make -f haiku.makefile build' to build the sources."

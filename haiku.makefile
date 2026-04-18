@@ -2,7 +2,27 @@
 # Optimized Haiku Build Script
 SHELL := /bin/bash
 #----------------------------------------------------------
-               
+      
+
+UNAME_M := $(shell uname -p)
+ifeq ($(UNAME_M), x86)
+CXX = g++-x86
+CC = gcc-x86
+LDFLAGS = -L/boot/system/develop/lib/x86 -L/boot/system/lib/x86 
+CPPFLAGS = -I/boot/system/develop/headers/x86 -I$(PWD)
+
+MAKE := setarch x86 $(MAKE)   
+else ifeq ($(UNAME_M), x86_64)
+CXX = g++
+CC = gcc
+LDFLAGS = -L/boot/system/develop/lib/ 
+CPPFLAGS = -I$(PWD)
+endif
+
+#LDFLAGS="-L/boot/system/develop/lib/x86 -L/boot/system/lib/x86" \
+#CPPFLAGS="-I/boot/system/develop/headers/x86 -I$(PWD)" \
+
+      
 
 #----------------------------------------------------------
 # Default values if not specified on the command line
@@ -13,7 +33,7 @@ SHELL := /bin/bash
 #----------------------------------------------------------
 FRAMES ?= 2048
 RATE   ?= 48000
-SIMD_FLAGS ?= -O3 -march=x86-64 -mtune=generic -msse2 # Public Build Default
+SIMD_FLAGS ?= -O3 -mtune=generic -msse2 # Public Build Default
 	
 #----------------------------------------------------------
 # CPU Features - Select native if building for personal use and maximum local speed	
@@ -52,7 +72,9 @@ all: build
 # Configure with overrides
 #----------------------------------------------------------
 config:
-	CPPFLAGS="-I$(PWD)" \
+	./configure \
+	LDFLAGS="$(LDFLAGS)" \
+	CPPFLAGS="$(CPPFLAGS)" \
 	ACONNECT=/bin/true \
 	ac_cv_header_alsa_asoundlib_h=yes \
 	ac_cv_lib_asound_main=yes \
@@ -72,14 +94,13 @@ config:
 	ac_cv_lib_Xext_main=yes \
 	ac_cv_lib_Xrender_main=yes \
 	ac_cv_lib_X11_main=yes \
-	./configure \
 	--enable-datadir --datadir="/boot/system/data/rakarrack/share/rakarrack" \
 	--enable-docdir --docdir="/boot/system/data/rakarrack/share/doc/rakarrack/html" \
 	--with-frame-rate=$(RATE) \
 	--with-buffer-frames="$(FRAMES)"
 	
 haiku_native/haiku-rakarrack.o: haiku_native/haiku-rakarrack.cpp
-	g++ -c $< -o $@ -I$(PWD)/jack -I. -I./src $(BUILD_FLAGS) -fpermissive $(HAIKU_FIXES)
+	$(CXX) -c $< -o $@ -I$(PWD)/jack -I. -I./src $(BUILD_FLAGS) -fpermissive $(HAIKU_FIXES)
 
 build: haiku_stubs.o haiku_native/haiku-rakarrack.o
 	@echo "=========================================================="
@@ -91,7 +112,7 @@ build: haiku_stubs.o haiku_native/haiku-rakarrack.o
 		LIBS="$(PWD)/haiku_native/haiku-rakarrack.o $(FLTK_LD) $(EXTRA_LIBS) $(HAIKU_LIBS) $(LD_OPTIMIZE) $(PWD)/haiku_stubs.o -Wno-int-to-pointer-cast -Wno-write-strings"
 	
 	# The final link now combines everything correctly
-	g++ -o rakarrack src/*.o haiku_stubs.o haiku_native/haiku-rakarrack.o \
+	$(CXX) -o rakarrack src/*.o haiku_stubs.o haiku_native/haiku-rakarrack.o \
 		$(BUILD_FLAGS) \
 		-include $(PWD)/jack/jack.h \
 		$(EXTRA_LIBS) $(HAIKU_LIBS) $(LD_OPTIMIZE)
@@ -99,7 +120,7 @@ build: haiku_stubs.o haiku_native/haiku-rakarrack.o
 
 
 haiku_stubs.o: haiku_stubs.cpp
-	g++ -c $< -o $@ -I$(PWD)/jack -I. -I./src $(BUILD_FLAGS) -fpermissive
+	$(CXX) -c $< -o $@ -I$(PWD)/jack -I. -I./src $(BUILD_FLAGS) -fpermissive
 
 
 clean:
@@ -114,7 +135,7 @@ clean:
 	@echo "Deep clean complete."
 	
 # Small hack since 32bit Haiku refuses to install packages without _gcc2 appendix.
-UNAME_M := $(shell uname -m)
+UNAME_M := $(shell uname -p)
 ifeq ($(UNAME_M), x86)
     ARCH = x86_gcc2
 else ifeq ($(UNAME_M), x86_64)
@@ -143,7 +164,7 @@ package: all
 	mimeset -f $(NAME)
 	cp man/$(NAME).1 $(PACKAGE_DIR)/data/$(NAME)/share/man/man1
 	#cp icons/*.png $(PACKAGE_DIR)/data/$(NAME)/share/pixmaps
-	cp data/*.{rvb,dly,png,rkrb,wav} $(PACKAGE_DIR)/data/$(NAME)/share/$(NAME)
+	cp data/*.{rvb,dly,rkrb,wav} $(PACKAGE_DIR)/data/$(NAME)/share/$(NAME)
 	cp -r doc/help $(PACKAGE_DIR)/data/$(NAME)/share/doc/$(NAME)/html
 	cp -r AUTHORS $(PACKAGE_DIR)/data/$(NAME)/share/doc/$(NAME)/
 	cp  COPYING $(PACKAGE_DIR)/data/$(NAME)/share/doc/$(NAME)/
