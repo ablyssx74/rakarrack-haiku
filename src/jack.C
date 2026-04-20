@@ -205,14 +205,12 @@ public:
           BMediaNode("Rakarrack-In"),
           BMediaEventLooper() 
     {
-        AddNodeKind(B_BUFFER_CONSUMER); 
+        AddNodeKind(B_BUFFER_CONSUMER | B_PHYSICAL_INPUT); 
     }
 
     uint32 fInputFormat; 
 
     virtual ~RakInputNode() {
-        // This stops the internal thread safely.
-        // Without this, the Media Server thinks we are still running!
         BMediaEventLooper::Quit(); 
     }
 
@@ -225,7 +223,6 @@ public:
     }
 
     // --- 2. LATENCY & RUN MODE ---
-   // Inside class RakInputNode : public ...
     virtual status_t GetLatencyFor(const media_destination&, bigtime_t* out_latency, media_node_id* out_timesource) {
         // Report 1ms (1000 microseconds) for snappy response
     	 *out_latency = 1000; 
@@ -241,10 +238,14 @@ public:
 
     virtual BMediaNode::run_mode RunMode() { return B_RECORDING; }
 
-    // --- 3. LIFECYCLE ---
-    virtual void NodeRegistered() {
-        Run(); 
-    }
+	// --- 3. LIFECYCLE ---
+	virtual void NodeRegistered() {
+ 	   Run(); 
+    	thread_id looperThread = ControlThread();
+    	set_thread_priority(looperThread, B_REAL_TIME_PRIORITY);
+    	fprintf(stderr, "[Rakarrack] Input Node Thread %d Realtime Priority Set.\n", (int)looperThread);
+	}
+
 
     virtual void HandleEvent(const media_timed_event* event, bigtime_t lateness, bool realTimeEvent = false) {}
     virtual port_id ControlPort() const { return BMediaEventLooper::ControlPort(); }
@@ -560,6 +561,15 @@ int JACKstart(RKR * rkr_, jack_client_t * jackclient_) {
 
 int jackprocess (jack_nframes_t nframes, void *arg)
 {
+	
+	static bool priority_set = false;
+	if (!priority_set) {    
+    	thread_id thisThread = find_thread(NULL); 
+  	  	set_thread_priority(thisThread, B_REAL_TIME_PRIORITY);    
+  	    fprintf(stderr, "[Rakarrack] Output Node Thread %d Realtime Priority Set.\n", (int)thisThread); 
+    	priority_set = true;
+	}
+
 	
 	// Start the clock
     bigtime_t start_time = system_time();
