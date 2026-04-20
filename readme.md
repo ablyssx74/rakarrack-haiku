@@ -4,7 +4,7 @@
 - Pretty much everthing works like effects and even midi with the exception of a few things here there.
 -  Midi velocity - not really needed but may look into it eventually. Low priority.
 -  Background images.  Not really needed but had to remove them because the files caused a crash in 32bit builds likey due to pixel 4 byte misalignment. May add custom bg images another day. Low priority.
--  ALC - Not really sure even how to use this correctly.  Perhaps requires AUX input for secondary source.  Low priority.
+-  ACI - Not really sure even how to use this correctly.  Perhaps requires AUX input for secondary source.  Low priority.
 - Midi mapping and other original midi settings - Not really sure how to do this either. Low priority.
 
 Requires: Haiku 64bit or 32bit 
