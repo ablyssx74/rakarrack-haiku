@@ -105,8 +105,6 @@ build: haiku_stubs.o haiku_native/haiku-rakarrack.o
 		$(BUILD_FLAGS) \
 		-include $(PWD)/jack/jack.h \
 		$(EXTRA_LIBS) $(HAIKU_LIBS) $(LD_OPTIMIZE)
-		mimeset -f rakarrack
-
 
 haiku_stubs.o: haiku_stubs.cpp
 	$(CXX) -c $< -o $@ -I$(PWD)/jack -I. -I./src $(BUILD_FLAGS) -fpermissive
