@@ -134,6 +134,8 @@ PACKAGE_DIR := build/package
 NAME = rakarrack
 VERSION = 0.6.1
 
+release: config build package
+
 package: all
 	@[ -n "$(PACKAGE_DIR)" ] || { echo "PACKAGE_DIR is undefined"; exit 1; }
 	rm -rf "./$(PACKAGE_DIR)"
