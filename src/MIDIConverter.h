@@ -52,6 +52,10 @@ public:
   MIDIConverter ();
   ~MIDIConverter ();
 
+
+  float p_freq_ceiling; 
+  float p_freq_floor;
+
   void ResetBuffers(); 
   float *efxoutl;
   float *efxoutr;

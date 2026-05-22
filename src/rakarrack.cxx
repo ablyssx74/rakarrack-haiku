@@ -11243,6 +11243,19 @@ void RKRGUI::cb_Conv_Off_Counter(Fl_Counter* o, void* v) {
   }
 }
 
+void RKRGUI::cb_Conv_Freq_Ceiling_Counter(Fl_Counter* o, void* v) {
+  RKRGUI *gui = (RKRGUI*)v;
+  if (gui && gui->rkr && gui->rkr->efx_MIDIConverter) {
+      gui->rkr->efx_MIDIConverter->p_freq_ceiling = (float)o->value();
+  }
+}
+void RKRGUI::cb_Conv_Freq_Floor_Counter(Fl_Counter* o, void* v) {
+  RKRGUI *gui = (RKRGUI*)v;
+  if (gui && gui->rkr && gui->rkr->efx_MIDIConverter) {
+      gui->rkr->efx_MIDIConverter->p_freq_floor = (float)o->value();
+  }
+}
+
 
 
 Fl_Double_Window* RKRGUI::make_window() {
@@ -21490,13 +21503,12 @@ R average.");
     BMidiIn->align(FL_ALIGN_TOP_LEFT);
   }
  
-    // --- NEW: MIDI CONVERTER TUNING PARAMETERS ---
-  // Placed in the gap created by shrinking the browser
+    // --- COLUMN 1: TRACKING ENGINE ENGINE PARAMETERS (LEFT) ---
   { Conv_Trig_Counter = new Fl_Counter(185, 195, 80, 22, "Trigger Sensitivity");
     Conv_Trig_Counter->type(1);
     Conv_Trig_Counter->labelsize(10);
     Conv_Trig_Counter->labelcolor(FL_BACKGROUND2_COLOR);
-    Conv_Trig_Counter->step(0.05); // Fine steps for float
+    Conv_Trig_Counter->step(0.05); 
     Conv_Trig_Counter->bounds(0.1, 1.0);
     Conv_Trig_Counter->value(0.5);
     Conv_Trig_Counter->callback((Fl_Callback*)cb_Conv_Trig_Counter, (void*)this);
@@ -21524,11 +21536,34 @@ R average.");
     Conv_Off_Counter->callback((Fl_Callback*)cb_Conv_Off_Counter, (void*)this);
     Conv_Off_Counter->align(FL_ALIGN_LEFT);
   }
-  
- 
+
+    // --- COLUMN 2: FREQUENCY WALL FILTERS (RIGHT) ---
+    // Placed side-by-side with Column 1 starting at X=420. Labels use clean FL_ALIGN_LEFT.
+   { Conv_Freq_Ceiling_Counter = new Fl_Counter(420, 195, 80, 22, "Freq Ceiling Filter");
+    Conv_Freq_Ceiling_Counter->type(1); 
+    Conv_Freq_Ceiling_Counter->labelsize(10);
+    Conv_Freq_Ceiling_Counter->labelcolor(FL_BACKGROUND2_COLOR);
+    Conv_Freq_Ceiling_Counter->step(5.0); 
+    Conv_Freq_Ceiling_Counter->bounds(50.0, 5000.0); 
+    Conv_Freq_Ceiling_Counter->value(320.0); 
+    Conv_Freq_Ceiling_Counter->callback((Fl_Callback*)cb_Conv_Freq_Ceiling_Counter, (void*)this);
+    Conv_Freq_Ceiling_Counter->align(FL_ALIGN_LEFT);
+  }
+  { Conv_Freq_Floor_Counter = new Fl_Counter(420, 225, 80, 22, "Freq Floor Filter"); 
+    Conv_Freq_Floor_Counter->type(1); 
+    Conv_Freq_Floor_Counter->labelsize(10);
+    Conv_Freq_Floor_Counter->labelcolor(FL_BACKGROUND2_COLOR);
+    Conv_Freq_Floor_Counter->step(5.0); 
+    Conv_Freq_Floor_Counter->bounds(20.0, 300.0); 
+    Conv_Freq_Floor_Counter->value(80.0); 
+    Conv_Freq_Floor_Counter->callback((Fl_Callback*)cb_Conv_Freq_Floor_Counter, (void*)this);
+    Conv_Freq_Floor_Counter->align(FL_ALIGN_LEFT); 
+  }
+
+
         // --- MIDI Channel Selection ---
-        // Shifted X to 185 to clear the long "Harmonizer" label on the left
-        { Midi_In_Counter = new Fl_Counter(185, 290, 80, 24, "Receive Channel");
+        // Shifted Y back up slightly to 300 to close the empty gap safely
+        { Midi_In_Counter = new Fl_Counter(185, 300, 80, 24, "Receive Channel");
           Midi_In_Counter->type(1);
           Midi_In_Counter->color((Fl_Color)25);
           Midi_In_Counter->labelsize(10);
@@ -21542,8 +21577,7 @@ R average.");
           Midi_In_Counter->align(FL_ALIGN_LEFT);
         } 
         
-        // Shifted X to 185 to match the top counter
-        { Har_In_Counter = new Fl_Counter(185, 325, 80, 24, "Harmonizer Receive Channel");
+        { Har_In_Counter = new Fl_Counter(185, 335, 80, 24, "Harmonizer Receive Channel");
           Har_In_Counter->type(1);
           Har_In_Counter->color((Fl_Color)25);
           Har_In_Counter->labelsize(10);
@@ -21557,15 +21591,14 @@ R average.");
           Har_In_Counter->align(FL_ALIGN_LEFT);
         }
 
-
         // --- MIDI Implementation Group ---
-        { wMIDI = new Fl_Group(10, 365, 273, 25, "MIDI implementation");
+        { wMIDI = new Fl_Group(10, 375, 273, 25, "MIDI implementation");
           wMIDI->box(FL_PLASTIC_DOWN_FRAME);
           wMIDI->labelsize(10);
           wMIDI->labelcolor(FL_BACKGROUND2_COLOR);
           wMIDI->align(FL_ALIGN_TOP_LEFT);
           
-          { Mw0 = new Fl_Check_Button(65, 368, 18, 18, "Default"); // Adjusted Y to fit inside 365
+          { Mw0 = new Fl_Check_Button(65, 378, 18, 18, "Default"); 
             Mw0->type(102);
             Mw0->down_box(FL_DOWN_BOX);
             Mw0->labelsize(11);
@@ -21573,7 +21606,7 @@ R average.");
             Mw0->callback((Fl_Callback*)cb_Mw0);
             Mw0->align(FL_ALIGN_LEFT);
           } 
-          { Mw1 = new Fl_Check_Button(175, 368, 18, 18, "MIDI Learn"); // Fixed name and Y
+          { Mw1 = new Fl_Check_Button(175, 378, 18, 18, "MIDI Learn"); 
             Mw1->type(102);
             Mw1->down_box(FL_DOWN_BOX);
             Mw1->labelsize(11);
@@ -21585,7 +21618,7 @@ R average.");
         } 
 
         // --- Bottom Checkboxes ---
-        { AAssign = new Fl_Check_Button(185, 395, 16, 15, "Auto Assign MIDI Learn");
+        { AAssign = new Fl_Check_Button(185, 405, 16, 15, "Auto Assign MIDI Learn");
           AAssign->down_box(FL_DOWN_BOX);
           AAssign->labelsize(10);
           AAssign->labelcolor(FL_BACKGROUND2_COLOR);
@@ -21593,7 +21626,7 @@ R average.");
           AAssign->align(FL_ALIGN_LEFT);
         } 
         
-        { MTable = new Fl_Check_Button(185, 415, 16, 15, "MIDI Program Change Table");
+        { MTable = new Fl_Check_Button(185, 425, 16, 15, "MIDI Program Change Table");
           MTable->down_box(FL_DOWN_BOX);
           MTable->labelsize(10);
           MTable->labelcolor(FL_BACKGROUND2_COLOR);
@@ -21601,14 +21634,14 @@ R average.");
           MTable->align(FL_ALIGN_LEFT);
         } 
 
-
         // --- Scroll Area ---
-        // Keeping this at x=10 as it spans most of the window width
-         { scroll = new Fl_Scroll(10, 440, 585, 82); // Slightly shortened height
+        { scroll = new Fl_Scroll(10, 450, 585, 72); 
           scroll->type(6);
           scroll->user_data((void*)(5000));
           scroll->end();
         } 
+
+
 
         MIDI_SET->end();
 

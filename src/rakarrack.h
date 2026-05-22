@@ -3995,12 +3995,17 @@ public:
   Fl_Counter *Conv_Trig_Counter;
   Fl_Counter *Conv_Stable_Counter;
   Fl_Counter *Conv_Off_Counter;
+  Fl_Counter *Conv_Freq_Ceiling_Counter;
+  Fl_Counter *Conv_Freq_Floor_Counter;
 private:
   void cb_Midi_In_Counter_i(Fl_Counter*, void*);
   static void cb_Midi_In_Counter(Fl_Counter*, void*);
   static void cb_Conv_Trig_Counter(Fl_Counter*, void*);
   static void cb_Conv_Stable_Counter(Fl_Counter*, void*);
   static void cb_Conv_Off_Counter(Fl_Counter*, void*);
+  static void cb_Conv_Freq_Ceiling_Counter(Fl_Counter*, void*); 
+  static void cb_Conv_Freq_Floor_Counter(Fl_Counter*, void*);
+
   
 public:
   Fl_Counter *Har_In_Counter;

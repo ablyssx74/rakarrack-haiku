@@ -64,6 +64,9 @@ MIDIConverter::MIDIConverter ()
   p_trigfact = 0.5f;
   p_stable_threshold = 2;
   p_off_count_max = 5;
+  p_freq_ceiling = 320.0f;
+  p_freq_floor = 80.0f;
+
   
 };
 
@@ -84,6 +87,21 @@ MIDIConverter::~MIDIConverter ()
 void
 MIDIConverter::displayFrequency (float ffreq)
 {
+  // --- DYNAMIC FREQUENCY WALL FILTERS ---
+  // If the pitch is too low (rumble) OR too high (ceiling), safely exit
+  if (ffreq <= p_freq_floor || ffreq >= p_freq_ceiling) 
+  {
+      if (hay && nota_actual != -1) 
+      {
+          MIDI_Send_Note_Off(nota_actual);
+          hay = 0;
+          nota_actual = -1;
+          stable_count = 0;
+      }
+      return; // Exit immediately 
+  }
+  // --------------------------------------
+	
   int i;
   int noteoff = 0;
   int octave = 4;
