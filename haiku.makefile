@@ -113,6 +113,7 @@ haiku_stubs.o: haiku_stubs.cpp
 clean:
 	@echo "Performing deep clean (distclean)..."
 	rm -f rakarrack haiku_stubs.o
+	rm -f *.rsrc
 	rm -f $(PWD)/haiku_native/*.o
 	@if [ -f Makefile ]; then $(MAKE) distclean; fi
 	rm -rf *.hpkg build autom4te.cache config.cache config.log config.status Makefile src/Makefile \
