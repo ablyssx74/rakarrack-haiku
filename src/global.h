@@ -553,6 +553,8 @@ public:
   int Tap_Updated;
   int note_old;
   int cents_old;
+  
+  int online_check;
 
   int cpufp;
   int mess_dis;  

@@ -132,7 +132,7 @@ endif
 
 PACKAGE_DIR := build/package
 NAME = rakarrack
-VERSION = 0.6.1
+VERSION = 0.6.2
 
 release: config build package
 
@@ -149,7 +149,9 @@ package: all
 	#mkdir -p $(PACKAGE_DIR)/data/$(NAME)/share/pixmaps
 	mkdir -p $(PACKAGE_DIR)/data/$(NAME)/share/man/man1
 	mkdir -p $(PACKAGE_DIR)/data/$(NAME)/share/$(NAME)
-	xres -o $(NAME) icon.rsrc  
+	rc -o $(NAME).rsrc $(NAME).rdef
+	xres -o $(NAME) $(NAME).rsrc  
+	
 	mimeset -f $(NAME)
 	cp man/$(NAME).1 $(PACKAGE_DIR)/data/$(NAME)/share/man/man1
 	#cp icons/*.png $(PACKAGE_DIR)/data/$(NAME)/share/pixmaps

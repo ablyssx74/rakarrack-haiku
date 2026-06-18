@@ -106,6 +106,7 @@ public:
 class RKRGUI {
   RKR *rkr; 
   int made; 
+  
   Fl_Help_Dialog *visor; 
 public:
   Fl_Double_Window* make_window();
@@ -4067,6 +4068,16 @@ public:
 private:
   void cb_MES_DIS_i(Fl_Check_Button*, void*);
   static void cb_MES_DIS(Fl_Check_Button*, void*);
+
+public:
+  Fl_Check_Button *ONLINE_CHECK;
+private:
+  void cb_ONLINE_CHECK_i(Fl_Check_Button*, void*);
+  static void cb_ONLINE_CHECK(Fl_Check_Button*, void*);
+public:
+  
+  
+  
 public:
   Fl_Check_Button *T_TIMEOUT;
 private:

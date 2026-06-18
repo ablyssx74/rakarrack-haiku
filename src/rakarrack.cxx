@@ -10910,6 +10910,13 @@ void RKRGUI::cb_MES_DIS(Fl_Check_Button* o, void* v) {
   ((RKRGUI*)(o->parent()->parent()->parent()->user_data()))->cb_MES_DIS_i(o,v);
 }
 
+
+
+void RKRGUI::cb_ONLINE_CHECK(Fl_Check_Button* o, void* v) {
+  ((RKRGUI*)(o->parent()->parent()->parent()->user_data()))->cb_ONLINE_CHECK_i(o, v);
+}
+
+
 void RKRGUI::cb_T_TIMEOUT_i(Fl_Check_Button* o, void*) {
   rkr->t_timeout=(int) o->value();
 }
@@ -21775,34 +21782,45 @@ R average.");
         MISC_SET->hide();
         { Fondo10 = new Fl_Box(5, 26, 630, 502);
         } // Fl_Box* Fondo10
-        { Username = new Fl_Input(80, 32, 240, 21, "Username:");
+           { Username = new Fl_Input(80, 32, 240, 21, "Username:");
           Username->labelsize(11);
           Username->labelcolor(FL_BACKGROUND2_COLOR);
           Username->textsize(11);
           Username->textcolor(7);
           Username->callback((Fl_Callback*)cb_Username);
         } // Fl_Input* Username
-        { MES_DIS = new Fl_Check_Button(132, 68, 21, 20, "Disable Warnings    ");
+        { MES_DIS = new Fl_Check_Button(180, 68, 21, 20, "Disable Warnings    ");
           MES_DIS->down_box(FL_DOWN_BOX);
           MES_DIS->labelsize(11);
           MES_DIS->labelcolor(FL_BACKGROUND2_COLOR);
           MES_DIS->callback((Fl_Callback*)cb_MES_DIS);
           MES_DIS->align(FL_ALIGN_LEFT);
         } // Fl_Check_Button* MES_DIS
-        { T_TIMEOUT = new Fl_Check_Button(132, 88, 21, 20, "Tap Tempo Timeout");
+        { T_TIMEOUT = new Fl_Check_Button(180, 88, 21, 20, "Tap Tempo Timeout");
           T_TIMEOUT->down_box(FL_DOWN_BOX);
           T_TIMEOUT->labelsize(11);
           T_TIMEOUT->labelcolor(FL_BACKGROUND2_COLOR);
           T_TIMEOUT->callback((Fl_Callback*)cb_T_TIMEOUT);
           T_TIMEOUT->align(FL_ALIGN_LEFT);
         } // Fl_Check_Button* T_TIMEOUT
-        { ENA_TOOL = new Fl_Check_Button(132, 108, 21, 20, "Enable Tooltips       ");
+        { ENA_TOOL = new Fl_Check_Button(180, 108, 21, 20, "Enable Tooltips       ");
           ENA_TOOL->down_box(FL_DOWN_BOX);
           ENA_TOOL->labelsize(11);
           ENA_TOOL->labelcolor(FL_BACKGROUND2_COLOR);
           ENA_TOOL->callback((Fl_Callback*)cb_ENA_TOOL);
           ENA_TOOL->align(FL_ALIGN_LEFT);
         } // Fl_Check_Button* ENA_TOOL
+        { ONLINE_CHECK = new Fl_Check_Button(180, 128, 21, 20, "Online Version Checking   ");
+          ONLINE_CHECK->down_box(FL_DOWN_BOX);
+          ONLINE_CHECK->labelsize(11);
+          ONLINE_CHECK->labelcolor(FL_BACKGROUND2_COLOR);
+          ONLINE_CHECK->callback((Fl_Callback*)cb_ONLINE_CHECK);
+          ONLINE_CHECK->align(FL_ALIGN_LEFT); 
+        } // Fl_Check_Button* ONLINE_CHECK
+
+
+
+
         MISC_SET->end();
       } // Fl_Group* MISC_SET
       { BANK_SET = new Fl_Group(5, 26, 630, 502, "Bank");
@@ -27927,6 +27945,21 @@ ActivarGeneral->do_callback();
 void RKRGUI::cb_ApplyHaikuAudio(Fl_Button* o, void* v) {
   // Directly cast 'v' to the class instance
   if (v) ((RKRGUI*)v)->cb_ApplyHaikuAudio_i(o,v);
+}
+
+void RKRGUI::cb_ONLINE_CHECK_i(Fl_Check_Button* o, void*) {
+  // 1. Update the global state structure variable
+  rkr->online_check = (int) o->value(); 
+
+  // 2. Open preferences manually just for this save
+  Fl_Preferences rakarrack(Fl_Preferences::USER, WEBSITE, PACKAGE);
+  
+  // 3. Save the key as an integer value
+  rakarrack.set("OnlineVersionCheck", rkr->online_check);
+  rakarrack.flush();
+
+  // 4. Mirror the save_stat call used by the apply button
+  save_stat(0); 
 }
 
 

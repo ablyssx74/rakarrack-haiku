@@ -39,8 +39,8 @@
 #include <math.h>
 #include <Alert.h>
 
-// Global Debug Flag (Default to OFF)
-bool gDebugMode = false;
+
+extern bool gDebugMode;
 
 // X11 Conflict Fix: Include X11 then UNDEF its macros immediately
 #include <X11/Xlib.h>
@@ -485,6 +485,9 @@ int JACKstart(RKR * rkr_, jack_client_t * jackclient_) {
     // Default to your haiku.make values if nothing is saved yet
 	rkr_prefs.get("Haiku_SampleRate", saved_rate, STR(DEFAULT_FRAME_RATE), 32);
 	rkr_prefs.get("Haiku_BufferSize", saved_frames, STR(DEFAULT_BUFFER_FRAMES), 32);
+
+
+
 
     int final_rate = atoi(saved_rate);
     int final_frames = atoi(saved_frames);

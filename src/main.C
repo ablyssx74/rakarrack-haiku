@@ -39,6 +39,24 @@
 #include "rakarrack_haiku_bridge.h"
 
 
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <Notification.h>
+
+bool gDebugMode = false;
+
+namespace AppInfo {
+    static const char* const VERSION_STRING = "Rakarrack v0.6.2 (Haiku OS)";
+}
+
+// Forward declaration signature for update worker thread
+//static int32 BackgroundUpdateChecker(void* data);
+
+
+
+
+
 // Haiku Update
 extern "C" void start_haiku_native_interface(void* rkr_ptr);
 extern bool gDebugMode;
@@ -49,6 +67,107 @@ RKRGUI *rakgui = nullptr;
 
 extern bool haiku_mode;
 bool haiku_mode = false;  
+
+
+
+// =============================================================================
+// NATIVE ASYNCHRONOUS UPDATE ENGINE IMPLEMENTATION (CURL ENGINE PASS)
+// =============================================================================
+static int32 BackgroundUpdateChecker(void* data) {
+    // Wait a brief 5 seconds after application boot to allow UI rendering to finalize completely
+    snooze(5000000); 
+
+    if (gDebugMode) printf("[DEBUG_UPDATE] Asynchronous curl update checker running...\n");
+
+    const char* targetUrl = "https://raw.githubusercontent.com/ablyssx74/rakarrack-haiku/refs/heads/main/VERSION";
+
+    BString shellCmdString;
+    shellCmdString.SetToFormat("curl -sL \"%s\"", targetUrl);
+
+    BString remoteVersionStr = "";
+    
+    FILE* pipeStream = popen(shellCmdString.String(), "r");
+    if (pipeStream != nullptr) {
+        char buffer[128] = {0};
+        if (fgets(buffer, sizeof(buffer), pipeStream) != nullptr) {
+            remoteVersionStr = buffer;
+        }
+        pclose(pipeStream);
+    }
+
+    remoteVersionStr.Trim(); 
+    if (gDebugMode) printf("[DEBUG_UPDATE] Raw text received from GitHub: '%s'\n", remoteVersionStr.String());
+
+    remoteVersionStr.Trim(); 
+    if (gDebugMode) printf("[DEBUG_UPDATE] Raw text received from GitHub: '%s'\n", remoteVersionStr.String());
+    
+    if (remoteVersionStr.Length() > 0) {
+        BString currentVersionStr = AppInfo::VERSION_STRING;
+        if (gDebugMode) printf("[DEBUG_UPDATE] Local AppInfo text before cleaning: '%s'\n", currentVersionStr.String());
+
+        int32 curMajor = 0, curMinor = 0, curRevision = 0;
+        int32 remMajor = 0, remMinor = 0, remRevision = 0;
+
+        // --- Bulletproof sscanf Pattern Matching ---
+        // Looks for a 'v' immediately followed by a number, bypassing words like "HaikuDVR" or "Version"
+        if (sscanf(currentVersionStr.String(), "%*[^v]v%d.%d.%d", &curMajor, &curMinor, &curRevision) != 3) {
+            // Fallback: search for raw dot-separated numbers anywhere if 'v' isn't found
+            sscanf(currentVersionStr.String(), "%*[^0-9]%d.%d.%d", &curMajor, &curMinor, &curRevision);
+        }
+
+        // Parse the remote string from GitHub using the same pattern rules
+        if (sscanf(remoteVersionStr.String(), "%*[^v]v%d.%d.%d", &remMajor, &remMinor, &remRevision) != 3) {
+            sscanf(remoteVersionStr.String(), "%*[^0-9]%d.%d.%d", &remMajor, &remMinor, &remRevision);
+        }
+
+        // Log the cleaned string results visually just for your debug logs
+        if (gDebugMode) {
+            printf("[DEBUG_UPDATE] Cleaned local target string: '%d.%d.%d'\n", curMajor, curMinor, curRevision);
+        }
+
+        // Flatten values down into integers for math checks
+        int32 currentFlattened = (curMajor * 10000) + (curMinor * 100) + curRevision;
+        int32 remoteFlattened  = (remMajor * 10000) + (remMinor * 100) + remRevision;
+
+        if (gDebugMode) {
+            printf("[DEBUG_UPDATE] Calculated values for math match -> Local: %d | Remote: %d\n", 
+                   (int)currentFlattened, (int)remoteFlattened);
+        }
+
+
+        if (remoteFlattened > currentFlattened) {
+            if (gDebugMode) printf("[DEBUG_UPDATE] Update matched! Checking alert preference flags...\n");
+            
+            // =========================================================================
+            // CHANNELS AUTO-HIDE PREFERENCE INTERCEPT
+            // =========================================================================
+           if (!rk->online_check) {
+                if (gDebugMode) printf("[DEBUG_UPDATE] Online version checking disabled. Suppressing desktop alert toast.\n");
+                return B_OK; // Break out cleanly and silently without throwing the alert box!
+            }
+            // =========================================================================
+
+            // Native Haiku desktop notification banner toast window dispatch engine
+            BNotification updateAlert(B_INFORMATION_NOTIFICATION);
+            updateAlert.SetGroup("Rakarrack");
+            updateAlert.SetTitle("Update Available");
+            
+            BString alertContent;
+            alertContent << "A newer version of Rakarrack is available! (v" << remoteVersionStr 
+                         << ")";
+            updateAlert.SetContent(alertContent.String());
+            
+            updateAlert.Send();
+            if (gDebugMode) printf("[DEBUG_UPDATE] Toast notification sent successfully.\n");
+        } else {
+            if (gDebugMode) printf("[DEBUG_UPDATE] Math complete: Client binary is already completely up to date.\n");
+        }
+    } else {
+        if (gDebugMode) printf("[DEBUG_UPDATE] CRITICAL ERR: Raw text data read from pipe buffer was empty!\n");
+    }
+    
+    return B_OK;
+}
 
 
 void
@@ -84,6 +203,12 @@ show_help ()
 
 }
 
+
+
+
+
+
+
 int
 main (int argc, char *argv[])
 {
@@ -93,6 +218,8 @@ main (int argc, char *argv[])
     int preset = 1000;
     bool exitwithhelp = false;
 	int gui = 1; 
+	rkr.online_check = 1; 
+
 	
     // 1. Parse arguments FIRST
     struct option opts[] = {
@@ -141,6 +268,13 @@ main (int argc, char *argv[])
   
         start_haiku_native_interface(rk);
         
+       // --- Spawning Code for Standard FLTK / Headless Mode ---
+        thread_id updateThread = spawn_thread(BackgroundUpdateChecker, "UpdateCheckerThread", B_NORMAL_PRIORITY, nullptr);
+        if (updateThread >= 0) {
+            resume_thread(updateThread);
+        }
+
+        
 		printf("[Rakarrack] Haiku Native Mode Started.\n");
         myApp->Run();
 
@@ -166,21 +300,39 @@ main (int argc, char *argv[])
       	// Using the exact key string required for the Haiku build
       	prefs.get("Rakarrack-Haiku FX_init_state", fx_init, 0); 
       
-      	if (fx_init == 1) {
+    	if (fx_init == 1) {
           rakgui->INSTATE->value(1);           // Sync the Settings checkbox
           rakgui->ActivarGeneral->value(1);    // Set the LED button state
           rakgui->ActivarGeneral->do_callback(); // Trigger engine & lighting logic
           rakgui->ActivarGeneral->redraw();    // Force Haiku redraw
       	}
       
+        // --- Sync Online Version Checking Preference ---
+        int saved_check = 0;
+        prefs.get("OnlineVersionCheck", saved_check, 0);
+        rkr.online_check = saved_check;
+        
+        if (rakgui->ONLINE_CHECK) {
+            rakgui->ONLINE_CHECK->value(saved_check);
+            rakgui->ONLINE_CHECK->redraw();
+        }
+
       	// Priming the audio engine
       	rkr.calculavol(1);
       	rkr.calculavol(2);
       	rkr.booster = 1.0f;
    }
 
+   // --- Spawning Code for Standard FLTK / Headless Mode ---
+   thread_id updateThread = spawn_thread(BackgroundUpdateChecker, "UpdateCheckerThread", B_NORMAL_PRIORITY, nullptr);
+   if (updateThread >= 0) {
+       resume_thread(updateThread);
+   }
+
+
   // --- Haiku Main Loop ---
   while (Pexitprogram == 0) {
+
       if (gui) {
           // Standard FLTK event handling for Haiku
           Fl::wait(0.1); 
