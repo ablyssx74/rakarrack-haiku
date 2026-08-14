@@ -5,15 +5,15 @@ SHELL := /bin/bash
       
 
 UNAME_M := $(shell uname -p)
-ifeq ($(UNAME_M), x86)
+ifeq ($(UNAME_M), BePC)
 CXX = g++-x86
 CC = gcc-x86
 LDFLAGS = -L/boot/system/develop/lib/x86 -L/boot/system/lib/x86 
 CPPFLAGS = -I/boot/system/develop/headers/x86 -I$(PWD)
 PackageInfo = PackageInfo32.tpl
 MAKE := setarch x86 $(MAKE)
-REQUIRED_PKGS =	fltk_x86 freetype_x86 libxfont2_x86 libsndfile_x86 libsamplerate_x86 libxpm_x86 
-else ifeq ($(UNAME_M), x86_64)
+REQUIRED_PKGS =	fltk_x86_devel freetype_x86_devel libxfont2_x86_devel libsndfile_x86_devel libsamplerate_x86_devel libxpm_x86_devel 
+else 
 CXX = g++
 CC = gcc
 LDFLAGS = -L/boot/system/develop/lib/ 
@@ -124,16 +124,16 @@ clean:
 	
 # Small hack since 32bit Haiku refuses to install packages without _gcc2 appendix.
 UNAME_M := $(shell uname -p)
-ifeq ($(UNAME_M), x86)
+ifeq ($(UNAME_M), BePC)
     ARCH = x86_gcc2
-else ifeq ($(UNAME_M), x86_64)
+else 
     ARCH = x86_64
 endif    
 
 
 PACKAGE_DIR := build/package
 NAME = rakarrack
-VERSION = 0.6.2
+VERSION = 0.6.3
 
 release: config build package
 

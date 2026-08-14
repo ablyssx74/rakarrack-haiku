@@ -21562,7 +21562,7 @@ R average.");
     Conv_Freq_Floor_Counter->labelcolor(FL_BACKGROUND2_COLOR);
     Conv_Freq_Floor_Counter->step(5.0); 
     Conv_Freq_Floor_Counter->bounds(20.0, 300.0); 
-    Conv_Freq_Floor_Counter->value(80.0); 
+    Conv_Freq_Floor_Counter->value(20.0); 
     Conv_Freq_Floor_Counter->callback((Fl_Callback*)cb_Conv_Freq_Floor_Counter, (void*)this);
     Conv_Freq_Floor_Counter->align(FL_ALIGN_LEFT); 
   }

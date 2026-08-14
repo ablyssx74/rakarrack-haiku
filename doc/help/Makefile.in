@@ -326,6 +326,7 @@ html_DATA = help.html \
 	midilearn.html \
 	taptempo.html \
 	metronome.html \
+	haiku.html \
 	hardware.html \
 	extra.html \
 	credits.html \

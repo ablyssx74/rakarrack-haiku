@@ -47,14 +47,8 @@
 bool gDebugMode = false;
 
 namespace AppInfo {
-    static const char* const VERSION_STRING = "Rakarrack v0.6.2 (Haiku OS)";
+    static const char* const VERSION_STRING = "Rakarrack v0.6.3 (Haiku OS)";
 }
-
-// Forward declaration signature for update worker thread
-//static int32 BackgroundUpdateChecker(void* data);
-
-
-
 
 
 // Haiku Update
@@ -94,9 +88,6 @@ static int32 BackgroundUpdateChecker(void* data) {
         }
         pclose(pipeStream);
     }
-
-    remoteVersionStr.Trim(); 
-    if (gDebugMode) printf("[DEBUG_UPDATE] Raw text received from GitHub: '%s'\n", remoteVersionStr.String());
 
     remoteVersionStr.Trim(); 
     if (gDebugMode) printf("[DEBUG_UPDATE] Raw text received from GitHub: '%s'\n", remoteVersionStr.String());
