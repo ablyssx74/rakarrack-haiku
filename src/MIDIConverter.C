@@ -65,7 +65,7 @@ MIDIConverter::MIDIConverter ()
   p_stable_threshold = 2;
   p_off_count_max = 5;
   p_freq_ceiling = 320.0f;
-  p_freq_floor = 80.0f;
+  p_freq_floor = 20.0f;
 
   
 };

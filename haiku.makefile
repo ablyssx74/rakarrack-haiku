@@ -133,7 +133,7 @@ endif
 
 PACKAGE_DIR := build/package
 NAME = rakarrack
-VERSION = 0.6.3
+VERSION = 0.6.4
 
 release: config build package
 
