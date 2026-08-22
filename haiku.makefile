@@ -4,7 +4,7 @@ SHELL := /bin/bash
 #----------------------------------------------------------
       
 
-UNAME_M := $(shell uname -p)
+UNAME_M := $(shell uname -m)
 ifeq ($(UNAME_M), BePC)
 CXX = g++-x86
 CC = gcc-x86
