@@ -1,5 +1,5 @@
 name			$(NAME)
-version			$(VERSION)-1
+version			$(VERSION)-3
 architecture	$(ARCH)
 summary		"Rakarrack is a richly featured multi-effects processor emulating a guitar effects pedalboard."
 description	"Effects include compressor, expander, noise gate, graphic equalizer, parametric equalizer, exciter, shuffle, convolotron, valve, flanger, dual flange, chorus, musicaldelay, arpie, echo with reverse playback, musical delay, reverb, digital phaser, analogic phaser, synthfilter, varyband, ring, wah-wah, alien-wah, mutromojo, harmonizer, looper and four flexible distortion modules including sub-octave modulation and dirty octave up. Most of the effects engine is built from modules found in the excellent software synthesizer. ZynAddSubFX Presets and user interface are optimized for guitar, but Rakarrack processes signals in stereo while it does not apply internal band-limiting filtering, and thus is well suited to all musical instruments and vocals."
@@ -12,7 +12,7 @@ copyrights {
 	"$(YEAR) Rakarrack project"
 }
 provides {
-	$(NAME) = $(VERSION)-1
+	$(NAME) = $(VERSION)-3
 }
 requires {
 	haiku
