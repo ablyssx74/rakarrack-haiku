@@ -24,9 +24,10 @@ requires {
 	libxpm_x86
 }	
 urls {
-	"https://github.com/ablyssx74/rakarrack-haiku-32bit-hybrid"
+	"https://github.com/ablyssx74/rakarrack-haiku"
 }
 source-urls {
 # Download
-	"https://github.com/ablyssx74/rakarrack-haiku-32bit-hybrid/archive/refs/tags/v1.0.3.tar.gz"
+	"https://github.com/ablyssx74/rakarrack-haiku/archive/refs/tags/v1.0.0.tar.gz"
+
 }
