@@ -133,7 +133,7 @@ endif
 
 PACKAGE_DIR := build/package
 NAME = rakarrack
-VERSION = 0.6.4
+VERSION = 0.6.1
 
 release: config build package
 
@@ -167,7 +167,7 @@ package: all
 	cp $(NAME) $(PACKAGE_DIR)/apps/$(NAME)
 	ln -s ../apps/$(NAME) $(PACKAGE_DIR)/bin/rakarrack
 	ln -s ../../../../apps/$(NAME) $(PACKAGE_DIR)/data/deskbar/menu/Applications/Rakarrack
-	package create -C $(PACKAGE_DIR) $(NAME)-$(VERSION)-1-$(ARCH).hpkg
+	package create -C $(PACKAGE_DIR) $(NAME)-$(VERSION)-3-$(ARCH).hpkg
 	
 	
 #----------------------------------------------------------
