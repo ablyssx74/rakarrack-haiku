@@ -106,6 +106,11 @@ build: haiku_stubs.o haiku_native/haiku-rakarrack.o
 		-include $(PWD)/jack/jack.h \
 		$(EXTRA_LIBS) $(HAIKU_LIBS) $(LD_OPTIMIZE)
 
+	rc -o rakarrack.rsrc rakarrack.rdef
+	xres -o rakarrack rakarrack.rsrc
+	mimeset -f rakarrack
+
+
 haiku_stubs.o: haiku_stubs.cpp
 	$(CXX) -c $< -o $@ -I$(PWD)/jack -I. -I./src $(BUILD_FLAGS) -fpermissive
 
@@ -150,10 +155,7 @@ package: all
 	#mkdir -p $(PACKAGE_DIR)/data/$(NAME)/share/pixmaps
 	mkdir -p $(PACKAGE_DIR)/data/$(NAME)/share/man/man1
 	mkdir -p $(PACKAGE_DIR)/data/$(NAME)/share/$(NAME)
-	rc -o $(NAME).rsrc $(NAME).rdef
-	xres -o $(NAME) $(NAME).rsrc  
 	
-	mimeset -f $(NAME)
 	cp man/$(NAME).1 $(PACKAGE_DIR)/data/$(NAME)/share/man/man1
 	#cp icons/*.png $(PACKAGE_DIR)/data/$(NAME)/share/pixmaps
 	# Removed png background files as they crash 32bit likey due to pixel 4 byte misalignment
