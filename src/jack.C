@@ -409,17 +409,17 @@ public:
           }
        }
        
-    // 1. ONE-TIME LATENCY KILLER
-    static bool firstRun = true;
-    if (firstRun && rbInputLeft->Available() > 512) {
-        // Just once, jump the read pointer to the most recent data
-        int lookback = frames * 2; // Keep a tiny safety margin of 2 buffers
-        rbInputLeft->readPos = (rbInputLeft->writePos - lookback + rbInputLeft->size) % rbInputLeft->size;
-        rbInputRight->readPos = (rbInputRight->writePos - lookback + rbInputRight->size) % rbInputRight->size;
-        
-        firstRun = false; // Never run this logic again!
-        printf("[Rakarrack] Initial backlog cleared. Now at live edge.\n");
-    }
+	// Catch-up: snap to the live edge whenever backlog builds past ~2 buffer periods,
+	// not just on the very first callback. A backlog can build any time this output
+	// callback stalls while the input side keeps writing (e.g. while something
+	// external disconnects/reconnects our Mixer connection).
+	int backlogThreshold = frames * 3;
+	if (rbInputLeft->Available() > backlogThreshold) {
+	    int lookback = frames * 2;
+	    rbInputLeft->readPos = (rbInputLeft->writePos - lookback + rbInputLeft->size) % rbInputLeft->size;
+	    rbInputRight->readPos = (rbInputRight->writePos - lookback + rbInputRight->size) % rbInputRight->size;
+	    printf("[Rakarrack] Backlog cleared (%d frames). Now at live edge.\n", rbInputLeft->Available());
+	}
 
 
     jackprocess(frames, NULL);
