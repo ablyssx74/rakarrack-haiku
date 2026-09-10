@@ -206,7 +206,8 @@ public:
   BMidiLocalConsumer* fMidiInPort;    
   void Conecta();
   void conectaaconnect();
-  void disconectaaconnect();  
+  void disconectaaconnect();
+  void SetHaikuMidiEndpointIcon(BMidiEndpoint* endpoint);
   void SendHaikuMidi(uchar status, uchar data1, uchar data2);  
   int MidiCh;
   void MidiShutdown();

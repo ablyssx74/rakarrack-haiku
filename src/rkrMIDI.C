@@ -31,7 +31,9 @@
 #include <app/Looper.h>
 #include <app/Application.h>
 #include <Archivable.h>
-
+#include <Message.h>
+#include <Resources.h>
+#include <Roster.h>
 
 // MidiKit headers
 #include <MidiRoster.h>
@@ -504,22 +506,23 @@ void RKR::Conecta() {
     if (IsCoIn) disconectaaconnect();
 
     if (fMidiInPort == NULL) {
-        fMidiInPort = new RkrHaikuMidiIn("rakarrack IN", this);
+        fMidiInPort = new RkrHaikuMidiIn("Rakarrack IN", this);
+        SetHaikuMidiEndpointIcon(fMidiInPort);
         fMidiInPort->Register();
     }
     if (fMidiOutPort == NULL) {
-        fMidiOutPort = new BMidiLocalProducer("rakarrack OUT");
+        fMidiOutPort = new BMidiLocalProducer("Rakarrack OUT");
+        SetHaikuMidiEndpointIcon(fMidiOutPort);
         fMidiOutPort->Register();
     }
 
 
-if (efx_MIDIConverter) {
-    efx_MIDIConverter->fHaikuMidiOut = fMidiOutPort;
-    printf("[Rakarrack] MIDI port linked to efx_MIDIConverter: %p\n", efx_MIDIConverter->fHaikuMidiOut);
-} else {
-    printf("[Rakarrack] ERROR: efx_MIDIConverter is NULL!\n");
-}
-
+	if (efx_MIDIConverter) {
+		efx_MIDIConverter->fHaikuMidiOut = fMidiOutPort;
+		printf("[Rakarrack] MIDI port linked to efx_MIDIConverter: %p\n", efx_MIDIConverter->fHaikuMidiOut);
+	} else {
+		printf("[Rakarrack] ERROR: efx_MIDIConverter is NULL!\n");
+	}
 
 
     BMidiRoster* roster = BMidiRoster::MidiRoster();
@@ -593,6 +596,33 @@ void RKR::disconectaaconnect() {
     }
 }
 
+
+void RKR::SetHaikuMidiEndpointIcon(BMidiEndpoint* endpoint)
+{
+	BMessage properties;
+	if (endpoint->GetProperties(&properties) != B_OK)
+		return;
+
+	// Retrieve the app vector icon from its resources
+	app_info info;
+	be_app->GetAppInfo(&info);
+	BFile file(&info.ref, B_READ_ONLY);
+
+	BResources resources;
+	if (resources.SetTo(&file) != B_OK)
+		return;
+
+	size_t dataSize;
+	// Load app vector icon data
+	const uint8* data = (const uint8*)resources.LoadResource(
+		B_VECTOR_ICON_TYPE,	"BEOS:ICON", &dataSize);
+
+	if (data == NULL || dataSize <= 0)
+		return;
+
+	properties.AddData("icon", B_VECTOR_ICON_TYPE, data, dataSize);
+	endpoint->SetProperties(&properties);
+}
 
 
 // Global broadcast function for the rest of your Rakarrack engine
