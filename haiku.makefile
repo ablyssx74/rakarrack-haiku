@@ -169,7 +169,7 @@ package: all
 	cp $(NAME) $(PACKAGE_DIR)/apps/$(NAME)
 	ln -s ../apps/$(NAME) $(PACKAGE_DIR)/bin/rakarrack
 	ln -s ../../../../apps/$(NAME) $(PACKAGE_DIR)/data/deskbar/menu/Applications/Rakarrack
-	package create -C $(PACKAGE_DIR) $(NAME)-$(VERSION)-5-$(ARCH).hpkg
+	package create -C $(PACKAGE_DIR) $(NAME)-$(VERSION)-6-$(ARCH).hpkg
 	
 	
 #----------------------------------------------------------
