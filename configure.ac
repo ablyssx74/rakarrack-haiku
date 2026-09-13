@@ -402,8 +402,8 @@ echo  " JACK Audio Connection Kit library  . . . . . . . . . . .: $haiku_rakarra
 echo  " ALSA MIDI Sequencer support  . . . . . . . . . . . . . .: $haiku_rakarrack_msg"
 echo  " Samplerate conversion (libsamplerate). . . . . . . . . .: $ac_samplerate"
 echo  " General audio file (libsndfile)  . . . . . . . . . . . .: $ac_sndfile"
-echo  " Buffer Frame Count ( can be changed later in the UI ). .: $buffer_frames"
-echo  " Frame Rate . . . . ( can be changed later in the UI ). .: $frame_rate" 
+echo  " Buffers (For building / auto detection happens later). .: $buffer_frames"
+echo  " Rate (For building / auto detection happens later ). . .: $frame_rate" 
 
 echo  
 echo  " Now you can run 'make -f haiku.makefile build' to build the sources."

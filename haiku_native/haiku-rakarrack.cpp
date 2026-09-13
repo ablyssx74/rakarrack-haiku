@@ -125,6 +125,10 @@ enum {
 	MSG_ACTION = 'RKAx'
 };
 
+static const std::vector<std::string> kStompBoxModeNames = {
+	"Amp", "Grunge", "Rat", "Fat Cat", "Dist+", "Death", "Mid Elves Own", "Fuzz"
+};
+
 // The 30 waveshaper types shared by the Overdrive and Distortion effects
 // (both are instances of the Distorsion class) -- taken verbatim from
 // RKRGUI::menu_dist_tipo in src/rakarrack.cxx.
@@ -213,7 +217,8 @@ public:
 		// rakarrack.cxx's own startup priming (RKRGUI's constructor).
 		rkr->calculavol(1);
 		rkr->calculavol(2);
-
+		rkr->booster = 1.0f;
+		
 		// Five scrollable columns of effect racks, mirroring the layout of
 		// src/rakarrack.cxx without trying to reproduce its exact pixel
 		// geometry.
@@ -614,7 +619,8 @@ private:
 				{"Low", -64, 64, 3, 0},
 				{"Mid", -64, 64, 2, 0},
 				{"High", -64, 64, 1, 0},
-			});
+			},
+			{}, &kStompBoxModeNames, 5, "Mode");
 	}
 
 	void BuildColumn5(BView* col)
