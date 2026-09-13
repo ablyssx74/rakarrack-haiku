@@ -58,6 +58,7 @@
 
 #include <functional>
 #include <string>
+#include <deque>
 #include <vector>
 
 // Pulls in the full RKR engine class (global.h) so we can call the real
@@ -221,6 +222,24 @@ struct ParamDef {
 	int32 max;
 	int32 npar;
 	int32 offset;
+	// Set true only for a changepar() that's known to be genuinely
+	// expensive (e.g. Convolotron/Reverbtron/Echotron's "Length" -- these
+	// reprocess a whole impulse-response buffer synchronously). Such a
+	// slider is wired through AddDebouncedSlider() instead of AddSlider():
+	// the drag still moves and shows a value live, but the actual
+	// changepar() call is held until ~150ms after the last change instead
+	// of firing on every step, since each call blocks the real-time audio
+	// thread (which needs the same lock) for as long as it takes.
+	bool debounced = false;
+};
+
+// State for one AddDebouncedSlider() -- see that method and ParamDef's
+// "debounced" field.
+struct DebouncedSlider {
+	bool hasPending = false;
+	int32 pendingValue = 0;
+	bigtime_t lastChangeTime = 0;
+	std::function<void(int32)> apply;
 };
 
 // A plain on/off parameter (e.g. Pan's "Auto Pan" / "Extra On" flags).
@@ -304,30 +323,55 @@ static void DeactivateEffectSlot(RKR* rkr, int effectId) {
 	}
 }
 
-// Display name for each effect-type ID the native UI actually exposes --
-// only the 21 effects BuildColumn1-4 wire up can ever end up in
-// rkr->efx_order[], so that is the only set this needs to name.
+// Display name for each effect-type ID the native UI exposes -- every
+// effect BuildColumn1-4 wires up can end up in rkr->efx_order[], so this
+// needs to cover all 46, not just the original 21.
 static const char* EffectName(int effectId) {
 	switch (effectId) {
 	case 0: return "Equalizer";
 	case 1: return "Compressor";
+	case 2: return "Distorsion";
 	case 3: return "Overdrive";
 	case 4: return "Echo";
 	case 5: return "Chorus";
 	case 6: return "Phaser";
 	case 7: return "Flanger";
 	case 8: return "Reverb";
+	case 9: return "EQ2";
 	case 10: return "WhaWha";
 	case 11: return "Alienwah";
+	case 12: return "Cabinet";
 	case 13: return "Auto Pan";
+	case 14: return "Harmonizer";
+	case 15: return "MusDelay";
 	case 16: return "Noise Gate";
 	case 17: return "Distortion";
 	case 18: return "Analog Phaser";
 	case 19: return "Valve";
+	case 20: return "DFlange";
 	case 21: return "Ring Modulator";
 	case 22: return "Exciter";
+	case 23: return "MBDist";
+	case 24: return "Arpie";
+	case 25: return "Expander";
+	case 26: return "Shuffle";
+	case 27: return "Synthfilter";
+	case 28: return "MBVvol";
+	case 29: return "Convolotron";
+	case 30: return "Looper";
+	case 31: return "RyanWah";
+	case 32: return "RBEcho";
+	case 33: return "CoilCrafter";
+	case 34: return "ShelfBoost";
+	case 35: return "Vocoder";
 	case 36: return "Sustainer";
+	case 37: return "Sequence";
+	case 38: return "Shifter";
 	case 39: return "StompBox";
+	case 40: return "Reverbtron";
+	case 41: return "Echotron";
+	case 42: return "StereoHarm";
+	case 43: return "CompBand";
 	case 44: return "Opticaltrem";
 	case 45: return "Vibe";
 	default: return "(unknown)";
@@ -687,6 +731,23 @@ public:
 		char cpuBuf[32];
 		sprintf(cpuBuf, "CPU: %5.2f%%", (float)fRkr->cpuload);
 		fCpuDisplay->SetText(cpuBuf);
+
+		// Apply any AddDebouncedSlider() value that's settled -- no further
+		// drag movement for kDebounceUsec -- since the last check. Locked
+		// like every other real engine mutation: the real-time audio
+		// callback needs this same lock, which is exactly why these calls
+		// are being held back from firing on every drag step in the first
+		// place.
+		static const bigtime_t kDebounceUsec = 150000; // 150ms
+		bigtime_t now = system_time();
+		for (DebouncedSlider& d : fDebounced) {
+			if (d.hasPending && (now - d.lastChangeTime) >= kDebounceUsec) {
+				d.hasPending = false;
+				pthread_mutex_lock(&jmutex);
+				d.apply(d.pendingValue);
+				pthread_mutex_unlock(&jmutex);
+			}
+		}
 	}
 
 	// Called by RakarrackWindow::MessageReceived (already holding jmutex)
@@ -794,6 +855,69 @@ private:
 		s->SetBarColor(kAccentColor);
 		// Roughly doubles the effect boxes' width over the default track
 		// size -- cramped sliders were hard to drag precisely.
+		s->SetExplicitMinSize(BSize(190, B_SIZE_UNSET));
+
+		row->AddChild(labelView);
+		row->AddChild(valueView);
+		row->AddChild(s);
+		parent->AddChild(row);
+		return s;
+	}
+
+	// Same look and feel as AddSlider, but the actual fn(v) call -- the
+	// real changepar(), which for a handful of parameters (see ParamDef's
+	// "debounced" comment) does real, possibly-slow DSP work -- is held
+	// until ~150ms after the value stops changing, applied from Pulse()
+	// below, rather than firing on every single drag step.
+	BSlider* AddDebouncedSlider(BView* parent, const char* name,
+		const char* label, int32 min, int32 max, int32 initial,
+		std::function<void(int32)> fn)
+	{
+		BGroupView* row = new BGroupView(B_HORIZONTAL, 6);
+		row->SetViewColor(kPanelColor);
+
+		BStringView* labelView = new BStringView("lbl", label);
+		labelView->SetHighColor(kLabelColor);
+		labelView->SetLowColor(kPanelColor);
+		labelView->SetExplicitMinSize(BSize(72, B_SIZE_UNSET));
+		labelView->SetExplicitMaxSize(BSize(72, B_SIZE_UNSET));
+		labelView->SetFontSize(10.5f);
+
+		BStringView* valueView = new BStringView("val", "");
+		valueView->SetHighColor(kValueColor);
+		valueView->SetLowColor(kPanelColor);
+		valueView->SetExplicitMinSize(BSize(32, B_SIZE_UNSET));
+		valueView->SetExplicitMaxSize(BSize(32, B_SIZE_UNSET));
+		valueView->SetExplicitAlignment(
+			BAlignment(B_ALIGN_RIGHT, B_ALIGN_VERTICAL_CENTER));
+		valueView->SetFontSize(10.5f);
+		char buf[16];
+		snprintf(buf, sizeof(buf), "%d", (int)initial);
+		valueView->SetText(buf);
+
+		// fDebounced is a deque specifically because it never invalidates
+		// references to existing elements when it grows (unlike a vector,
+		// which can reallocate) -- entry's address has to stay valid for
+		// the lifetime of the lambda below, which outlives this call.
+		fDebounced.emplace_back();
+		DebouncedSlider* entry = &fDebounced.back();
+		entry->apply = fn;
+
+		int32 idx = Bind([entry, valueView](int32 v) {
+			char buf[16];
+			snprintf(buf, sizeof(buf), "%d", (int)v);
+			valueView->SetText(buf);
+			entry->hasPending = true;
+			entry->pendingValue = v;
+			entry->lastChangeTime = system_time();
+		});
+
+		BSlider* s = new BSlider(name, NULL, MakeMessage(idx), min, max,
+			B_HORIZONTAL);
+		s->SetValue(initial);
+		s->SetHashMarks(B_HASH_MARKS_NONE);
+		s->SetViewColor(kPanelColor);
+		s->SetBarColor(kAccentColor);
 		s->SetExplicitMinSize(BSize(190, B_SIZE_UNSET));
 
 		row->AddChild(labelView);
@@ -939,9 +1063,15 @@ private:
 		}
 
 		for (const ParamDef& p : params) {
-			AddSlider(body, p.label, p.label, p.min, p.max,
-				getFn(p.npar) - p.offset,
-				[changeFn, p](int32 v) { changeFn(p.npar, v + p.offset); });
+			if (p.debounced) {
+				AddDebouncedSlider(body, p.label, p.label, p.min, p.max,
+					getFn(p.npar) - p.offset,
+					[changeFn, p](int32 v) { changeFn(p.npar, v + p.offset); });
+			} else {
+				AddSlider(body, p.label, p.label, p.min, p.max,
+					getFn(p.npar) - p.offset,
+					[changeFn, p](int32 v) { changeFn(p.npar, v + p.offset); });
+			}
 		}
 
 		if (extraWidgets)
@@ -1035,7 +1165,7 @@ private:
 				{"Level", 0, 127, 7, 0},
 				{"Damp", 0, 127, 6, 0},
 				{"Fb", -64, 64, 10, 0},
-				{"Length", 20, 1500, 3, 0},
+				{"Length", 20, 1500, 3, 0, true},
 				{"Stretch", -64, 64, 9, 0},
 				{"I.Del", 0, 500, 5, 0},
 				{"Fade", 0, 127, 1, 0},
@@ -1242,7 +1372,7 @@ private:
 				{"Width", 0, 127, 2, 0},
 				{"Depth", -64, 64, 1, 64},
 				{"St.df", 0, 127, 9, 0},
-				{"#", 1, 127, 3, 0},
+				{"#", 1, 127, 3, 0, true},
 			},
 			{
 				{"AF", 15},
@@ -1518,7 +1648,7 @@ private:
 				{"Level", 0, 127, 7, 0},
 				{"Damp", 0, 127, 6, 0},
 				{"Fb", -64, 64, 10, 0},
-				{"Length", 5, 250, 3, 0},
+				{"Length", 5, 250, 3, 0, true},
 			},
 			{
 				{"Safe Mode", 2},
@@ -1613,7 +1743,7 @@ private:
 				{"Time Sig.", &kLooperBarNames, 15},
 				{"MS", &kLooperMsNames, 17},
 			},
-			[rkr](BView* body) {
+			[this, rkr](BView* body) {
 				// Plain momentary presses (Fl_Button in rakarrack.cxx, each
 				// just a changepar(npar, 1) call) rather than sliders,
 				// toggles, or dropdowns -- see AddButton().
@@ -1736,6 +1866,7 @@ private:
 	OrderWindow* fOrderWindow = nullptr;
 	std::vector<std::function<void(int32)>> fActions;
 	std::vector<BMenu*> fMenus;
+	std::deque<DebouncedSlider> fDebounced;
 };
 
 class RakarrackWindow : public BWindow {
