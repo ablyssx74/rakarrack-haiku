@@ -159,6 +159,19 @@ typedef unsigned char uchar;
 #include "Opticaltrem.h"
 #include "Vibe.h"
 
+
+
+// Auto-detected once in JACKstart() (src/jack.C) from the active audio
+// driver's own settings file (buffer frames) and the live negotiated
+// output format (sample rate) -- see DetectHaikuRealtimeAudio(). Read by
+// haiku_stubs.cpp's jack_get_sample_rate()/jack_get_buffer_size() so the
+// engine and JACKstart() never disagree about what's actually configured.
+
+extern uint32_t g_HaikuDetectedRate;
+extern int32 g_HaikuDetectedFrames;
+extern bool g_HaikuRealtimeDetected;
+
+
 extern int Pexitprogram, preset;
 extern int commandline, gui;
 extern int exitwithhelp, nojack;
@@ -187,6 +200,9 @@ extern XWMHints *hints;
 extern float freqs[12];
 extern float lfreqs[12];
 extern float aFreq;
+
+// Must run before "RKR rkr;" in main() -- see the call site there.
+void HaikuDetectAudioSettingsEarly();
 
 // Haiku was here!
 class BMidiProducer;

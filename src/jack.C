@@ -75,6 +75,12 @@ extern bool gDebugMode;
 #include <MidiConsumer.h>
 #include <xmmintrin.h>
 
+
+#include <Path.h>          // BPath -- settings-dir resolution
+#include <FindDirectory.h> // find_directory()/B_USER_SETTINGS_DIRECTORY
+#include <dirent.h>        // opendir()/readdir() -- /dev/audio/hmulti scan
+#include <string>
+
 // Forward Declarations
 status_t ConnectHardwareToRakarrack();
 
@@ -97,11 +103,6 @@ extern pthread_mutex_t jmutex;
 extern RKR *JackOUT;
 extern "C" RKR *rk;
 
-
-
-
-
-//extern float* current_haiku_buffer;
 
 // Persistent handles for shutdown
 media_node   gInputNode;
@@ -474,25 +475,237 @@ int jackprocess (jack_nframes_t nframes, void *arg);
 
 extern "C" bigtime_t estimate_max_scheduling_latency();
 
+
+// ----------------------------------------------------------------------------
+// Real-time audio auto-detection, ported from hrecord's own
+// DetectRealtimeAudioSettings() (github.com/ablyssx74/hrecord) and
+// RealTimeGUI's DetectCurrentSampleRate() (github.com/ablyssx74/RealTimeGUI).
+// Same driver catalog, same active-line-only settings-file matching.
+// ----------------------------------------------------------------------------
+struct RealtimeDriverProfile {
+    const char* devfsSegment;
+    const char* settingsFileName;
+    const char* framesKey;
+};
+
+static const RealtimeDriverProfile kRealtimeDriverProfiles[] = {
+    { "hda", "hda.settings", "play_buffer_frames" },
+    { "auich", "auich.settings", "buffer_frames" },
+    { "es1370", "es1370.settings", "buffer_frames" },
+    { "echo", "echo.settings", "buffer_frames" },
+    { "emuxki", "emuxki.settings", "buffer_frames" },
+    { "ice1712", "ice1712.settings", "buffer_size" },
+};
+static const int32 kRealtimeDriverProfileCount =
+    sizeof(kRealtimeDriverProfiles) / sizeof(kRealtimeDriverProfiles[0]);
+
+static std::string ReadDriverSettingsFile(const std::string& path) {
+    std::string result;
+    FILE* f = fopen(path.c_str(), "r");
+    if (f == nullptr)
+        return result;
+    char buf[4096];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), f)) > 0)
+        result.append(buf, n);
+    fclose(f);
+    return result;
+}
+
+// Only ever matches a genuinely active (non-'#') line -- a commented line
+// may just be a driver's own worked example in its header comment.
+static bool FindActiveSettingValue(const std::string& content, const char* key,
+        int32* outValue) {
+    std::string keyStr(key);
+    size_t lineStart = 0;
+    while (lineStart < content.size()) {
+        size_t lineEnd = content.find('\n', lineStart);
+        if (lineEnd == std::string::npos)
+            lineEnd = content.size();
+
+        size_t firstNonSpace = lineStart;
+        while (firstNonSpace < lineEnd
+                && (content[firstNonSpace] == ' ' || content[firstNonSpace] == '\t'))
+            firstNonSpace++;
+
+        if (firstNonSpace < lineEnd && content[firstNonSpace] != '#'
+                && lineEnd - firstNonSpace >= keyStr.size()
+                && content.compare(firstNonSpace, keyStr.size(), keyStr) == 0) {
+            size_t afterKey = firstNonSpace + keyStr.size();
+            if (afterKey >= lineEnd || content[afterKey] == ' ' || content[afterKey] == '\t') {
+                *outValue = atol(content.c_str() + afterKey);
+                return true;
+            }
+        }
+        lineStart = lineEnd + 1;
+    }
+    return false;
+}
+
+
+static bool DetectRealtimeBufferFrames(int32* outFrames) {
+    DIR* dir = opendir("/dev/audio/hmulti");
+    if (dir == nullptr)
+        return false;
+
+    const RealtimeDriverProfile* profile = nullptr;
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != nullptr) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+            continue;
+        for (int32 i = 0; i < kRealtimeDriverProfileCount; i++) {
+            if (strcmp(entry->d_name, kRealtimeDriverProfiles[i].devfsSegment) == 0) {
+                profile = &kRealtimeDriverProfiles[i];
+                break;
+            }
+        }
+        if (profile != nullptr)
+            break;
+    }
+    closedir(dir);
+    if (profile == nullptr)
+        return false;
+
+    BPath settingsDirPath;
+    std::string settingsDir;
+    if (find_directory(B_USER_SETTINGS_DIRECTORY, &settingsDirPath) == B_OK) {
+        settingsDirPath.Append("kernel/drivers");
+        settingsDir = settingsDirPath.Path();
+    } else {
+        settingsDir = "/boot/home/config/settings/kernel/drivers";
+    }
+
+    std::string content = ReadDriverSettingsFile(settingsDir + "/" + profile->settingsFileName);
+    if (content.empty())
+        return false;
+
+    return FindActiveSettingValue(content, profile->framesKey, outFrames);
+}
+
+static bool DetectCurrentSampleRate(uint32_t* outRate) {
+    BMediaRoster* roster = BMediaRoster::Roster();
+    if (roster == nullptr)
+        return false;
+
+    media_node audioOutputNode;
+    if (roster->GetAudioOutput(&audioOutputNode) != B_OK)
+        return false;
+
+    media_output outputs[8];
+    int32 outputCount = 0;
+    bool found = false;
+    if (roster->GetAllOutputsFor(audioOutputNode, outputs, 8, &outputCount) == B_OK) {
+        for (int32 i = 0; i < outputCount && !found; i++) {
+            media_format format;
+            if (roster->GetFormatFor(outputs[i], &format) == B_OK
+                    && format.type == B_MEDIA_RAW_AUDIO) {
+                *outRate = (uint32_t)format.u.raw_audio.frame_rate;
+                found = true;
+            }
+        }
+    }
+    roster->ReleaseNode(audioOutputNode);
+    return found;
+}
+
+// Fills *outRate always (falls back to DEFAULT_FRAME_RATE), *outFrames only
+// when real-time buffers were actually detected (falls back to
+// DEFAULT_BUFFER_FRAMES otherwise). Returns whether real-time was detected.
+static bool DetectHaikuRealtimeAudio(uint32_t* outRate, int32* outFrames) {
+    uint32_t rate = 0;
+    *outRate = DetectCurrentSampleRate(&rate) ? rate : (uint32_t)DEFAULT_FRAME_RATE;
+
+    int32 frames = 0;
+    if (DetectRealtimeBufferFrames(&frames)) {
+        *outFrames = frames;
+        return true;
+    }
+    *outFrames = DEFAULT_BUFFER_FRAMES;
+    return false;
+}
+
+// Scales a frame count to a different sample rate, preserving the same
+// buffer DURATION, snapped to the nearest of a handful of common buffer
+// sizes. Used only for the non-real-time fallback: a flat frame count
+// regardless of rate is backwards for a *safety* fallback -- a flat 1024
+// frames is ~21ms at 48000 Hz but only ~10ms at 96000 Hz, i.e. LESS
+// safety margin at the higher rate, when a fallback should keep more.
+static int32 ScaleFramesForRate(int32 baseFrames, uint32_t baseRate, uint32_t actualRate) {
+    static const int32 kCommonSizes[] = { 256, 512, 1024, 2048, 4096 };
+    if (actualRate == 0 || baseRate == 0 || actualRate == baseRate)
+        return baseFrames;
+
+    double target = (double)baseFrames * ((double)actualRate / (double)baseRate);
+
+    int32 best = kCommonSizes[0];
+    double bestDiff = fabs(target - best);
+    for (size_t i = 1; i < sizeof(kCommonSizes) / sizeof(kCommonSizes[0]); i++) {
+        double diff = fabs(target - kCommonSizes[i]);
+        if (diff < bestDiff) {
+            bestDiff = diff;
+            best = kCommonSizes[i];
+        }
+    }
+    return best;
+}
+
+
+
+// Runs full detection (rate + frames) and stores the result in
+// g_HaikuRealtimeDetected/g_HaikuDetectedRate/g_HaikuDetectedFrames.
+// Must run before "RKR rkr;" is constructed in main() -- RKR's
+// constructor builds every effect object, and each one permanently
+// sizes its own internal buffers from SAMPLE_RATE *at construction
+// time*, never revisiting that allocation. Changing SAMPLE_RATE
+// afterward (an earlier version of this fix did exactly that, inside
+// JACKstart()) leaves those buffers sized for the OLD rate while
+// per-sample math uses the NEW one -- an out-of-bounds write once real
+// audio flows, confirmed as the cause of the StompBox::out() crash at
+// 96kHz/192kHz. Detecting here means RKR::RKR()'s own
+// jack_get_sample_rate()/jack_get_buffer_size() calls see the final
+// correct values the first and only time.
+//
+// Needs a running BApplication (BMediaRoster's reply round-trip depends
+// on one) -- see the call site in main.C.
+void HaikuDetectAudioSettingsEarly() {
+    g_HaikuRealtimeDetected = DetectHaikuRealtimeAudio(&g_HaikuDetectedRate, &g_HaikuDetectedFrames);
+    if (!g_HaikuRealtimeDetected) {
+        g_HaikuDetectedFrames = ScaleFramesForRate(g_HaikuDetectedFrames,
+            (uint32_t)DEFAULT_FRAME_RATE, g_HaikuDetectedRate);
+    }
+}
+
+
+
+
+
 int JACKstart(RKR * rkr_, jack_client_t * jackclient_) {
     JackOUT = rkr_;
     pthread_mutex_init(&jmutex, NULL);
- 
-     // --- LOAD SAVED HAIKU SETTINGS ---
-    char saved_rate[32], saved_frames[32];
-    Fl_Preferences rkr_prefs(Fl_Preferences::USER, "rakarrack.sf.net", "rakarrack");
-    
-    // Default to your haiku.make values if nothing is saved yet
-	rkr_prefs.get("Haiku_SampleRate", saved_rate, STR(DEFAULT_FRAME_RATE), 32);
-	rkr_prefs.get("Haiku_BufferSize", saved_frames, STR(DEFAULT_BUFFER_FRAMES), 32);
 
+    // Detection already ran in main(), before RKR was constructed (see
+    // HaikuDetectAudioSettingsEarly()) -- this just reports the result.
+    // Do NOT re-latch J_SAMPLE_RATE/J_PERIOD or call Adjust_Upsample()
+    // here: every effect object already exists by this point, sized for
+    // whatever SAMPLE_RATE was in effect at construction -- changing it
+    // now is what caused the crash.
+    if (g_HaikuRealtimeDetected) {
+        printf("[Rakarrack] Real-time audio settings detected (%u Hz / %d-frame buffers) -- "
+            "using automatically.\n", g_HaikuDetectedRate, g_HaikuDetectedFrames);
+    } else {
+        printf("[Rakarrack] Real-time audio not detected -- using %u Hz / %d frames "
+            "(buffer scaled to your detected rate).\n", g_HaikuDetectedRate, g_HaikuDetectedFrames);
 
+        BAlert* rtAlert = new BAlert("Real-Time Audio",
+            "Rakarrack works best when real-time configuration is enabled. Please enable "
+            "real-time audio.", "OK", NULL, NULL, B_WIDTH_AS_USUAL, B_INFO_ALERT);
+        rtAlert->Go();
+    }
 
+    int final_rate = (int)g_HaikuDetectedRate;
+    int final_frames = (int)g_HaikuDetectedFrames;
 
-    int final_rate = atoi(saved_rate);
-    int final_frames = atoi(saved_frames);
-    
-    // 1. Initialize Ring Buffers using the loaded rate
+    // 1. Initialize Ring Buffers using the detected rate
     uint32_t bufferSize = (uint32_t)final_rate * 2;
 
 	if (!rbInputLeft)   rbInputLeft   = new SimpleRingBuffer(bufferSize);

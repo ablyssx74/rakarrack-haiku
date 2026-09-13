@@ -21670,109 +21670,28 @@ R average.");
         { Fondo9 = new Fl_Box(5, 26, 630, 502);
         } // Fl_Box* Fondo9
 
-        // --- Sample Rate Selection ---
-        { RateChoice = new Fl_Choice(10, 60, 200, 25, "Sample Rate (Hz)");
-          RateChoice->labelsize(11);
-          RateChoice->labelcolor(FL_BACKGROUND2_COLOR);
-          RateChoice->align(FL_ALIGN_TOP_LEFT);
-          RateChoice->add("44100|48000|88200|96000|192000");
-          RateChoice->value(4); // Default to 192000
-          RateChoice->textcolor(FL_BLACK);
-        }
+		{ Fl_Box* rtStatus = new Fl_Box(10, 60, 500, 60);
+		  rtStatus->labelsize(12);
+		  rtStatus->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE | FL_ALIGN_TOP);
+		  extern uint32_t g_HaikuDetectedRate;
+		  extern int32 g_HaikuDetectedFrames;
+		  extern bool g_HaikuRealtimeDetected;
+		  if (g_HaikuRealtimeDetected) {
+		      snprintf(audio_status_buf, sizeof(audio_status_buf),
+		          "Real-time audio detected.\nActive: %u Hz / %d Frames",
+		          g_HaikuDetectedRate, g_HaikuDetectedFrames);
+		  } else {
+		      snprintf(audio_status_buf, sizeof(audio_status_buf),
+		          "Real-time audio NOT detected -- Rakarrack works best with it enabled.\n"
+		          "Active: %u Hz / %d Frames (defaults)",
+		          g_HaikuDetectedRate, g_HaikuDetectedFrames);
+		  }
+		  rtStatus->label(audio_status_buf);
+		  AudioStatus = rtStatus; // keep the member name if referenced elsewhere
+		}
+		        JACK_SET->end();
+		      } // Fl_Group* JACK_SET         
 
-        // --- Buffer Size Selection ---
-        { FramesChoice = new Fl_Choice(10, 115, 200, 25, "Buffer Size (Frames)");
-          FramesChoice->labelsize(11);
-          FramesChoice->labelcolor(FL_BACKGROUND2_COLOR);
-          FramesChoice->align(FL_ALIGN_TOP_LEFT);
-          FramesChoice->add("64|128|256|512|1024|2048");
-          FramesChoice->value(3); // Default to 1024
-          FramesChoice->textcolor(FL_BLACK);
-        }
-
-        // --- Apply Button ---
-        { ApplyAudioBtn = new Fl_Button(10, 165, 120, 30, "Apply Settings");
-          ApplyAudioBtn->labelsize(12);
-          ApplyAudioBtn->callback((Fl_Callback*)cb_ApplyHaikuAudio, this); 
-          ApplyAudioBtn->box(FL_GTK_UP_BOX);
-        }
-		{ 
-          AudioStatus = new Fl_Box(10, 205, 300, 20);
-          AudioStatus->labelsize(11);
-          AudioStatus->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
-
-          // Using standard FLTK preferences as a reliable fallback
-          Fl_Preferences prefs(Fl_Preferences::USER, "rakarrack.sf.net", "rakarrack");
-    
-          char s_rate[32], s_frames[32];
-    
-          // Get the values (uses your Makefile defaults if nothing is saved)
-          prefs.get("Haiku_SampleRate", s_rate, STR(DEFAULT_FRAME_RATE), 32);
-          prefs.get("Haiku_BufferSize", s_frames, STR(DEFAULT_BUFFER_FRAMES), 32);
-    
-          Haiku_SampleRate = atoi(s_rate);
-          Haiku_BufferSize = atoi(s_frames);
-
-          if (Haiku_SampleRate > 0 && Haiku_BufferSize > 0) {
-          snprintf(audio_status_buf, sizeof(audio_status_buf), 
-                 "Active: %d Hz / %d Frames", Haiku_SampleRate, Haiku_BufferSize);
-           AudioStatus->label(audio_status_buf);
-          } else {
-          AudioStatus->label("Active: Default (System)");
-         	 }
-          }
-        JACK_SET->end();
-      } // Fl_Group* JACK_SET   
-      
-      
-      
-      
-      
-      /*
-      { JACK_SET = new Fl_Group(5, 26, 630, 502, "Jack");
-        JACK_SET->box(FL_PLASTIC_DOWN_FRAME);
-        JACK_SET->labelfont(1);
-        JACK_SET->labelcolor(FL_BACKGROUND2_COLOR);
-        JACK_SET->user_data((void*)(1));
-        JACK_SET->align(FL_ALIGN_LEFT);
-        JACK_SET->hide();
-        { Fondo9 = new Fl_Box(5, 26, 630, 502);
-        } // Fl_Box* Fondo9
-        { D_J_Connect = new Fl_Check_Button(114, 40, 25, 20, "Auto Connect Out");
-          D_J_Connect->down_box(FL_DOWN_BOX);
-          D_J_Connect->labelsize(11);
-          D_J_Connect->labelcolor(FL_BACKGROUND2_COLOR);
-          D_J_Connect->callback((Fl_Callback*)cb_D_J_Connect);
-          D_J_Connect->align(FL_ALIGN_LEFT);
-        } // Fl_Check_Button* D_J_Connect
-        { JackCo = new Fl_Browser(10, 72, 235, 138, "Output Ports");
-          JackCo->type(3);
-          JackCo->selection_color(FL_FOREGROUND_COLOR);
-          JackCo->labelsize(11);
-          JackCo->labelcolor(FL_BACKGROUND2_COLOR);
-          JackCo->textsize(12);
-          JackCo->textcolor(7);
-          JackCo->align(FL_ALIGN_TOP_LEFT);
-        } // Fl_Browser* JackCo
-        { D_IJ_Connect = new Fl_Check_Button(104, 228, 25, 20, "Auto Connect In");
-          D_IJ_Connect->down_box(FL_DOWN_BOX);
-          D_IJ_Connect->labelsize(11);
-          D_IJ_Connect->labelcolor(FL_BACKGROUND2_COLOR);
-          D_IJ_Connect->callback((Fl_Callback*)cb_D_IJ_Connect);
-          D_IJ_Connect->align(FL_ALIGN_LEFT);
-        } // Fl_Check_Button* D_IJ_Connect
-        { JackIn = new Fl_Browser(10, 259, 235, 131, "Input Ports");
-          JackIn->type(3);
-          JackIn->selection_color(FL_FOREGROUND_COLOR);
-          JackIn->labelsize(11);
-          JackIn->labelcolor(FL_BACKGROUND2_COLOR);
-          JackIn->textsize(12);
-          JackIn->textcolor(7);
-          JackIn->align(FL_ALIGN_TOP_LEFT);
-        } // Fl_Browser* JackIn
-        JACK_SET->end();
-      } // Fl_Group* JACK_SET
-      */
       { MISC_SET = new Fl_Group(5, 26, 630, 502, "Misc");
         MISC_SET->box(FL_PLASTIC_DOWN_FRAME);
         MISC_SET->labelfont(1);

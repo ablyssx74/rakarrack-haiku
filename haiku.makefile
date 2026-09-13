@@ -2,23 +2,30 @@
 # Optimized Haiku Build Script
 SHELL := /bin/bash
 #----------------------------------------------------------
-      
 
+PACKAGE_DIR := build/package
+NAME = rakarrack
+VERSION = 0.6.1
+REVISION = 7
 UNAME_M := $(shell uname -m)
 ifeq ($(UNAME_M), BePC)
 CXX = g++-x86
 CC = gcc-x86
+ARCH = x86_gcc2
 LDFLAGS = -L/boot/system/develop/lib/x86 -L/boot/system/lib/x86 
 CPPFLAGS = -I/boot/system/develop/headers/x86 -I$(PWD)
-PackageInfo = PackageInfo32.tpl
+PackageInfo = PackageInfo.tpl
+is32bit = _x86
 MAKE := setarch x86 $(MAKE)
-REQUIRED_PKGS =	fltk_x86_devel freetype_x86_devel libxfont2_x86_devel libsndfile_x86_devel libsamplerate_x86_devel libxpm_x86_devel 
-else 
+REQUIRED_PKGS =	fltk_x86_devel fontconfig_x86_devel freetype_x86_devel libxfont2_x86_devel libsndfile_x86_devel libsamplerate_x86_devel libxpm_x86_devel 
+else
 CXX = g++
 CC = gcc
-LDFLAGS = -L/boot/system/develop/lib/ 
+ARCH = x86_64
+LDFLAGS = -L/boot/system/develop/lib/
 CPPFLAGS = -I$(PWD)
-PackageInfo = PackageInfo64.tpl
+is32bit = 
+PackageInfo = PackageInfo.tpl
 REQUIRED_PKGS = fltk_devel fontconfig_devel freetype_devel libxfont2_devel libsndfile_devel libsamplerate_devel libxpm_devel
 endif
      
@@ -26,7 +33,7 @@ endif
 #----------------------------------------------------------
 # Default buffer and rame rate. Can be changed later in the UI
 #----------------------------------------------------------
-FRAMES ?= 2048
+FRAMES ?= 1024
 RATE   ?= 48000
 #----------------------------------------------------------
 
@@ -89,7 +96,7 @@ config:
 	--with-buffer-frames="$(FRAMES)"
 	
 haiku_native/haiku-rakarrack.o: haiku_native/haiku-rakarrack.cpp
-	$(CXX) -c $< -o $@ -I$(PWD)/jack -I. -I./src $(BUILD_FLAGS) -fpermissive $(HAIKU_FIXES)
+	$(CXX) -c $< -o $@ -I$(PWD)/jack -I. -I./src $(FLTK_CXX) $(BUILD_FLAGS) -fpermissive $(HAIKU_FIXES)
 
 build: haiku_stubs.o haiku_native/haiku-rakarrack.o
 	@echo "=========================================================="
@@ -127,18 +134,6 @@ clean:
 	autoreconf -vif
 	@echo "Deep clean complete."
 	
-# Small hack since 32bit Haiku refuses to install packages without _gcc2 appendix.
-UNAME_M := $(shell uname -p)
-ifeq ($(UNAME_M), BePC)
-    ARCH = x86_gcc2
-else 
-    ARCH = x86_64
-endif    
-
-
-PACKAGE_DIR := build/package
-NAME = rakarrack
-VERSION = 0.6.1
 
 release: config build package
 
@@ -146,7 +141,7 @@ package: all
 	@[ -n "$(PACKAGE_DIR)" ] || { echo "PACKAGE_DIR is undefined"; exit 1; }
 	rm -rf "./$(PACKAGE_DIR)"
 	mkdir -p $(PACKAGE_DIR)
-	sed -e 's/$$(NAME)/$(NAME)/g' -e 's/$$(VERSION)/$(VERSION)/g' -e 's/$$(ARCH)/$(ARCH)/' -e 's/$$(YEAR)/$(shell date +%Y)/' $(PackageInfo) > $(PACKAGE_DIR)/.PackageInfo
+	sed -e 's/$$(NAME)/$(NAME)/g' -e 's/$$(REVISION)/$(REVISION)/g' -e 's/$$(VERSION)/$(VERSION)/g' -e 's/$$(is32bit)/$(is32bit)/g' -e 's/$$(ARCH)/$(ARCH)/' -e 's/$$(YEAR)/$(shell date +%Y)/' $(PackageInfo) > $(PACKAGE_DIR)/.PackageInfo
 	mkdir -p $(PACKAGE_DIR)/apps
 	mkdir -p $(PACKAGE_DIR)/bin
 	mkdir -p $(PACKAGE_DIR)/data/deskbar/menu/Applications
@@ -169,7 +164,7 @@ package: all
 	cp $(NAME) $(PACKAGE_DIR)/apps/$(NAME)
 	ln -s ../apps/$(NAME) $(PACKAGE_DIR)/bin/rakarrack
 	ln -s ../../../../apps/$(NAME) $(PACKAGE_DIR)/data/deskbar/menu/Applications/Rakarrack
-	package create -C $(PACKAGE_DIR) $(NAME)-$(VERSION)-6-$(ARCH).hpkg
+	package create -C $(PACKAGE_DIR) $(NAME)-$(VERSION)-$(REVISION)-$(ARCH).hpkg
 	
 	
 #----------------------------------------------------------

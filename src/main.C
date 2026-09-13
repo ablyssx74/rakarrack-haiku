@@ -47,7 +47,7 @@
 bool gDebugMode = false;
 
 namespace AppInfo {
-    static const char* const VERSION_STRING = "Rakarrack v6 (Haiku OS)";
+    static const char* const VERSION_STRING = "Rakarrack v7 (Haiku OS)";
 }
 
 
@@ -148,7 +148,7 @@ static int32 BackgroundUpdateChecker(void* data) {
             updateAlert.SetTitle("Update Available");
             
             BString alertContent;
-            alertContent << "A newer version of Rakarrack is available! (v" << remoteVersionStr 
+            alertContent << "A newer version of Rakarrack is available! (" << remoteVersionStr 
                          << ")";
             updateAlert.SetContent(alertContent.String());
             
@@ -207,9 +207,19 @@ show_help ()
 int
 main (int argc, char *argv[])
 {
-	BApplication* myApp = nullptr; 
+	BApplication* myApp = nullptr;
+
+	// Must happen before "RKR rkr;" below -- see
+	// HaikuDetectAudioSettingsEarly()'s own comment in jack.C for why.
+	// BMediaRoster (used for rate detection) needs a running
+	// BApplication, so it's constructed here unconditionally now,
+	// instead of later inside the haiku_mode/FLTK branches.
+	myApp = new BApplication("application/x-vnd.rakarrack-haiku");
+	HaikuDetectAudioSettingsEarly();
+
 	RKR rkr;
-    rk = &rkr; 
+    rk = &rkr;
+
     int preset = 1000;
     bool exitwithhelp = false;
 	int gui = 1; 
@@ -252,14 +262,10 @@ main (int argc, char *argv[])
 
 
     if (haiku_mode) {
-
-        myApp = new BApplication("application/x-vnd.rakarrack-haiku");
-        
-
+    	
   		JACKstart (&rkr, rkr.jackclient);
 		rkr.InitMIDI ();
   		rkr.ConnectMIDI ();
-
   
         start_haiku_native_interface(rk);
         
@@ -276,13 +282,11 @@ main (int argc, char *argv[])
         
     } else {
         // --- FLTK / Standard Path ---
-        if (be_app == nullptr) {
-            myApp = new BApplication("application/x-vnd.rakarrack-haiku");
-        }
-        Fl::lock();
-        if (gui) rakgui = new RKRGUI(argc, argv, &rkr);
 
+        Fl::lock();
         JACKstart (&rkr, rkr.jackclient);
+        if (gui) rakgui = new RKRGUI(argc, argv, &rkr);
+        
         rkr.InitMIDI ();
         rkr.ConnectMIDI ();
 
