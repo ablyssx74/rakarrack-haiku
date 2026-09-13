@@ -403,7 +403,7 @@ echo  " ALSA MIDI Sequencer support  . . . . . . . . . . . . . .: $haiku_rakarra
 echo  " Samplerate conversion (libsamplerate). . . . . . . . . .: $ac_samplerate"
 echo  " General audio file (libsndfile)  . . . . . . . . . . . .: $ac_sndfile"
 echo  " Buffers (For building / auto detection happens later). .: $buffer_frames"
-echo  " Rate (For building / auto detection happens later ). . .: $frame_rate" 
+echo  " Rate (For building / auto detection happens later) . . .: $frame_rate" 
 
 echo  
 echo  " Now you can run 'make -f haiku.makefile build' to build the sources."

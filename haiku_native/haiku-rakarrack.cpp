@@ -33,9 +33,14 @@
 #include <Box.h>
 #include <Button.h>
 #include <CheckBox.h>
+#include <Entry.h>
+#include <FilePanel.h>
 #include <Font.h>
 #include <ListItem.h>
 #include <ListView.h>
+#include <Messenger.h>
+#include <Path.h>
+#include <String.h>
 #include <GroupView.h>
 #include <MenuBar.h>
 #include <MenuField.h>
@@ -127,19 +132,23 @@ extern pthread_mutex_t jmutex;
 // RakarrackView::fActions; the value comes from "be:value" for sliders and
 // checkboxes, or from an explicit "val" field for menu items.
 //
-// MSG_OPEN_ORDER is deliberately NOT part of this table: RakarrackWindow
-// wraps every MSG_ACTION dispatch in jmutex (the shared engine state most
-// actions touch needs that), but building/showing the Effects Order window
-// the first time is real work (BListView's first-ever construction in this
-// app, app_server round-trips, layout) that has nothing to do with engine
-// state -- holding jmutex for however long that takes was blocking the
-// real-time audio callback from acquiring it every ~2.7ms, starving
-// playback (heard as a flood of "SoundPlayNode::FillNextBuffer: RequestBuffer
-// failed"). Routing it through its own message keeps it out of that lock
-// entirely.
+// MSG_OPEN_ORDER, MSG_SAVE_PRESET and MSG_LOAD_PRESET are deliberately NOT
+// part of this table: RakarrackWindow wraps every MSG_ACTION dispatch in
+// jmutex (the shared engine state most actions touch needs that), but
+// showing a window or a BFilePanel for the first time is real work (layout,
+// app_server round-trips) that has nothing to do with engine state --
+// holding jmutex for however long that takes was blocking the real-time
+// audio callback from acquiring it every ~2.7ms, starving playback (heard
+// as a flood of "SoundPlayNode::FillNextBuffer: RequestBuffer failed").
+// Routing these through their own messages keeps them out of that lock
+// entirely; the actual savefile()/loadfile() calls those panels lead to
+// (see RakarrackWindow) still take the lock explicitly, since those do
+// touch engine state the audio thread reads.
 enum {
 	MSG_ACTION = 'RKAx',
-	MSG_OPEN_ORDER = 'RKOo'
+	MSG_OPEN_ORDER = 'RKOo',
+	MSG_SAVE_PRESET = 'RKSp',
+	MSG_LOAD_PRESET = 'RKLp'
 };
 
 static const std::vector<std::string> kStompBoxModeNames = {
@@ -286,42 +295,112 @@ static const rgb_color kAccentColor = { 90, 170, 200, 255 };// slider fill
 // (the same numbers as the "case N:" labels in that switch) also has to be
 // sitting in one of those 10 slots. The FLTK GUI manages that through its
 // own "Effects Order" window (drag effects in/out of the active chain);
-// native mode has no such window, so each effect box claims and releases
-// its own slot directly from its "On" toggle instead. This mirrors the
-// same 10-active-effects ceiling the FLTK GUI has always had -- it does
-// not remove it, just gives native mode its own way to work within it.
+// native mode has no such window, so each effect box claims its own slot
+// directly from its "On" toggle instead. This mirrors the same
+// 10-active-effects ceiling the FLTK GUI has always had -- it does not
+// remove it, just gives native mode its own way to work within it.
+//
+// Every slot ALWAYS holds a valid effect-type ID (0-45), the same way
+// FLTK's own Order window always names a real effect for each of its 10
+// positions (an inactive one just has its own Bypass off) -- there is no
+// "empty" sentinel. This isn't a style choice: src/fileio.C's savefile()
+// unconditionally writes one getbuf() line per slot, and getbuf()'s
+// switch has no case for an invalid ID -- for one it silently writes zero
+// bytes, not even a newline, which desyncs every line loadfile() reads
+// after that and corrupts the rest of the save file (confirmed against a
+// save made from here: a couple of real-looking lines, then cascading
+// garbage). An earlier version of this file used -1 for "no effect here"
+// and hit exactly that. So "inactive" here means only one thing: a slot
+// whose current occupant happens to have its own Bypass off, exactly
+// like FLTK.
 static const int kOrderSlotCount = 10;
-static const int kEmptySlot = -1; // matches no "case N:" label in that switch
 
-static void ClearOrderSlots(RKR* rkr) {
-	for (int i = 0; i < kOrderSlotCount; i++)
-		rkr->efx_order[i] = kEmptySlot;
+// Address of the RKR member that gates whether effectId's out()/changepar()
+// actually run -- one of 46 separately-named *_Bypass fields, since RKR has
+// no array indexable by effect-type ID. Only the ones ActivateEffectSlot()
+// and OrderWindow need to check generically are covered; everywhere else
+// each effect box already has its own bypass pointer passed to it directly
+// at construction. NULL for an ID this switch doesn't recognize.
+static int* BypassPtrForId(RKR* rkr, int effectId) {
+	switch (effectId) {
+	case 0: return &rkr->EQ1_Bypass;
+	case 1: return &rkr->Compressor_Bypass;
+	case 2: return &rkr->Distorsion_Bypass;
+	case 3: return &rkr->Overdrive_Bypass;
+	case 4: return &rkr->Echo_Bypass;
+	case 5: return &rkr->Chorus_Bypass;
+	case 6: return &rkr->Phaser_Bypass;
+	case 7: return &rkr->Flanger_Bypass;
+	case 8: return &rkr->Reverb_Bypass;
+	case 9: return &rkr->EQ2_Bypass;
+	case 10: return &rkr->WhaWha_Bypass;
+	case 11: return &rkr->Alienwah_Bypass;
+	case 12: return &rkr->Cabinet_Bypass;
+	case 13: return &rkr->Pan_Bypass;
+	case 14: return &rkr->Harmonizer_Bypass;
+	case 15: return &rkr->MusDelay_Bypass;
+	case 16: return &rkr->Gate_Bypass;
+	case 17: return &rkr->NewDist_Bypass;
+	case 18: return &rkr->APhaser_Bypass;
+	case 19: return &rkr->Valve_Bypass;
+	case 20: return &rkr->DFlange_Bypass;
+	case 21: return &rkr->Ring_Bypass;
+	case 22: return &rkr->Exciter_Bypass;
+	case 23: return &rkr->MBDist_Bypass;
+	case 24: return &rkr->Arpie_Bypass;
+	case 25: return &rkr->Expander_Bypass;
+	case 26: return &rkr->Shuffle_Bypass;
+	case 27: return &rkr->Synthfilter_Bypass;
+	case 28: return &rkr->MBVvol_Bypass;
+	case 29: return &rkr->Convol_Bypass;
+	case 30: return &rkr->Looper_Bypass;
+	case 31: return &rkr->RyanWah_Bypass;
+	case 32: return &rkr->RBEcho_Bypass;
+	case 33: return &rkr->CoilCrafter_Bypass;
+	case 34: return &rkr->ShelfBoost_Bypass;
+	case 35: return &rkr->Vocoder_Bypass;
+	case 36: return &rkr->Sustainer_Bypass;
+	case 37: return &rkr->Sequence_Bypass;
+	case 38: return &rkr->Shifter_Bypass;
+	case 39: return &rkr->StompBox_Bypass;
+	case 40: return &rkr->Reverbtron_Bypass;
+	case 41: return &rkr->Echotron_Bypass;
+	case 42: return &rkr->StereoHarm_Bypass;
+	case 43: return &rkr->CompBand_Bypass;
+	case 44: return &rkr->Opticaltrem_Bypass;
+	case 45: return &rkr->Vibe_Bypass;
+	default: return nullptr;
+	}
 }
 
 // Returns true if effectId is now (or already was) occupying a slot.
-// False means all 10 slots are claimed by other effects.
+// False means all 10 slots are held by other currently-active effects.
 static bool ActivateEffectSlot(RKR* rkr, int effectId) {
-	int freeSlot = -1;
 	for (int i = 0; i < kOrderSlotCount; i++) {
 		if (rkr->efx_order[i] == effectId)
 			return true;
-		if (freeSlot < 0 && rkr->efx_order[i] == kEmptySlot)
-			freeSlot = i;
 	}
-	if (freeSlot < 0)
-		return false;
-	rkr->efx_order[freeSlot] = effectId;
-	return true;
-}
-
-static void DeactivateEffectSlot(RKR* rkr, int effectId) {
+	// Steal a slot from whichever occupant is currently bypassed -- its
+	// own state doesn't change, it just stops being one of the 10 in the
+	// chain. If that effect is turned on again later, it competes for a
+	// slot the same way any other effect does.
 	for (int i = 0; i < kOrderSlotCount; i++) {
-		if (rkr->efx_order[i] == effectId) {
-			rkr->efx_order[i] = kEmptySlot;
-			return;
+		int* occupantBypass = BypassPtrForId(rkr, rkr->efx_order[i]);
+		if (occupantBypass && *occupantBypass == 0) {
+			rkr->efx_order[i] = effectId;
+			return true;
 		}
 	}
+	return false;
 }
+
+// Deliberately does nothing: with no "empty" sentinel, turning an effect
+// off doesn't free its slot -- the slot keeps naming this effect (now
+// just bypassed, like any inactive FLTK Order-window entry) until some
+// other effect actually needs the slot and steals it in
+// ActivateEffectSlot(). The caller has already flipped *bypass to 0,
+// which is what actually silences it (see process.C's "if (X_Bypass)").
+static void DeactivateEffectSlot(RKR*, int) { }
 
 // Display name for each effect-type ID the native UI exposes -- every
 // effect BuildColumn1-4 wires up can end up in rkr->efx_order[], so this
@@ -506,7 +585,12 @@ private:
 
 		for (int i = 0; i < kOrderSlotCount; i++) {
 			int id = fRkr->efx_order[i];
-			if (id == kEmptySlot)
+			// Every slot always names a real effect now (see the big
+			// comment above ActivateEffectSlot()) -- only show the ones
+			// actually turned on, matching the hint text above and what
+			// used to be conveyed by an empty slot.
+			int* bypass = BypassPtrForId(fRkr, id);
+			if (!bypass || *bypass == 0)
 				continue;
 			fList->AddItem(new BStringItem(EffectName(id)));
 			fSlotIndices.push_back(i);
@@ -561,93 +645,16 @@ public:
 		BView("MainView", B_WILL_DRAW | B_PULSE_NEEDED),
 		fRkr(rkr)
 	{
-		// Start with an empty active-effects chain -- see ActivateEffectSlot()
-		// above for why this matters. The factory-default bank (loaded
-		// earlier, before this view exists, in both FLTK and native mode)
-		// leaves effect-type IDs 0-9 pre-occupying all 10 slots regardless
-		// of whether those effects are actually on; native mode has no
-		// Effects Order window to ever change that, so without this, the
-		// first 10 effect boxes built below would find the chain already
-		// full of IDs 0-9 and every other effect (StompBox included) would
-		// never get a slot no matter how many are turned off.
-		ClearOrderSlots(rkr);
-
+		// No setup needed for efx_order[] here -- the factory-default bank
+		// (loaded earlier, before this view exists) already leaves it at
+		// {0,1,...,9}, all with their own Bypass off, which is exactly
+		// what ActivateEffectSlot() needs: every slot names a real,
+		// currently-inactive effect, so the first thing turned on (in
+		// native mode, any of the 46, not just 0-9) immediately has a
+		// slot to steal. See the comment above ActivateEffectSlot() for
+		// why there's no "clear to empty" step the way there used to be.
 		SetViewColor(kBgColor);
 
-		fCpuDisplay = new BStringView("cpu", "CPU: 0.00%");
-		fCpuDisplay->SetHighColor(kValueColor);
-		fCpuDisplay->SetLowColor(kBgColor);
-		// Fixed width so the master bar doesn't reflow (a visible
-		// bounce/jitter in everything to its right) every time the text
-		// changes length as the percentage itself changes -- e.g. "0.37%"
-		// vs. "12.34%" are different widths, and Pulse() updates this via
-		// SetText() many times a second.
-		fCpuDisplay->SetExplicitMinSize(BSize(80, B_SIZE_UNSET));
-		fCpuDisplay->SetExplicitMaxSize(BSize(80, B_SIZE_UNSET));
-
-		fMasterFX = new BCheckBox("master_fx", "FX Engine",
-			MakeMessage(Bind([rkr](int32 v) {
-				rkr->Bypass = v ? 1 : 0;
-				if (!v)
-					rkr->cleanup_efx();
-			})));
-		fMasterFX->SetValue(rkr->Bypass ? B_CONTROL_ON : B_CONTROL_OFF);
-		fMasterFX->SetViewColor(kBgColor);
-		BFont boldFont(be_bold_font);
-		fMasterFX->SetFont(&boldFont);
-
-		BCheckBox* boost = new BCheckBox("boost", "Boost +10dB",
-			MakeMessage(Bind([rkr](int32 v) {
-				rkr->booster = v ? dB2rap(10.0f) : 1.0f;
-			})));
-		boost->SetValue(rkr->booster > 1.0f ? B_CONTROL_ON : B_CONTROL_OFF);
-		boost->SetViewColor(kBgColor);
-
-		// Opens (or, if already built, just refreshes, un-hides and raises)
-		// the Effects Order window -- see OrderWindow above. This window is
-		// created once and then only ever hidden, never destroyed, for the
-		// life of the app (see OrderWindow::QuitRequested()).
-		//
-		// This button deliberately does NOT go through Bind()/MakeMessage()
-		// (MSG_ACTION) like every other control here -- RakarrackWindow
-		// wraps every MSG_ACTION dispatch in jmutex, and OpenOrderWindow()
-		// below (building/showing a window for the first time) is real,
-		// possibly-slow work that has nothing to do with the engine state
-		// jmutex actually protects. See MSG_OPEN_ORDER's comment.
-		BButton* orderBtn = new BButton("order", "Effects Order...",
-			new BMessage(MSG_OPEN_ORDER));
-
-		BGroupView* master = new BGroupView(B_HORIZONTAL, 10);
-		master->GroupLayout()->SetInsets(10);
-		master->SetViewColor(kBgColor);
-		master->AddChild(fCpuDisplay);
-		master->AddChild(fMasterFX);
-		master->AddChild(boost);
-		master->AddChild(orderBtn);
-		AddSlider(master, "in_gain", "Input Gain", -50, 50,
-			(int32)(rkr->Input_Gain * 100.0f) - 50,
-			[rkr](int32 v) {
-				rkr->Input_Gain = (float)((v + 50) / 100.0);
-				rkr->calculavol(1);
-			});
-		AddSlider(master, "out_gain", "Master Volume", -50, 50,
-			(int32)(rkr->Master_Volume * 100.0f) - 50,
-			[rkr](int32 v) {
-				rkr->Master_Volume = (float)((v + 50) / 100.0);
-				rkr->calculavol(2);
-			});
-		master->GroupLayout()->AddItem(BSpaceLayoutItem::CreateGlue());
-
-		// The sliders above only set their on-screen position from
-		// Input_Gain/Master_Volume -- they never fire their own callback, so
-		// without this, Log_I_Gain/Log_M_Volume (the actual gain multipliers
-		// used in the audio path, see process.C's calculavol()) stay
-		// uninitialized until the user manually touches a slider. Mirrors
-		// rakarrack.cxx's own startup priming (RKRGUI's constructor).
-		rkr->calculavol(1);
-		rkr->calculavol(2);
-		rkr->booster = 1.0f;
-		
 		// Four scrollable columns of effect racks (was five -- with each
 		// slider now ~2x as wide, four fits comfortably on more screens),
 		// mirroring the layout of src/rakarrack.cxx without trying to
@@ -684,8 +691,129 @@ public:
 		columns->AddChild(col4);
 
 		BLayoutBuilder::Group<>(this, B_VERTICAL, 0)
-			.Add(master)
 			.Add(columns)
+			.End();
+	}
+
+	// Builds the always-visible header (logo, CPU/FX Engine/Boost, Input
+	// Gain/Master Volume, Effects Order, Save/Load Preset) into
+	// headerParent, a view RakarrackWindow keeps outside the scrolled area
+	// so none of this scrolls away with the effect racks. Lives here (not
+	// in RakarrackWindow) purely so it can call this view's own private
+	// Bind()/MakeMessage() -- the resulting widgets are added to
+	// headerParent, not to this view, and that's fine: a BControl's
+	// message still resolves to Window() regardless of which view in the
+	// window's hierarchy it's actually a child of, so Dispatch() (called
+	// from RakarrackWindow::MessageReceived on every MSG_ACTION) still
+	// reaches them the same way it reaches every slider in the scrolled
+	// columns below.
+	void BuildHeader(BView* headerParent)
+	{
+		RKR* rkr = fRkr;
+
+		BStringView* logo = new BStringView("logo", "Haikurack");
+		logo->SetHighColor(kTitleColor);
+		logo->SetLowColor(kBgColor);
+		BFont logoFont(be_bold_font);
+		logoFont.SetSize(28.0f);
+		logoFont.SetFace(B_ITALIC_FACE | B_BOLD_FACE);
+		logo->SetFont(&logoFont);
+		logo->SetExplicitAlignment(BAlignment(B_ALIGN_LEFT, B_ALIGN_MIDDLE));
+
+		fCpuDisplay = new BStringView("cpu", "CPU: 0.00%");
+		fCpuDisplay->SetHighColor(kValueColor);
+		fCpuDisplay->SetLowColor(kBgColor);
+		// Fixed width so the header doesn't reflow (a visible bounce/jitter
+		// in everything to its right) every time the text changes length as
+		// the percentage itself changes -- e.g. "0.37%" vs. "12.34%" are
+		// different widths, and Pulse() updates this via SetText() many
+		// times a second.
+		fCpuDisplay->SetExplicitMinSize(BSize(80, B_SIZE_UNSET));
+		fCpuDisplay->SetExplicitMaxSize(BSize(80, B_SIZE_UNSET));
+
+		fMasterFX = new BCheckBox("master_fx", "FX Engine",
+			MakeMessage(Bind([rkr](int32 v) {
+				rkr->Bypass = v ? 1 : 0;
+				if (!v)
+					rkr->cleanup_efx();
+			})));
+		fMasterFX->SetValue(rkr->Bypass ? B_CONTROL_ON : B_CONTROL_OFF);
+		fMasterFX->SetViewColor(kBgColor);
+		BFont boldFont(be_bold_font);
+		fMasterFX->SetFont(&boldFont);
+
+		BCheckBox* boost = new BCheckBox("boost", "Boost +10dB",
+			MakeMessage(Bind([rkr](int32 v) {
+				rkr->booster = v ? dB2rap(10.0f) : 1.0f;
+			})));
+		boost->SetValue(rkr->booster > 1.0f ? B_CONTROL_ON : B_CONTROL_OFF);
+		boost->SetViewColor(kBgColor);
+
+		// Opens (or, if already built, just refreshes, un-hides and raises)
+		// the Effects Order window -- see OrderWindow above. This window is
+		// created once and then only ever hidden, never destroyed, for the
+		// life of the app (see OrderWindow::QuitRequested()).
+		//
+		// This button (and Save/Load Preset below) deliberately does NOT go
+		// through Bind()/MakeMessage() (MSG_ACTION) like every other control
+		// here -- RakarrackWindow wraps every MSG_ACTION dispatch in jmutex,
+		// and OpenOrderWindow()/the save-and-load panels are real,
+		// possibly-slow work (building a window, opening a BFilePanel) that
+		// has nothing to do with the engine state jmutex actually protects.
+		// See MSG_OPEN_ORDER's comment.
+		BButton* orderBtn = new BButton("order", "Effects Order...",
+			new BMessage(MSG_OPEN_ORDER));
+
+		BButton* savePresetBtn = new BButton("save_preset", "Save Preset",
+			new BMessage(MSG_SAVE_PRESET));
+		savePresetBtn->SetViewColor(kPanelColor);
+
+		BButton* loadPresetBtn = new BButton("load_preset", "Load Preset",
+			new BMessage(MSG_LOAD_PRESET));
+		loadPresetBtn->SetViewColor(kPanelColor);
+
+		BGroupView* controls = new BGroupView(B_HORIZONTAL, 10);
+		controls->GroupLayout()->SetInsets(10, 0, 10, 10);
+		controls->SetViewColor(kBgColor);
+		controls->AddChild(fCpuDisplay);
+		controls->AddChild(fMasterFX);
+		controls->AddChild(boost);
+		controls->AddChild(orderBtn);
+		controls->AddChild(savePresetBtn);
+		controls->AddChild(loadPresetBtn);
+		AddSlider(controls, "in_gain", "Input Gain", -50, 50,
+			(int32)(rkr->Input_Gain * 100.0f) - 50,
+			[rkr](int32 v) {
+				rkr->Input_Gain = (float)((v + 50) / 100.0);
+				rkr->calculavol(1);
+			});
+		AddSlider(controls, "out_gain", "Master Volume", -50, 50,
+			(int32)(rkr->Master_Volume * 100.0f) - 50,
+			[rkr](int32 v) {
+				rkr->Master_Volume = (float)((v + 50) / 100.0);
+				rkr->calculavol(2);
+			});
+		controls->GroupLayout()->AddItem(BSpaceLayoutItem::CreateGlue());
+
+		// The sliders above only set their on-screen position from
+		// Input_Gain/Master_Volume -- they never fire their own callback, so
+		// without this, Log_I_Gain/Log_M_Volume (the actual gain multipliers
+		// used in the audio path, see process.C's calculavol()) stay
+		// uninitialized until the user manually touches a slider. Mirrors
+		// rakarrack.cxx's own startup priming (RKRGUI's constructor).
+		rkr->calculavol(1);
+		rkr->calculavol(2);
+		rkr->booster = 1.0f;
+
+		BGroupView* logoRow = new BGroupView(B_HORIZONTAL, 10);
+		logoRow->GroupLayout()->SetInsets(10, 10, 10, 4);
+		logoRow->SetViewColor(kBgColor);
+		logoRow->AddChild(logo);
+		logoRow->GroupLayout()->AddItem(BSpaceLayoutItem::CreateGlue());
+
+		BLayoutBuilder::Group<>(headerParent, B_VERTICAL, 0)
+			.Add(logoRow)
+			.Add(controls)
 			.End();
 	}
 
@@ -1882,6 +2010,14 @@ public:
 		fMainView = new RakarrackView(rkr);
 		fMainView->SetExplicitMinSize(BSize(300, 200));
 
+		// Header (logo, CPU/FX Engine/Boost, Input Gain/Master Volume,
+		// Effects Order, Save/Load Preset) lives outside the BScrollView
+		// entirely, as its own sibling view, so none of it scrolls away
+		// with the effect racks -- see RakarrackView::BuildHeader().
+		BGroupView* header = new BGroupView(B_VERTICAL, 0);
+		header->SetViewColor(kBgColor);
+		fMainView->BuildHeader(header);
+
 		// No visible scroll bars -- see RakarrackView::MessageReceived()
 		// for how scrolling still works (mouse wheel) without them.
 		BScrollView* scroller = new BScrollView("rack_scroll", fMainView, 0,
@@ -1889,6 +2025,7 @@ public:
 		scroller->SetViewColor(kBgColor);
 
 		BLayoutBuilder::Group<>(this, B_VERTICAL, 0)
+			.Add(header)
 			.Add(scroller)
 			.End();
 
@@ -1905,6 +2042,26 @@ public:
 			return;
 		}
 
+		if (msg->what == MSG_SAVE_PRESET) {
+			ShowSavePanel();
+			return;
+		}
+
+		if (msg->what == MSG_LOAD_PRESET) {
+			ShowLoadPanel();
+			return;
+		}
+
+		if (msg->what == B_SAVE_REQUESTED) {
+			HandleSaveRequested(msg);
+			return;
+		}
+
+		if (msg->what == B_REFS_RECEIVED) {
+			HandleRefsReceived(msg);
+			return;
+		}
+
 		if (msg->what != MSG_ACTION) {
 			BWindow::MessageReceived(msg);
 			return;
@@ -1916,8 +2073,79 @@ public:
 	}
 
 private:
+	// Lazily built, kept for the life of the window (BFilePanel is heavy
+	// enough to build once and reuse, same reasoning as OrderWindow).
+	// Targeted at "this" explicitly rather than left at BFilePanel's
+	// default (be_app), so the resulting B_SAVE_REQUESTED/B_REFS_RECEIVED
+	// land in this window's own MessageReceived() above, not wherever
+	// BApplication's default handling of those would send them.
+	void ShowSavePanel()
+	{
+		if (!fSavePanel)
+			fSavePanel = new BFilePanel(B_SAVE_PANEL, new BMessenger(this));
+		fSavePanel->Show();
+	}
+
+	void ShowLoadPanel()
+	{
+		if (!fOpenPanel)
+			fOpenPanel = new BFilePanel(B_OPEN_PANEL, new BMessenger(this));
+		fOpenPanel->Show();
+	}
+
+	// rkr->savefile()/loadfile() (declared in src/global.h) are exactly
+	// what src/rakarrack.cxx's own File > Save/Load menu items call --
+	// same file format, same engine entry points, nothing native-mode-
+	// specific about the save/load mechanism itself, just how it's
+	// triggered. Both mutate/read a large amount of engine state the
+	// audio thread also touches every callback, so both need jmutex held,
+	// unlike the panel-opening steps above.
+	void HandleSaveRequested(BMessage* msg)
+	{
+		entry_ref dirRef;
+		BString name;
+		if (msg->FindRef("directory", &dirRef) != B_OK
+			|| msg->FindString("name", &name) != B_OK) {
+			return;
+		}
+		BPath dirPath(&dirRef);
+		BPath filePath(dirPath.Path(), name.String());
+
+		pthread_mutex_lock(&jmutex);
+		fRkr->savefile((char*)filePath.Path());
+		pthread_mutex_unlock(&jmutex);
+	}
+
+	void HandleRefsReceived(BMessage* msg)
+	{
+		entry_ref ref;
+		if (msg->FindRef("refs", &ref) != B_OK)
+			return;
+		BPath filePath(&ref);
+
+		pthread_mutex_lock(&jmutex);
+		fRkr->loadfile((char*)filePath.Path());
+		pthread_mutex_unlock(&jmutex);
+
+		// The engine and audio output switch to the loaded preset
+		// immediately; the on-screen slider/toggle/dropdown positions
+		// don't, since nothing here re-primes those widgets from the
+		// engine's new state after the fact (every effect box reads its
+		// initial values once, at construction). Rebuilding all of them
+		// live is a real project of its own -- flagging it plainly rather
+		// than leaving the mismatch to look like a bug.
+		BAlert* alert = new BAlert("Preset Loaded",
+			"The preset was loaded and is already playing -- audio reflects "
+			"it now. The on-screen slider and toggle positions won't catch "
+			"up until Rakarrack is restarted, though.",
+			"OK", NULL, NULL, B_WIDTH_AS_USUAL, B_INFO_ALERT);
+		alert->Go(NULL);
+	}
+
 	RKR* fRkr;
 	RakarrackView* fMainView;
+	BFilePanel* fSavePanel = nullptr;
+	BFilePanel* fOpenPanel = nullptr;
 };
 
 extern "C" void start_haiku_native_interface(void* rkr_ptr) {

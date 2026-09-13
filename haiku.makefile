@@ -50,7 +50,11 @@ SIMD_FLAGS ?= -O3 -mtune=generic -msse2 # Public Build Default
 BUILD_FLAGS = $(SIMD_FLAGS) -ffast-math -ffunction-sections -fdata-sections -s
 LD_OPTIMIZE = -Wl,--gc-sections
 HAIKU_FIXES = -include $(PWD)/haiku_fixes.h
-HAIKU_LIBS = -lmedia -lbe -lmidi2 -ltranslation -lnetwork -lroot -lpthread
+# -ltracker is required for BFilePanel (haiku_native/haiku-rakarrack.cpp's
+# Save/Load Preset dialogs) -- BFilePanel's implementation lives in
+# libtracker.so on Haiku, not libbe.so, even though it's declared as part
+# of the public Storage Kit API.
+HAIKU_LIBS = -lmedia -lbe -lmidi2 -ltranslation -lnetwork -lroot -lpthread -ltracker
 EXTRA_LIBS = -lsamplerate -lsndfile -lfltk_images -lfltk -lfltk_forms -lpng -lz
 #----------------------------------------------------------
 
