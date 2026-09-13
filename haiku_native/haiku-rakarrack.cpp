@@ -1,5 +1,5 @@
 /*
- * Copyright 2026, Kris Beazley jb@epluribusunix.net
+ * Copyright 2026, Kris Beazley rakarrack@epluribusunix.net
  * All rights reserved. Distributed under the terms of the MIT license.
  *
  * Native Haiku GUI for Rakarrack.
@@ -125,8 +125,20 @@ extern pthread_mutex_t jmutex;
 // Single message type for every control in the rack. "aidx" indexes into
 // RakarrackView::fActions; the value comes from "be:value" for sliders and
 // checkboxes, or from an explicit "val" field for menu items.
+//
+// MSG_OPEN_ORDER is deliberately NOT part of this table: RakarrackWindow
+// wraps every MSG_ACTION dispatch in jmutex (the shared engine state most
+// actions touch needs that), but building/showing the Effects Order window
+// the first time is real work (BListView's first-ever construction in this
+// app, app_server round-trips, layout) that has nothing to do with engine
+// state -- holding jmutex for however long that takes was blocking the
+// real-time audio callback from acquiring it every ~2.7ms, starving
+// playback (heard as a flood of "SoundPlayNode::FillNextBuffer: RequestBuffer
+// failed"). Routing it through its own message keeps it out of that lock
+// entirely.
 enum {
-	MSG_ACTION = 'RKAx'
+	MSG_ACTION = 'RKAx',
+	MSG_OPEN_ORDER = 'RKOo'
 };
 
 static const std::vector<std::string> kStompBoxModeNames = {
@@ -452,6 +464,13 @@ public:
 		fCpuDisplay = new BStringView("cpu", "CPU: 0.00%");
 		fCpuDisplay->SetHighColor(kValueColor);
 		fCpuDisplay->SetLowColor(kBgColor);
+		// Fixed width so the master bar doesn't reflow (a visible
+		// bounce/jitter in everything to its right) every time the text
+		// changes length as the percentage itself changes -- e.g. "0.37%"
+		// vs. "12.34%" are different widths, and Pulse() updates this via
+		// SetText() many times a second.
+		fCpuDisplay->SetExplicitMinSize(BSize(80, B_SIZE_UNSET));
+		fCpuDisplay->SetExplicitMaxSize(BSize(80, B_SIZE_UNSET));
 
 		fMasterFX = new BCheckBox("master_fx", "FX Engine",
 			MakeMessage(Bind([rkr](int32 v) {
@@ -475,29 +494,15 @@ public:
 		// the Effects Order window -- see OrderWindow above. This window is
 		// created once and then only ever hidden, never destroyed, for the
 		// life of the app (see OrderWindow::QuitRequested()).
+		//
+		// This button deliberately does NOT go through Bind()/MakeMessage()
+		// (MSG_ACTION) like every other control here -- RakarrackWindow
+		// wraps every MSG_ACTION dispatch in jmutex, and OpenOrderWindow()
+		// below (building/showing a window for the first time) is real,
+		// possibly-slow work that has nothing to do with the engine state
+		// jmutex actually protects. See MSG_OPEN_ORDER's comment.
 		BButton* orderBtn = new BButton("order", "Effects Order...",
-			MakeMessage(Bind([this, rkr](int32) {
-				if (fOrderWindow == nullptr) {
-					// A just-constructed BWindow is locked to the
-					// constructing thread until its first Unlock() (which
-					// Show() takes care of) -- safe without an explicit
-					// Lock() here.
-					fOrderWindow = new OrderWindow(rkr);
-					fOrderWindow->Show();
-					return;
-				}
-				// Once shown, a BWindow runs its own message loop on its
-				// own thread -- reaching into it from here (a different
-				// thread) needs its lock held first, unlike the
-				// just-constructed case above.
-				if (fOrderWindow->Lock()) {
-					fOrderWindow->Refresh();
-					if (fOrderWindow->IsHidden())
-						fOrderWindow->Show();
-					fOrderWindow->Activate();
-					fOrderWindow->Unlock();
-				}
-			})));
+			new BMessage(MSG_OPEN_ORDER));
 
 		BGroupView* master = new BGroupView(B_HORIZONTAL, 10);
 		master->GroupLayout()->SetInsets(10);
@@ -630,6 +635,32 @@ public:
 			value = msg->GetInt32("be:value", 0);
 
 		fActions[aidx](value);
+	}
+
+	// Called by RakarrackWindow::MessageReceived for MSG_OPEN_ORDER --
+	// deliberately NOT under jmutex (see that message's declaration for
+	// why). Opens the Effects Order window, building it the first time and
+	// just refreshing/un-hiding/raising it after that.
+	void OpenOrderWindow()
+	{
+		if (fOrderWindow == nullptr) {
+			// A just-constructed BWindow is locked to the constructing
+			// thread until its first Unlock() (which Show() takes care of)
+			// -- safe without an explicit Lock() here.
+			fOrderWindow = new OrderWindow(fRkr);
+			fOrderWindow->Show();
+			return;
+		}
+		// Once shown, a BWindow runs its own message loop on its own
+		// thread -- reaching into it from here (a different thread) needs
+		// its lock held first, unlike the just-constructed case above.
+		if (fOrderWindow->Lock()) {
+			fOrderWindow->Refresh();
+			if (fOrderWindow->IsHidden())
+				fOrderWindow->Show();
+			fOrderWindow->Activate();
+			fOrderWindow->Unlock();
+		}
 	}
 
 private:
@@ -1150,6 +1181,13 @@ public:
 
 	virtual void MessageReceived(BMessage* msg)
 	{
+		if (msg->what == MSG_OPEN_ORDER) {
+			// Deliberately outside jmutex -- see MSG_OPEN_ORDER's
+			// declaration comment.
+			fMainView->OpenOrderWindow();
+			return;
+		}
+
 		if (msg->what != MSG_ACTION) {
 			BWindow::MessageReceived(msg);
 			return;
