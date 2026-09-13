@@ -27,6 +27,7 @@
 #include <math.h>
 #include <Alert.h>
 
+#include <Alignment.h>
 #include <InterfaceDefs.h>
 #include <LayoutBuilder.h>
 #include <Box.h>
@@ -159,6 +160,66 @@ struct ToggleDef {
 	int32 npar;
 };
 
+// Dark theme, chosen to read close to src/rakarrack.cxx's own black
+// background / gold titles / cyan labels look. Native BControls (BSlider,
+// BCheckBox, BMenuField) render their frames, knobs and native text with
+// the system's current UI theme rather than fully custom drawing the way
+// FLTK's SliderW does, so this covers what Haiku's API actually exposes:
+// view/panel backgrounds and the text we draw ourselves (titles, labels,
+// values) -- not a pixel-exact reproduction of rakarrack.cxx's skin.
+// Same value as kPanelColor on purpose -- the empty space around the effect
+// boxes (columns, master bar, scroll area) is meant to read as one
+// continuous surface with the boxes themselves, not a separate shade.
+static const rgb_color kBgColor = { 30, 30, 30, 255 };      // window/column background
+static const rgb_color kPanelColor = { 30, 30, 30, 255 };   // effect box / slider row background
+static const rgb_color kTitleColor = { 224, 196, 132, 255 };// effect box titles (gold)
+static const rgb_color kLabelColor = { 140, 200, 224, 255 }; // parameter labels (cyan)
+static const rgb_color kValueColor = { 235, 235, 235, 255 };// numeric readouts (near-white)
+static const rgb_color kAccentColor = { 90, 170, 200, 255 };// slider fill
+
+// The shared audio engine (process.C) only ever walks the first 10 slots
+// of rkr->efx_order[] per callback -- an effect's own Bypass flag is
+// necessary but not sufficient for it to actually run: its effect-type ID
+// (the same numbers as the "case N:" labels in that switch) also has to be
+// sitting in one of those 10 slots. The FLTK GUI manages that through its
+// own "Effects Order" window (drag effects in/out of the active chain);
+// native mode has no such window, so each effect box claims and releases
+// its own slot directly from its "On" toggle instead. This mirrors the
+// same 10-active-effects ceiling the FLTK GUI has always had -- it does
+// not remove it, just gives native mode its own way to work within it.
+static const int kOrderSlotCount = 10;
+static const int kEmptySlot = -1; // matches no "case N:" label in that switch
+
+static void ClearOrderSlots(RKR* rkr) {
+	for (int i = 0; i < kOrderSlotCount; i++)
+		rkr->efx_order[i] = kEmptySlot;
+}
+
+// Returns true if effectId is now (or already was) occupying a slot.
+// False means all 10 slots are claimed by other effects.
+static bool ActivateEffectSlot(RKR* rkr, int effectId) {
+	int freeSlot = -1;
+	for (int i = 0; i < kOrderSlotCount; i++) {
+		if (rkr->efx_order[i] == effectId)
+			return true;
+		if (freeSlot < 0 && rkr->efx_order[i] == kEmptySlot)
+			freeSlot = i;
+	}
+	if (freeSlot < 0)
+		return false;
+	rkr->efx_order[freeSlot] = effectId;
+	return true;
+}
+
+static void DeactivateEffectSlot(RKR* rkr, int effectId) {
+	for (int i = 0; i < kOrderSlotCount; i++) {
+		if (rkr->efx_order[i] == effectId) {
+			rkr->efx_order[i] = kEmptySlot;
+			return;
+		}
+	}
+}
+
 
 // Main rack content view: builds every effect box and owns the table of
 // callbacks ("actions") that the controls' messages are dispatched through.
@@ -169,10 +230,22 @@ public:
 		BView("MainView", B_WILL_DRAW | B_PULSE_NEEDED),
 		fRkr(rkr)
 	{
-		SetViewColor(180, 180, 180);
+		// Start with an empty active-effects chain -- see ActivateEffectSlot()
+		// above for why this matters. The factory-default bank (loaded
+		// earlier, before this view exists, in both FLTK and native mode)
+		// leaves effect-type IDs 0-9 pre-occupying all 10 slots regardless
+		// of whether those effects are actually on; native mode has no
+		// Effects Order window to ever change that, so without this, the
+		// first 10 effect boxes built below would find the chain already
+		// full of IDs 0-9 and every other effect (StompBox included) would
+		// never get a slot no matter how many are turned off.
+		ClearOrderSlots(rkr);
+
+		SetViewColor(kBgColor);
 
 		fCpuDisplay = new BStringView("cpu", "CPU: 0.00%");
-		fCpuDisplay->SetHighColor(100, 0, 0);
+		fCpuDisplay->SetHighColor(kValueColor);
+		fCpuDisplay->SetLowColor(kBgColor);
 
 		fMasterFX = new BCheckBox("master_fx", "FX Engine",
 			MakeMessage(Bind([rkr](int32 v) {
@@ -181,6 +254,7 @@ public:
 					rkr->cleanup_efx();
 			})));
 		fMasterFX->SetValue(rkr->Bypass ? B_CONTROL_ON : B_CONTROL_OFF);
+		fMasterFX->SetViewColor(kBgColor);
 		BFont boldFont(be_bold_font);
 		fMasterFX->SetFont(&boldFont);
 
@@ -189,9 +263,11 @@ public:
 				rkr->booster = v ? dB2rap(10.0f) : 1.0f;
 			})));
 		boost->SetValue(rkr->booster > 1.0f ? B_CONTROL_ON : B_CONTROL_OFF);
+		boost->SetViewColor(kBgColor);
 
 		BGroupView* master = new BGroupView(B_HORIZONTAL, 10);
 		master->GroupLayout()->SetInsets(10);
+		master->SetViewColor(kBgColor);
 		master->AddChild(fCpuDisplay);
 		master->AddChild(fMasterFX);
 		master->AddChild(boost);
@@ -232,6 +308,11 @@ public:
 		col3->GroupLayout()->SetInsets(5);
 		col4->GroupLayout()->SetInsets(5);
 		col5->GroupLayout()->SetInsets(5);
+		col1->SetViewColor(kBgColor);
+		col2->SetViewColor(kBgColor);
+		col3->SetViewColor(kBgColor);
+		col4->SetViewColor(kBgColor);
+		col5->SetViewColor(kBgColor);
 
 		BuildColumn1(col1);
 		BuildColumn2(col2);
@@ -247,6 +328,7 @@ public:
 
 		BGroupView* columns = new BGroupView(B_HORIZONTAL, 8);
 		columns->GroupLayout()->SetInsets(10);
+		columns->SetViewColor(kBgColor);
 		columns->AddChild(col1);
 		columns->AddChild(col2);
 		columns->AddChild(col3);
@@ -264,6 +346,34 @@ public:
 		BView::AttachedToWindow();
 		for (BMenu* menu : fMenus)
 			menu->SetTargetForItems(Window());
+	}
+
+	// RakarrackWindow's scroll bars are hidden (see start_haiku_native_
+	// interface()) so the rack reads as one continuous dark surface
+	// instead of being framed by chrome -- this is the only remaining way
+	// to move around when the content is taller/wider than the window.
+	// A B_MOUSE_WHEEL_CHANGED with no scroll bar to handle it bubbles up
+	// from whichever child view the mouse is over (sliders, checkboxes,
+	// menus, the column groups, the effect boxes -- none of those have
+	// scroll bars either) until something consumes it; this view wraps
+	// all of that, so it is always eventually reached. Plain wheel moves
+	// vertically; the common desktop convention (Shift+wheel, which many
+	// mice/trackpads also report directly as a horizontal delta) moves
+	// horizontally.
+	virtual void MessageReceived(BMessage* msg)
+	{
+		if (msg->what == B_MOUSE_WHEEL_CHANGED) {
+			float dx = 0.0f, dy = 0.0f;
+			msg->FindFloat("be:wheel_delta_x", &dx);
+			msg->FindFloat("be:wheel_delta_y", &dy);
+			const float kStep = 32.0f;
+			if (dx != 0.0f)
+				ScrollBy(dx * kStep, 0.0f);
+			if (dy != 0.0f)
+				ScrollBy(0.0f, dy * kStep);
+			return;
+		}
+		BView::MessageReceived(msg);
 	}
 
 	virtual void Pulse()
@@ -309,15 +419,57 @@ private:
 		return msg;
 	}
 
+	// label ... value ... bar, one row, mirroring rakarrack.cxx's SliderW
+	// (which draws its own live numeric readout next to the track --
+	// BSlider has no such thing built in, so this adds a plain BStringView
+	// next to it and keeps it in sync on every value change). Label/value
+	// widths are fixed so sliders line up across a whole effect box.
 	BSlider* AddSlider(BView* parent, const char* name, const char* label,
 		int32 min, int32 max, int32 initial, std::function<void(int32)> fn)
 	{
-		int32 idx = Bind(fn);
-		BSlider* s = new BSlider(name, label, MakeMessage(idx), min, max,
+		BGroupView* row = new BGroupView(B_HORIZONTAL, 6);
+		row->SetViewColor(kPanelColor);
+
+		BStringView* labelView = new BStringView("lbl", label);
+		labelView->SetHighColor(kLabelColor);
+		labelView->SetLowColor(kPanelColor);
+		labelView->SetExplicitMinSize(BSize(72, B_SIZE_UNSET));
+		labelView->SetExplicitMaxSize(BSize(72, B_SIZE_UNSET));
+		labelView->SetFontSize(10.5f);
+
+		BStringView* valueView = new BStringView("val", "");
+		valueView->SetHighColor(kValueColor);
+		valueView->SetLowColor(kPanelColor);
+		valueView->SetExplicitMinSize(BSize(32, B_SIZE_UNSET));
+		valueView->SetExplicitMaxSize(BSize(32, B_SIZE_UNSET));
+		valueView->SetExplicitAlignment(
+			BAlignment(B_ALIGN_RIGHT, B_ALIGN_VERTICAL_CENTER));
+		valueView->SetFontSize(10.5f);
+		char buf[16];
+		snprintf(buf, sizeof(buf), "%d", (int)initial);
+		valueView->SetText(buf);
+
+		int32 idx = Bind([fn, valueView](int32 v) {
+			char buf[16];
+			snprintf(buf, sizeof(buf), "%d", (int)v);
+			valueView->SetText(buf);
+			fn(v);
+		});
+
+		BSlider* s = new BSlider(name, NULL, MakeMessage(idx), min, max,
 			B_HORIZONTAL);
 		s->SetValue(initial);
 		s->SetHashMarks(B_HASH_MARKS_NONE);
-		parent->AddChild(s);
+		s->SetViewColor(kPanelColor);
+		s->SetBarColor(kAccentColor);
+		// Roughly doubles the effect boxes' width over the default track
+		// size -- cramped sliders were hard to drag precisely.
+		s->SetExplicitMinSize(BSize(190, B_SIZE_UNSET));
+
+		row->AddChild(labelView);
+		row->AddChild(valueView);
+		row->AddChild(s);
+		parent->AddChild(row);
 		return s;
 	}
 
@@ -327,6 +479,7 @@ private:
 		int32 idx = Bind(fn);
 		BCheckBox* c = new BCheckBox(name, label, MakeMessage(idx));
 		c->SetValue(initial ? B_CONTROL_ON : B_CONTROL_OFF);
+		c->SetViewColor(kPanelColor);
 		parent->AddChild(c);
 		return c;
 	}
@@ -346,6 +499,7 @@ private:
 		}
 		fMenus.push_back(menu);
 		BMenuField* field = new BMenuField(name, label, menu);
+		field->SetViewColor(kPanelColor);
 		parent->AddChild(field);
 		return field;
 	}
@@ -354,7 +508,8 @@ private:
 	// toggles, then every parameter slider. changeFn/getFn wrap whichever
 	// method the effect actually exposes (changepar, Compressor_Change,
 	// Gate_Change...) so the rest of this stays effect-agnostic.
-	void BuildEffectBox(BView* column, const char* title, int* bypass,
+	void BuildEffectBox(BView* column, const char* title, RKR* rkr,
+		int effectId, int* bypass,
 		std::function<void(int32, int32)> changeFn,
 		std::function<int32(int32)> getFn,
 		const std::vector<ParamDef>& params,
@@ -363,24 +518,63 @@ private:
 		int32 typeNpar = -1, const char* typeLabel = "Type")
 	{
 		BBox* box = new BBox(title);
-		box->SetLabel(title);
+		box->SetViewColor(kPanelColor);
+		// A plain SetLabel(title) draws the title in the system theme's
+		// label color; a BStringView label lets it use the gold accent
+		// color instead, matching rakarrack.cxx's titles.
+		BStringView* titleView = new BStringView("title", title);
+		titleView->SetHighColor(kTitleColor);
+		titleView->SetLowColor(kBgColor);
+		BFont titleFont(be_bold_font);
+		titleView->SetFont(&titleFont);
+		box->SetLabel(titleView);
 
 		BGroupView* content = new BGroupView(B_VERTICAL, 4);
 		content->GroupLayout()->SetInsets(8);
+		content->SetViewColor(kPanelColor);
 
 		// Everything but the "On" checkbox itself -- hidden whenever the
 		// effect is off, so an inactive effect collapses to just its title
 		// bar instead of eating vertical space in the rack.
 		BGroupView* body = new BGroupView(B_VERTICAL, 4);
+		body->SetViewColor(kPanelColor);
 
-		AddToggle(content, "on", "On", *bypass != 0,
-			[bypass, body](int32 v) {
-				*bypass = v ? 1 : 0;
-				if (v)
-					body->Show();
-				else
-					body->Hide();
-			});
+		// If a loaded bank/preset already has this effect's Bypass flag on
+		// by the time this box is built, claim its chain slot right away so
+		// the checkbox's initial "on" state matches what's actually
+		// audible. If the chain is somehow already full at startup, fall
+		// back to showing it off rather than lying in the UI.
+		if (*bypass != 0 && !ActivateEffectSlot(rkr, effectId))
+			*bypass = 0;
+
+		// Built directly (not through AddToggle) because the callback below
+		// needs to reach back into the checkbox itself to revert it when
+		// ActivateEffectSlot() fails -- AddToggle hands back its BCheckBox*
+		// only after the callback that would need it is already built.
+		BCheckBox* onToggle = new BCheckBox("on", "On", nullptr);
+		onToggle->SetValue(*bypass != 0 ? B_CONTROL_ON : B_CONTROL_OFF);
+		onToggle->SetViewColor(kPanelColor);
+		int32 onIdx = Bind([rkr, effectId, bypass, body, onToggle](int32 v) {
+			if (v) {
+				if (!ActivateEffectSlot(rkr, effectId)) {
+					// All 10 chain slots are taken by other active effects
+					// -- refuse rather than silently turn on a pedal that
+					// will never actually process audio. Turn off one of
+					// the other active effects first.
+					onToggle->SetValue(B_CONTROL_OFF);
+					return;
+				}
+			} else {
+				DeactivateEffectSlot(rkr, effectId);
+			}
+			*bypass = v ? 1 : 0;
+			if (v)
+				body->Show();
+			else
+				body->Hide();
+		});
+		onToggle->SetMessage(MakeMessage(onIdx));
+		content->AddChild(onToggle);
 		if (*bypass == 0)
 			body->Hide();
 		content->AddChild(body);
@@ -410,7 +604,7 @@ private:
 	{
 		RKR* rkr = fRkr;
 
-		BuildEffectBox(col, "Overdrive", &rkr->Overdrive_Bypass,
+		BuildEffectBox(col, "Overdrive", rkr, 3, &rkr->Overdrive_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Overdrive->changepar(n, v); },
 			[rkr](int32 n) { return rkr->efx_Overdrive->getpar(n); },
 			{
@@ -421,7 +615,7 @@ private:
 			},
 			{}, &kDistTypeNames, 5, "Type");
 
-		BuildEffectBox(col, "Distortion", &rkr->NewDist_Bypass,
+		BuildEffectBox(col, "Distortion", rkr, 17, &rkr->NewDist_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_NewDist->changepar(n, v); },
 			[rkr](int32 n) { return rkr->efx_NewDist->getpar(n); },
 			{
@@ -434,7 +628,7 @@ private:
 			},
 			{}, &kDistTypeNames, 5, "Type");
 
-		BuildEffectBox(col, "Echo", &rkr->Echo_Bypass,
+		BuildEffectBox(col, "Echo", rkr, 4, &rkr->Echo_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Echo->changepar(n, v); },
 			[rkr](int32 n) { return rkr->efx_Echo->getpar(n); },
 			{
@@ -444,7 +638,7 @@ private:
 				{"L/R Cr.", -64, 63, 4, 64},
 			});
 
-		BuildEffectBox(col, "Compressor", &rkr->Compressor_Bypass,
+		BuildEffectBox(col, "Compressor", rkr, 1, &rkr->Compressor_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Compressor->Compressor_Change(n, v); },
 			[rkr](int32 n) { return rkr->efx_Compressor->getpar(n); },
 			{
@@ -456,7 +650,7 @@ private:
 				{"Output", -40, 0, 3, 0},
 			});
 
-		BuildEffectBox(col, "Noise Gate", &rkr->Gate_Bypass,
+		BuildEffectBox(col, "Noise Gate", rkr, 16, &rkr->Gate_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Gate->Gate_Change(n, v); },
 			[rkr](int32 n) { return rkr->efx_Gate->getpar(n); },
 			{
@@ -474,7 +668,7 @@ private:
 	{
 		RKR* rkr = fRkr;
 
-		BuildEffectBox(col, "Reverb", &rkr->Reverb_Bypass,
+		BuildEffectBox(col, "Reverb", rkr, 8, &rkr->Reverb_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Rev->changepar(n, v); },
 			[rkr](int32 n) { return rkr->efx_Rev->getpar(n); },
 			{
@@ -495,7 +689,7 @@ private:
 			std::vector<ParamDef> bands;
 			for (int i = 0; i < 10; i++)
 				bands.push_back({kBandLabels[i], -64, 63, 10 + i * 5 + 2, 64});
-			BuildEffectBox(col, "Equalizer", &rkr->EQ1_Bypass,
+			BuildEffectBox(col, "Equalizer", rkr, 0, &rkr->EQ1_Bypass,
 				[rkr](int32 n, int32 v) { rkr->efx_EQ1->changepar(n, v); },
 				[rkr](int32 n) { return rkr->efx_EQ1->getpar(n); },
 				bands);
@@ -510,12 +704,12 @@ private:
 			{"L/R Cr.", -64, 63, 9, 64},
 		};
 
-		BuildEffectBox(col, "Chorus", &rkr->Chorus_Bypass,
+		BuildEffectBox(col, "Chorus", rkr, 5, &rkr->Chorus_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Chorus->changepar(n, v); },
 			[rkr](int32 n) { return rkr->efx_Chorus->getpar(n); },
 			chorusFlangerParams);
 
-		BuildEffectBox(col, "Flanger", &rkr->Flanger_Bypass,
+		BuildEffectBox(col, "Flanger", rkr, 7, &rkr->Flanger_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Flanger->changepar(n, v); },
 			[rkr](int32 n) { return rkr->efx_Flanger->getpar(n); },
 			chorusFlangerParams);
@@ -525,7 +719,7 @@ private:
 	{
 		RKR* rkr = fRkr;
 
-		BuildEffectBox(col, "Phaser", &rkr->Phaser_Bypass,
+		BuildEffectBox(col, "Phaser", rkr, 6, &rkr->Phaser_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Phaser->changepar(n, v); },
 			[rkr](int32 n) { return rkr->efx_Phaser->getpar(n); },
 			{
@@ -537,7 +731,7 @@ private:
 				{"L/R Cr.", -64, 63, 9, 64},
 			});
 
-		BuildEffectBox(col, "Analog Phaser", &rkr->APhaser_Bypass,
+		BuildEffectBox(col, "Analog Phaser", rkr, 18, &rkr->APhaser_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_APhaser->changepar(n, v); },
 			[rkr](int32 n) { return rkr->efx_APhaser->getpar(n); },
 			{
@@ -550,7 +744,7 @@ private:
 				{"Stereo", 0, 127, 5, 0},
 			});
 
-		BuildEffectBox(col, "WhaWha", &rkr->WhaWha_Bypass,
+		BuildEffectBox(col, "WhaWha", rkr, 10, &rkr->WhaWha_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_WhaWha->changepar(n, v); },
 			[rkr](int32 n) { return rkr->efx_WhaWha->getpar(n); },
 			{
@@ -560,7 +754,7 @@ private:
 				{"Smooth", 0, 127, 9, 0},
 			});
 
-		BuildEffectBox(col, "Alienwah", &rkr->Alienwah_Bypass,
+		BuildEffectBox(col, "Alienwah", rkr, 11, &rkr->Alienwah_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Alienwah->changepar(n, v); },
 			[rkr](int32 n) { return rkr->efx_Alienwah->getpar(n); },
 			{
@@ -576,7 +770,7 @@ private:
 	{
 		RKR* rkr = fRkr;
 
-		BuildEffectBox(col, "Valve", &rkr->Valve_Bypass,
+		BuildEffectBox(col, "Valve", rkr, 19, &rkr->Valve_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Valve->changepar(n, v); },
 			[rkr](int32 n) { return rkr->efx_Valve->getpar(n); },
 			{
@@ -588,7 +782,7 @@ private:
 				{"HPF", 20, 20000, 7, 0},
 			});
 
-		BuildEffectBox(col, "Ring Modulator", &rkr->Ring_Bypass,
+		BuildEffectBox(col, "Ring Modulator", rkr, 21, &rkr->Ring_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Ring->changepar(n, v); },
 			[rkr](int32 n) { return rkr->efx_Ring->getpar(n); },
 			{
@@ -602,7 +796,7 @@ private:
 				{"Squ", 0, 100, 10, 0},
 			});
 
-		BuildEffectBox(col, "Sustainer", &rkr->Sustainer_Bypass,
+		BuildEffectBox(col, "Sustainer", rkr, 36, &rkr->Sustainer_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Sustainer->changepar(n, v); },
 			[rkr](int32 n) { return rkr->efx_Sustainer->getpar(n); },
 			{
@@ -610,7 +804,7 @@ private:
 				{"Sustain", 1, 127, 1, 0},
 			});
 
-		BuildEffectBox(col, "StompBox", &rkr->StompBox_Bypass,
+		BuildEffectBox(col, "StompBox", rkr, 39, &rkr->StompBox_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_StompBox->changepar(n, v); },
 			[rkr](int32 n) { return rkr->efx_StompBox->getpar(n); },
 			{
@@ -638,13 +832,13 @@ private:
 			}
 			exciterParams.push_back({"LPF", 20, 26000, 11, 0});
 			exciterParams.push_back({"HPF", 20, 20000, 12, 0});
-			BuildEffectBox(col, "Exciter", &rkr->Exciter_Bypass,
+			BuildEffectBox(col, "Exciter", rkr, 22, &rkr->Exciter_Bypass,
 				[rkr](int32 n, int32 v) { rkr->efx_Exciter->changepar(n, v); },
 				[rkr](int32 n) { return rkr->efx_Exciter->getpar(n); },
 				exciterParams);
 		}
 
-		BuildEffectBox(col, "Vibe", &rkr->Vibe_Bypass,
+		BuildEffectBox(col, "Vibe", rkr, 45, &rkr->Vibe_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Vibe->changepar(n, v); },
 			[rkr](int32 n) { return rkr->efx_Vibe->getpar(n); },
 			{
@@ -655,7 +849,7 @@ private:
 				{"L/R Cr.", -64, 64, 9, 64},
 			});
 
-		BuildEffectBox(col, "Opticaltrem", &rkr->Opticaltrem_Bypass,
+		BuildEffectBox(col, "Opticaltrem", rkr, 44, &rkr->Opticaltrem_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Opticaltrem->changepar(n, v); },
 			[rkr](int32 n) { return rkr->efx_Opticaltrem->getpar(n); },
 			{
@@ -665,7 +859,7 @@ private:
 				{"Stereo", 0, 127, 4, 0},
 			});
 
-		BuildEffectBox(col, "Auto Pan", &rkr->Pan_Bypass,
+		BuildEffectBox(col, "Auto Pan", rkr, 13, &rkr->Pan_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Pan->changepar(n, v); },
 			[rkr](int32 n) { return rkr->efx_Pan->getpar(n); },
 			{
@@ -698,8 +892,11 @@ public:
 		fMainView = new RakarrackView(rkr);
 		fMainView->SetExplicitMinSize(BSize(300, 200));
 
+		// No visible scroll bars -- see RakarrackView::MessageReceived()
+		// for how scrolling still works (mouse wheel) without them.
 		BScrollView* scroller = new BScrollView("rack_scroll", fMainView, 0,
-			true, true);
+			false, false);
+		scroller->SetViewColor(kBgColor);
 
 		BLayoutBuilder::Group<>(this, B_VERTICAL, 0)
 			.Add(scroller)
