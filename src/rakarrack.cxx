@@ -522,6 +522,8 @@ return 0;
 return 1;
 }
 
+extern pthread_mutex_t jmutex;
+
 SliderW::SliderW(int x,int y, int w, int h, const char *label):Fl_Value_Slider(x,y,w,h,label) {
 }
 
@@ -529,23 +531,51 @@ int SliderW::handle(int event) {
   if (event == FL_PUSH && Fl::visible_focus()) {
     Fl::focus(this);
     redraw();
-}  
-  
+}
+
   int sxx = x(), syy = y(), sww = w(), shh = h();
-  
+
   if (horizontal()) {
     sxx += 35; sww -= 35;
   } else {
     syy += 25; shh -= 25;
  }
-  
- 
-  
- return handle2(event,
+
+
+  // Locks jmutex around the one call site into handle2() -- every mouse
+  // (push/drag/release/mousewheel) and keyboard (arrow-key) path that
+  // changes this slider's value and fires its callback (changepar(),
+  // Compressor_Change(), Gate_Change(), setpreset(), ...) goes through
+  // handle2(), so this is mutually exclusive with jackprocess()'s own
+  // Alg() call on the audio thread (see the matching lock around that
+  // call in jack.C). Fl_Widget::do_callback() is NOT virtual in FLTK
+  // 1.4.x, so overriding it in SliderW (an earlier version of this fix)
+  // would have silently never engaged -- handle()/handle2() are ours
+  // and *are* reached via handle()'s own virtual dispatch, so this is
+  // the real choke point. Without this, a slider drag calling
+  // settype()/setroomsize() (Reverb.C: "delete comb[i]; comb[i] = new
+  // float[comblen[i]];") could run concurrently with the audio thread
+  // reading/writing that exact buffer inside Alg() -- a data race,
+  // confirmed in practice as the cause of Reverb's output exploding
+  // exponentially (completely normal input, output climbing from
+  // ~0.0005 to 10^15+ over hundreds of calls, then abruptly resetting
+  // whenever a later settype()/setroomsize() call's own cleanup()
+  // zeroed the buffers again) whenever a Reverb parameter was touched
+  // while playing, at sample rates above 48kHz specifically --
+  // comblen[] (and so the reallocation's duration and processmono()'s
+  // per-callback memory footprint) scales up with the rate, widening
+  // the race window. rakarrack.cxx never touched jmutex before this;
+  // every SliderW-driven parameter change now serializes against the
+  // audio thread the same way the native Haiku UI
+  // (haiku_native/haiku-rakarrack.cpp) already does.
+  pthread_mutex_lock(&jmutex);
+  int result = handle2(event,
                   sxx+Fl::box_dx(box()),
                   syy+Fl::box_dy(box()),
                   sww-Fl::box_dw(box()),
                   shh-Fl::box_dh(box()));
+  pthread_mutex_unlock(&jmutex);
+  return result;
 }
 
 int SliderW::handle2(int event, int X, int Y, int W, int H) {
@@ -611,14 +641,25 @@ switch (event) {
 
 
    handle_drag(clamp(v));
+    // A resize (which forces Fl_Window::damage(FL_DAMAGE_ALL) -> a full
+    // offscreen-to-screen blit) has been the only thing that reliably
+    // clears the blurry/ghosted value text seen while dragging -- two
+    // separate fixes to what draw() itself paints (repainting the value
+    // box's background, then removing a redundant double text render)
+    // did not. That points at the partial-damage-rect blit path on this
+    // Haiku FLTK port, not at draw()'s own paint content. Force the same
+    // full-window flush a resize gets, on every drag update, as a direct
+    // workaround for that rather than continuing to guess at draw().
+    if (window()) window()->redraw();
     } return 1;
- 
+
     case FL_MOUSEWHEEL :
-  
+
       if (Fl::e_dy==0) return 0;
       handle_push();
       handle_drag(clamp(increment(value(),Fl::e_dy)));
       handle_release();
+      if (window()) window()->redraw();
       return 1;
     
  
@@ -637,24 +678,28 @@ switch (event) {
         handle_push();
         handle_drag(clamp(increment(value(),-1*mul)));
         handle_release();
+        if (window()) window()->redraw();
         return 1;
       case FL_Down:
         if (horizontal()) return 0;
         handle_push();
         handle_drag(clamp(increment(value(),1*mul)));
         handle_release();
+        if (window()) window()->redraw();
         return 1;
       case FL_Left:
         if (!horizontal()) return 0;
         handle_push();
         handle_drag(clamp(increment(value(),-1*mul)));
         handle_release();
+        if (window()) window()->redraw();
         return 1;
       case FL_Right:
         if (!horizontal()) return 0;
         handle_push();
         handle_drag(clamp(increment(value(),1*mul)));
         handle_release();
+        if (window()) window()->redraw();
         return 1;
       default:
         return 0;
@@ -818,19 +863,45 @@ when(FL_WHEN_RELEASE_ALWAYS | FL_WHEN_CHANGED);
     back->draw(bxx,byy);
 */    
 
+  // Repaint the value-text box's own background before drawing the new
+  // value on top of it. Only the slider-bar region (X,Y,W,H) gets a
+  // fresh background above -- bxx/byy/bww/bhh (the value box) never did,
+  // so the previous number's pixels were never erased here and the new
+  // (anti-aliased) text composited directly on top of them, visible as
+  // blurry/ghosted digits until something else forced a full redraw of
+  // the area (a window resize, etc.). This mirrors the slider-bar
+  // background block above; an equivalent call for this box existed
+  // once (see the commented-out "plastic" scheme block just above) but
+  // was disabled with nothing put back in its place.
+  fl_push_clip(bxx, byy, bww, bhh);
+  back->draw(bxx, byy);
+  fl_pop_clip();
+
   int datasize;
-  
+
   if(labelsize()< 11) datasize = labelsize();
   else datasize = 11;
 
   char buf[128];
   format(buf);
   fl_font(textfont(), datasize);
-  if (( Fl::scheme_) && (strcmp(Fl::scheme_, "plastic")==0)) 
+  if (( Fl::scheme_) && (strcmp(Fl::scheme_, "plastic")==0))
   fl_color(active_r() ? leds_color: fl_inactive(textcolor()));
   else
   fl_color(active_r() ? luis: fl_inactive(textcolor()));
-  fl_draw(buf, bxx, byy, bww, bhh, FL_ALIGN_CLIP ,back);
+  // This used to draw buf twice back-to-back: once with `back` passed as
+  // the trailing Fl_Image* (which makes fl_draw() lay out and paint that
+  // image *and* the text together within the box), then again plain. The
+  // background repaint above already erases this box each draw, so that
+  // first call was doing nothing but re-render the same digits a second
+  // time on top of themselves. That's harmless as a single frame, but the
+  // ghosting the user described only appears while actively dragging a
+  // slider -- i.e. across many draw() calls per second -- and two
+  // slightly-offset anti-aliased renders of the same text stacked every
+  // single frame under Haiku's compositor is a much better match for a
+  // "blurry, out of sync" look under rapid redraws than a one-shot missing
+  // repaint (which the earlier fix already addressed and didn't resolve).
+  // Draw the text once.
   fl_draw(buf, bxx, byy, bww, bhh, FL_ALIGN_CLIP);
 }
 

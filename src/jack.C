@@ -702,6 +702,27 @@ int JACKstart(RKR * rkr_, jack_client_t * jackclient_) {
         rtAlert->Go();
     }
 
+    // Several effects (Reverb in particular) have shown instability --
+    // runaway/exploding output, clicking/popping -- at sample rates above
+    // 48kHz on Haiku that we have not been able to root-cause (it is not
+    // the SliderW/changepar() data race already fixed elsewhere in this
+    // file and rakarrack.cxx; it reproduces from simply enabling Reverb,
+    // no parameter touched). Rather than let users hit that blind, warn
+    // up front when the detected device rate isn't 48kHz so they know to
+    // either switch Haiku's Media preferences to 48kHz or expect trouble
+    // from rate-sensitive effects.
+    if (g_HaikuDetectedRate != 48000) {
+        char rateMsg[256];
+        snprintf(rateMsg, sizeof(rateMsg),
+            "Your audio device is running at %u Hz instead of 48000 Hz. Some effects "
+            "(especially Reverb) are known to become unstable -- runaway volume, clicking "
+            "and popping -- at rates other than 48kHz. If you hear this, set Haiku's Media "
+            "preferences to 48000 Hz.", g_HaikuDetectedRate);
+        BAlert* rateAlert = new BAlert("Audio Sample Rate", rateMsg, "OK", NULL, NULL,
+            B_WIDTH_AS_USUAL, B_WARNING_ALERT);
+        rateAlert->Go();
+    }
+
     int final_rate = (int)g_HaikuDetectedRate;
     int final_frames = (int)g_HaikuDetectedFrames;
 
@@ -838,8 +859,26 @@ int jackprocess (jack_nframes_t nframes, void *arg)
     JackOUT->efxoutr[i] = process_in_R[i];
 	}   
 
-    JackOUT->Alg(JackOUT->efxoutl, JackOUT->efxoutr, process_in_L, process_in_R, nframes); 
-    
+    // 4b. RUN THE EFFECTS CHAIN -- under jmutex, matching
+    // RakarrackWindow::MessageReceived (haiku_native/haiku-rakarrack.cpp),
+    // which holds this same mutex for the entire duration of every
+    // changepar() call a slider triggers. Without this, a GUI-thread
+    // changepar() -> settype()/setroomsize() (Reverb.C; delete comb[i];
+    // comb[i] = new float[comblen[i]];) can run concurrently with this
+    // thread reading/writing that exact buffer inside Alg() -- a data
+    // race, confirmed in practice as the cause of Reverb's output
+    // exploding exponentially over hundreds of calls (with completely
+    // normal input) whenever a Reverb parameter was touched while
+    // playing, worse at higher sample rates where comblen[] -- and so
+    // the reallocation's own duration and processmono()'s per-callback
+    // memory footprint -- is proportionally larger, widening the race
+    // window. The 1. READ INPUT lock above is a separate, narrower
+    // critical section (just the ring-buffer read) and is fully released
+    // before this one begins, so there's no nesting/deadlock risk.
+    pthread_mutex_lock(&jmutex);
+    JackOUT->Alg(JackOUT->efxoutl, JackOUT->efxoutr, process_in_L, process_in_R, nframes);
+    pthread_mutex_unlock(&jmutex);
+
     // Stop the clock
     bigtime_t end_time = system_time();
 
