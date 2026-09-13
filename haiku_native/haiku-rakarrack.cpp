@@ -31,8 +31,11 @@
 #include <InterfaceDefs.h>
 #include <LayoutBuilder.h>
 #include <Box.h>
+#include <Button.h>
 #include <CheckBox.h>
 #include <Font.h>
+#include <ListItem.h>
+#include <ListView.h>
 #include <GroupView.h>
 #include <MenuBar.h>
 #include <MenuField.h>
@@ -220,6 +223,209 @@ static void DeactivateEffectSlot(RKR* rkr, int effectId) {
 	}
 }
 
+// Display name for each effect-type ID the native UI actually exposes --
+// only the 21 effects BuildColumn1-4 wire up can ever end up in
+// rkr->efx_order[], so that is the only set this needs to name.
+static const char* EffectName(int effectId) {
+	switch (effectId) {
+	case 0: return "Equalizer";
+	case 1: return "Compressor";
+	case 3: return "Overdrive";
+	case 4: return "Echo";
+	case 5: return "Chorus";
+	case 6: return "Phaser";
+	case 7: return "Flanger";
+	case 8: return "Reverb";
+	case 10: return "WhaWha";
+	case 11: return "Alienwah";
+	case 13: return "Auto Pan";
+	case 16: return "Noise Gate";
+	case 17: return "Distortion";
+	case 18: return "Analog Phaser";
+	case 19: return "Valve";
+	case 21: return "Ring Modulator";
+	case 22: return "Exciter";
+	case 36: return "Sustainer";
+	case 39: return "StompBox";
+	case 44: return "Opticaltrem";
+	case 45: return "Vibe";
+	default: return "(unknown)";
+	}
+}
+
+// A small window listing the currently-active effects (those with a claimed
+// chain slot -- see ActivateEffectSlot()) in their actual processing order,
+// top to bottom, with Move Up/Move Down buttons to reorder them. This is
+// native mode's answer to rakarrack.cxx's drag-and-drop "Effects Order"
+// window: a plain BListView instead of a real drag target, since order
+// only ever needs a swap between two slots and buttons get that exactly
+// right without any native drag-and-drop code to get subtly wrong.
+enum {
+	MSG_ORDER_UP = 'RKOu',
+	MSG_ORDER_DOWN = 'RKOd',
+	MSG_ORDER_CLOSE = 'RKOc'
+};
+
+class OrderWindow : public BWindow {
+public:
+	OrderWindow(RKR* rkr)
+		:
+		BWindow(BRect(160, 160, 460, 480), "Effects Order", B_TITLED_WINDOW,
+			B_ASYNCHRONOUS_CONTROLS | B_NOT_ZOOMABLE),
+		fRkr(rkr)
+	{
+		// BWindow has no SetViewColor() of its own (unlike BView) -- give it
+		// a single real BView child to carry the background color instead,
+		// same as RakarrackWindow's scroller/content already do. This has
+		// to be a plain BView, not another BGroupView: a BGroupView already
+		// sets up and owns its own BGroupLayout, and running
+		// BLayoutBuilder::Group<> on it too (below) fights that existing
+		// layout instead of using it -- nothing ends up attached to
+		// anything that actually draws, which is why this showed up as a
+		// blank white window instead of the rack's dark theme.
+		SetLayout(new BGroupLayout(B_VERTICAL));
+		BView* background = new BView("bg", B_WILL_DRAW);
+		background->SetViewColor(kBgColor);
+		AddChild(background);
+
+		fList = new BListView("order_list", B_SINGLE_SELECTION_LIST);
+		fList->SetViewColor(kPanelColor);
+		fList->SetLowColor(kPanelColor);
+		fList->SetHighColor(kValueColor);
+		BScrollView* listScroll = new BScrollView("order_scroll", fList, 0,
+			false, true);
+
+		BStringView* hint = new BStringView("hint",
+			"Only effects you've turned on appear here. This is the order "
+			"they process your signal in, top to bottom.");
+		hint->SetHighColor(kLabelColor);
+		hint->SetLowColor(kBgColor);
+		hint->SetFontSize(10.5f);
+
+		BButton* upBtn = new BButton("up", "Move Up",
+			new BMessage(MSG_ORDER_UP));
+		BButton* downBtn = new BButton("down", "Move Down",
+			new BMessage(MSG_ORDER_DOWN));
+		BButton* closeBtn = new BButton("close", "Close",
+			new BMessage(MSG_ORDER_CLOSE));
+
+		BLayoutBuilder::Group<>(background, B_VERTICAL, 8)
+			.SetInsets(10)
+			.Add(hint)
+			.Add(listScroll)
+			.AddGroup(B_HORIZONTAL, 6)
+				.Add(upBtn)
+				.Add(downBtn)
+				.AddGlue()
+				.Add(closeBtn)
+			.End()
+		.End();
+
+		SetSizeLimits(260, 6000, 260, 6000);
+		RefreshList();
+	}
+
+	virtual void MessageReceived(BMessage* msg)
+	{
+		switch (msg->what) {
+		case MSG_ORDER_UP:
+			MoveSelected(-1);
+			break;
+		case MSG_ORDER_DOWN:
+			MoveSelected(1);
+			break;
+		case MSG_ORDER_CLOSE:
+			// Hide rather than Quit()/destroy -- see QuitRequested() below
+			// for why.
+			Hide();
+			break;
+		default:
+			BWindow::MessageReceived(msg);
+			break;
+		}
+	}
+
+	// This window is never actually destroyed while the app runs -- it is
+	// created once, lazily, on the first "Effects Order..." click (see
+	// RakarrackView) and hidden/shown after that. A BApplication's default
+	// behavior is to quit once its window count reaches zero; that default
+	// has nothing to do with which window closed, so destroying even this
+	// one secondary window (via Quit()) while the main rack window was
+	// still open was enough to trip it and take the whole app down.
+	// Hiding instead of quitting means this window is never subtracted
+	// from that count in the first place.
+	virtual bool QuitRequested()
+	{
+		Hide();
+		return false;
+	}
+
+	// Called by RakarrackView every time it shows this window, since the
+	// active-effects list can have changed since it was last hidden.
+	void Refresh() { RefreshList(); }
+
+private:
+	// Rebuilds the visible list from rkr->efx_order[], skipping empty
+	// slots -- fSlotIndices[row] records which actual efx_order[] index
+	// that visible row came from, since gaps from effects turned off in
+	// between mean visible rows are not the same as raw slot indices.
+	void RefreshList()
+	{
+		int32 selRow = fList->CurrentSelection();
+		int selectedSlot = (selRow >= 0 && selRow < (int32)fSlotIndices.size())
+			? fSlotIndices[selRow] : -1;
+
+		while (fList->CountItems() > 0)
+			delete fList->RemoveItem((int32)0);
+		fSlotIndices.clear();
+
+		for (int i = 0; i < kOrderSlotCount; i++) {
+			int id = fRkr->efx_order[i];
+			if (id == kEmptySlot)
+				continue;
+			fList->AddItem(new BStringItem(EffectName(id)));
+			fSlotIndices.push_back(i);
+		}
+
+		for (size_t row = 0; row < fSlotIndices.size(); row++) {
+			if (fSlotIndices[row] == selectedSlot) {
+				fList->Select((int32)row);
+				break;
+			}
+		}
+	}
+
+	// Swaps the selected effect's actual efx_order[] slot with its
+	// immediate visible neighbor's -- locked the same way every other
+	// write to efx_order[] is (see ActivateEffectSlot/DeactivateEffectSlot)
+	// since jackprocess() reads this array on the audio thread every
+	// callback with no lock of its own around that read.
+	void MoveSelected(int direction)
+	{
+		int32 row = fList->CurrentSelection();
+		if (row < 0)
+			return;
+		int32 otherRow = row + direction;
+		if (otherRow < 0 || otherRow >= (int32)fSlotIndices.size())
+			return;
+
+		pthread_mutex_lock(&jmutex);
+		int a = fSlotIndices[row];
+		int b = fSlotIndices[otherRow];
+		int tmp = fRkr->efx_order[a];
+		fRkr->efx_order[a] = fRkr->efx_order[b];
+		fRkr->efx_order[b] = tmp;
+		pthread_mutex_unlock(&jmutex);
+
+		RefreshList();
+		fList->Select(otherRow);
+	}
+
+	RKR* fRkr;
+	BListView* fList;
+	std::vector<int> fSlotIndices;
+};
+
 
 // Main rack content view: builds every effect box and owns the table of
 // callbacks ("actions") that the controls' messages are dispatched through.
@@ -265,12 +471,41 @@ public:
 		boost->SetValue(rkr->booster > 1.0f ? B_CONTROL_ON : B_CONTROL_OFF);
 		boost->SetViewColor(kBgColor);
 
+		// Opens (or, if already built, just refreshes, un-hides and raises)
+		// the Effects Order window -- see OrderWindow above. This window is
+		// created once and then only ever hidden, never destroyed, for the
+		// life of the app (see OrderWindow::QuitRequested()).
+		BButton* orderBtn = new BButton("order", "Effects Order...",
+			MakeMessage(Bind([this, rkr](int32) {
+				if (fOrderWindow == nullptr) {
+					// A just-constructed BWindow is locked to the
+					// constructing thread until its first Unlock() (which
+					// Show() takes care of) -- safe without an explicit
+					// Lock() here.
+					fOrderWindow = new OrderWindow(rkr);
+					fOrderWindow->Show();
+					return;
+				}
+				// Once shown, a BWindow runs its own message loop on its
+				// own thread -- reaching into it from here (a different
+				// thread) needs its lock held first, unlike the
+				// just-constructed case above.
+				if (fOrderWindow->Lock()) {
+					fOrderWindow->Refresh();
+					if (fOrderWindow->IsHidden())
+						fOrderWindow->Show();
+					fOrderWindow->Activate();
+					fOrderWindow->Unlock();
+				}
+			})));
+
 		BGroupView* master = new BGroupView(B_HORIZONTAL, 10);
 		master->GroupLayout()->SetInsets(10);
 		master->SetViewColor(kBgColor);
 		master->AddChild(fCpuDisplay);
 		master->AddChild(fMasterFX);
 		master->AddChild(boost);
+		master->AddChild(orderBtn);
 		AddSlider(master, "in_gain", "Input Gain", -50, 50,
 			(int32)(rkr->Input_Gain * 100.0f) - 50,
 			[rkr](int32 v) {
@@ -295,36 +530,32 @@ public:
 		rkr->calculavol(2);
 		rkr->booster = 1.0f;
 		
-		// Five scrollable columns of effect racks, mirroring the layout of
-		// src/rakarrack.cxx without trying to reproduce its exact pixel
-		// geometry.
+		// Four scrollable columns of effect racks (was five -- with each
+		// slider now ~2x as wide, four fits comfortably on more screens),
+		// mirroring the layout of src/rakarrack.cxx without trying to
+		// reproduce its exact pixel geometry.
 		BGroupView* col1 = new BGroupView(B_VERTICAL, 8);
 		BGroupView* col2 = new BGroupView(B_VERTICAL, 8);
 		BGroupView* col3 = new BGroupView(B_VERTICAL, 8);
 		BGroupView* col4 = new BGroupView(B_VERTICAL, 8);
-		BGroupView* col5 = new BGroupView(B_VERTICAL, 8);
 		col1->GroupLayout()->SetInsets(5);
 		col2->GroupLayout()->SetInsets(5);
 		col3->GroupLayout()->SetInsets(5);
 		col4->GroupLayout()->SetInsets(5);
-		col5->GroupLayout()->SetInsets(5);
 		col1->SetViewColor(kBgColor);
 		col2->SetViewColor(kBgColor);
 		col3->SetViewColor(kBgColor);
 		col4->SetViewColor(kBgColor);
-		col5->SetViewColor(kBgColor);
 
 		BuildColumn1(col1);
 		BuildColumn2(col2);
 		BuildColumn3(col3);
 		BuildColumn4(col4);
-		BuildColumn5(col5);
 
 		col1->GroupLayout()->AddItem(BSpaceLayoutItem::CreateGlue());
 		col2->GroupLayout()->AddItem(BSpaceLayoutItem::CreateGlue());
 		col3->GroupLayout()->AddItem(BSpaceLayoutItem::CreateGlue());
 		col4->GroupLayout()->AddItem(BSpaceLayoutItem::CreateGlue());
-		col5->GroupLayout()->AddItem(BSpaceLayoutItem::CreateGlue());
 
 		BGroupView* columns = new BGroupView(B_HORIZONTAL, 8);
 		columns->GroupLayout()->SetInsets(10);
@@ -333,7 +564,6 @@ public:
 		columns->AddChild(col2);
 		columns->AddChild(col3);
 		columns->AddChild(col4);
-		columns->AddChild(col5);
 
 		BLayoutBuilder::Group<>(this, B_VERTICAL, 0)
 			.Add(master)
@@ -600,224 +830,14 @@ private:
 		column->AddChild(box);
 	}
 
+	// Four columns instead of five -- with each slider now ~2x as wide (see
+	// AddSlider), five columns needed more width than fits comfortably on
+	// smaller screens. Effects are grouped by roughly how many slider rows
+	// each box needs (not just effect count) so the four columns end up
+	// close to the same height rather than one column towering over the
+	// rest -- Exciter alone (13 rows: gain + 10 harmonics + 2 filters) is
+	// close to as tall as three or four small boxes put together.
 	void BuildColumn1(BView* col)
-	{
-		RKR* rkr = fRkr;
-
-		BuildEffectBox(col, "Overdrive", rkr, 3, &rkr->Overdrive_Bypass,
-			[rkr](int32 n, int32 v) { rkr->efx_Overdrive->changepar(n, v); },
-			[rkr](int32 n) { return rkr->efx_Overdrive->getpar(n); },
-			{
-				{"Drive", 0, 127, 3, 0},
-				{"Level", 0, 127, 4, 0},
-				{"LPF", 20, 26000, 7, 0},
-				{"HPF", 20, 20000, 8, 0},
-			},
-			{}, &kDistTypeNames, 5, "Type");
-
-		BuildEffectBox(col, "Distortion", rkr, 17, &rkr->NewDist_Bypass,
-			[rkr](int32 n, int32 v) { rkr->efx_NewDist->changepar(n, v); },
-			[rkr](int32 n) { return rkr->efx_NewDist->getpar(n); },
-			{
-				{"Drive", 1, 127, 3, 0},
-				{"Level", 0, 127, 4, 0},
-				{"Color", 0, 127, 9, 0},
-				{"Sub Octv", 0, 127, 11, 0},
-				{"LPF", 20, 26000, 7, 0},
-				{"HPF", 20, 20000, 8, 0},
-			},
-			{}, &kDistTypeNames, 5, "Type");
-
-		BuildEffectBox(col, "Echo", rkr, 4, &rkr->Echo_Bypass,
-			[rkr](int32 n, int32 v) { rkr->efx_Echo->changepar(n, v); },
-			[rkr](int32 n) { return rkr->efx_Echo->getpar(n); },
-			{
-				{"Delay", 20, 2000, 2, 0},
-				{"Feedback", 0, 127, 5, 0},
-				{"Damp", 0, 127, 6, 0},
-				{"L/R Cr.", -64, 63, 4, 64},
-			});
-
-		BuildEffectBox(col, "Compressor", rkr, 1, &rkr->Compressor_Bypass,
-			[rkr](int32 n, int32 v) { rkr->efx_Compressor->Compressor_Change(n, v); },
-			[rkr](int32 n) { return rkr->efx_Compressor->getpar(n); },
-			{
-				{"A. Time", 10, 250, 4, 0},
-				{"R. Time", 10, 500, 5, 0},
-				{"Ratio", 2, 42, 2, 0},
-				{"Knee", 0, 100, 7, 0},
-				{"Threshold", -60, -3, 1, 0},
-				{"Output", -40, 0, 3, 0},
-			});
-
-		BuildEffectBox(col, "Noise Gate", rkr, 16, &rkr->Gate_Bypass,
-			[rkr](int32 n, int32 v) { rkr->efx_Gate->Gate_Change(n, v); },
-			[rkr](int32 n) { return rkr->efx_Gate->getpar(n); },
-			{
-				{"A. Time", 1, 250, 3, 0},
-				{"R. Time", 2, 250, 4, 0},
-				{"Range", -90, 0, 2, 0},
-				{"Threshold", -70, 20, 1, 0},
-				{"Hold", 2, 500, 7, 0},
-				{"LPF", 20, 26000, 5, 0},
-				{"HPF", 20, 20000, 6, 0},
-			});
-	}
-
-	void BuildColumn2(BView* col)
-	{
-		RKR* rkr = fRkr;
-
-		BuildEffectBox(col, "Reverb", rkr, 8, &rkr->Reverb_Bypass,
-			[rkr](int32 n, int32 v) { rkr->efx_Rev->changepar(n, v); },
-			[rkr](int32 n) { return rkr->efx_Rev->getpar(n); },
-			{
-				{"Time", 0, 127, 2, 0},
-				{"I.Del", 0, 127, 3, 0},
-				{"Del.E/R", 0, 127, 4, 0},
-				{"LPF", 20, 26000, 7, 0},
-				{"HPF", 20, 20000, 8, 0},
-				{"Damp", 64, 127, 9, 0},
-				{"R.Size", 1, 127, 11, 0},
-			});
-
-		{
-			static const char* kBandLabels[10] = {
-				"31 Hz", "63 Hz", "125 Hz", "250 Hz", "500 Hz", "1 Khz",
-				"2 Khz", "4 Khz", "8 Khz", "16 Khz"
-			};
-			std::vector<ParamDef> bands;
-			for (int i = 0; i < 10; i++)
-				bands.push_back({kBandLabels[i], -64, 63, 10 + i * 5 + 2, 64});
-			BuildEffectBox(col, "Equalizer", rkr, 0, &rkr->EQ1_Bypass,
-				[rkr](int32 n, int32 v) { rkr->efx_EQ1->changepar(n, v); },
-				[rkr](int32 n) { return rkr->efx_EQ1->getpar(n); },
-				bands);
-		}
-
-		std::vector<ParamDef> chorusFlangerParams = {
-			{"Tempo", 1, 600, 2, 0},
-			{"Depth", 0, 127, 6, 0},
-			{"Delay", 0, 127, 7, 0},
-			{"Feedback", 0, 127, 8, 0},
-			{"Stereo", 0, 127, 5, 0},
-			{"L/R Cr.", -64, 63, 9, 64},
-		};
-
-		BuildEffectBox(col, "Chorus", rkr, 5, &rkr->Chorus_Bypass,
-			[rkr](int32 n, int32 v) { rkr->efx_Chorus->changepar(n, v); },
-			[rkr](int32 n) { return rkr->efx_Chorus->getpar(n); },
-			chorusFlangerParams);
-
-		BuildEffectBox(col, "Flanger", rkr, 7, &rkr->Flanger_Bypass,
-			[rkr](int32 n, int32 v) { rkr->efx_Flanger->changepar(n, v); },
-			[rkr](int32 n) { return rkr->efx_Flanger->getpar(n); },
-			chorusFlangerParams);
-	}
-
-	void BuildColumn3(BView* col)
-	{
-		RKR* rkr = fRkr;
-
-		BuildEffectBox(col, "Phaser", rkr, 6, &rkr->Phaser_Bypass,
-			[rkr](int32 n, int32 v) { rkr->efx_Phaser->changepar(n, v); },
-			[rkr](int32 n) { return rkr->efx_Phaser->getpar(n); },
-			{
-				{"Tempo", 1, 600, 2, 0},
-				{"Depth", 0, 127, 6, 0},
-				{"Feedback", 0, 127, 7, 0},
-				{"Phase", 0, 127, 11, 0},
-				{"Stereo", 0, 127, 5, 0},
-				{"L/R Cr.", -64, 63, 9, 64},
-			});
-
-		BuildEffectBox(col, "Analog Phaser", rkr, 18, &rkr->APhaser_Bypass,
-			[rkr](int32 n, int32 v) { rkr->efx_APhaser->changepar(n, v); },
-			[rkr](int32 n) { return rkr->efx_APhaser->getpar(n); },
-			{
-				{"Tempo", 1, 600, 2, 0},
-				{"Width", 0, 127, 6, 0},
-				{"Depth", 0, 127, 11, 0},
-				{"Feedback", -64, 64, 7, 64},
-				{"Distort", 0, 100, 1, 0},
-				{"Mismatch", 0, 100, 9, 0},
-				{"Stereo", 0, 127, 5, 0},
-			});
-
-		BuildEffectBox(col, "WhaWha", rkr, 10, &rkr->WhaWha_Bypass,
-			[rkr](int32 n, int32 v) { rkr->efx_WhaWha->changepar(n, v); },
-			[rkr](int32 n) { return rkr->efx_WhaWha->getpar(n); },
-			{
-				{"Tempo", 1, 600, 2, 0},
-				{"Depth", 0, 127, 6, 0},
-				{"Amp.Sens", 0, 127, 7, 0},
-				{"Smooth", 0, 127, 9, 0},
-			});
-
-		BuildEffectBox(col, "Alienwah", rkr, 11, &rkr->Alienwah_Bypass,
-			[rkr](int32 n, int32 v) { rkr->efx_Alienwah->changepar(n, v); },
-			[rkr](int32 n) { return rkr->efx_Alienwah->getpar(n); },
-			{
-				{"Tempo", 1, 600, 2, 0},
-				{"Depth", 0, 127, 6, 0},
-				{"Feedback", 0, 127, 7, 0},
-				{"Delay", 0, 127, 8, 0},
-				{"Phase", 0, 127, 10, 0},
-			});
-	}
-
-	void BuildColumn4(BView* col)
-	{
-		RKR* rkr = fRkr;
-
-		BuildEffectBox(col, "Valve", rkr, 19, &rkr->Valve_Bypass,
-			[rkr](int32 n, int32 v) { rkr->efx_Valve->changepar(n, v); },
-			[rkr](int32 n) { return rkr->efx_Valve->getpar(n); },
-			{
-				{"Drive", 0, 127, 3, 0},
-				{"Level", 0, 127, 4, 0},
-				{"Dist.", 0, 127, 10, 0},
-				{"Presence", 0, 100, 12, 0},
-				{"LPF", 20, 26000, 6, 0},
-				{"HPF", 20, 20000, 7, 0},
-			});
-
-		BuildEffectBox(col, "Ring Modulator", rkr, 21, &rkr->Ring_Bypass,
-			[rkr](int32 n, int32 v) { rkr->efx_Ring->changepar(n, v); },
-			[rkr](int32 n) { return rkr->efx_Ring->getpar(n); },
-			{
-				{"Input", 1, 127, 11, 0},
-				{"Level", 0, 127, 3, 0},
-				{"Depth", 0, 100, 4, 0},
-				{"Freq", 1, 20000, 5, 0},
-				{"Sin", 0, 100, 7, 0},
-				{"Tri", 0, 100, 8, 0},
-				{"Saw", 0, 100, 9, 0},
-				{"Squ", 0, 100, 10, 0},
-			});
-
-		BuildEffectBox(col, "Sustainer", rkr, 36, &rkr->Sustainer_Bypass,
-			[rkr](int32 n, int32 v) { rkr->efx_Sustainer->changepar(n, v); },
-			[rkr](int32 n) { return rkr->efx_Sustainer->getpar(n); },
-			{
-				{"Gain", 0, 127, 0, 0},
-				{"Sustain", 1, 127, 1, 0},
-			});
-
-		BuildEffectBox(col, "StompBox", rkr, 39, &rkr->StompBox_Bypass,
-			[rkr](int32 n, int32 v) { rkr->efx_StompBox->changepar(n, v); },
-			[rkr](int32 n) { return rkr->efx_StompBox->getpar(n); },
-			{
-				{"Level", 0, 127, 0, 0},
-				{"Gain", 0, 127, 4, 0},
-				{"Low", -64, 64, 3, 0},
-				{"Mid", -64, 64, 2, 0},
-				{"High", -64, 64, 1, 0},
-			},
-			{}, &kStompBoxModeNames, 5, "Mode");
-	}
-
-	void BuildColumn5(BView* col)
 	{
 		RKR* rkr = fRkr;
 
@@ -838,6 +858,30 @@ private:
 				exciterParams);
 		}
 
+		BuildEffectBox(col, "Compressor", rkr, 1, &rkr->Compressor_Bypass,
+			[rkr](int32 n, int32 v) { rkr->efx_Compressor->Compressor_Change(n, v); },
+			[rkr](int32 n) { return rkr->efx_Compressor->getpar(n); },
+			{
+				{"A. Time", 10, 250, 4, 0},
+				{"R. Time", 10, 500, 5, 0},
+				{"Ratio", 2, 42, 2, 0},
+				{"Knee", 0, 100, 7, 0},
+				{"Threshold", -60, -3, 1, 0},
+				{"Output", -40, 0, 3, 0},
+			});
+
+		BuildEffectBox(col, "Valve", rkr, 19, &rkr->Valve_Bypass,
+			[rkr](int32 n, int32 v) { rkr->efx_Valve->changepar(n, v); },
+			[rkr](int32 n) { return rkr->efx_Valve->getpar(n); },
+			{
+				{"Drive", 0, 127, 3, 0},
+				{"Level", 0, 127, 4, 0},
+				{"Dist.", 0, 127, 10, 0},
+				{"Presence", 0, 100, 12, 0},
+				{"LPF", 20, 26000, 6, 0},
+				{"HPF", 20, 20000, 7, 0},
+			});
+
 		BuildEffectBox(col, "Vibe", rkr, 45, &rkr->Vibe_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Vibe->changepar(n, v); },
 			[rkr](int32 n) { return rkr->efx_Vibe->getpar(n); },
@@ -847,16 +891,6 @@ private:
 				{"Depth", 0, 127, 8, 0},
 				{"Feedback", -64, 64, 7, 64},
 				{"L/R Cr.", -64, 64, 9, 64},
-			});
-
-		BuildEffectBox(col, "Opticaltrem", rkr, 44, &rkr->Opticaltrem_Bypass,
-			[rkr](int32 n, int32 v) { rkr->efx_Opticaltrem->changepar(n, v); },
-			[rkr](int32 n) { return rkr->efx_Opticaltrem->getpar(n); },
-			{
-				{"Depth", 0, 127, 0, 0},
-				{"Tempo", 1, 600, 1, 0},
-				{"Rnd", 0, 127, 2, 0},
-				{"Stereo", 0, 127, 4, 0},
 			});
 
 		BuildEffectBox(col, "Auto Pan", rkr, 13, &rkr->Pan_Bypass,
@@ -872,9 +906,217 @@ private:
 			});
 	}
 
+	void BuildColumn2(BView* col)
+	{
+		RKR* rkr = fRkr;
+
+		{
+			static const char* kBandLabels[10] = {
+				"31 Hz", "63 Hz", "125 Hz", "250 Hz", "500 Hz", "1 Khz",
+				"2 Khz", "4 Khz", "8 Khz", "16 Khz"
+			};
+			std::vector<ParamDef> bands;
+			for (int i = 0; i < 10; i++)
+				bands.push_back({kBandLabels[i], -64, 63, 10 + i * 5 + 2, 64});
+			BuildEffectBox(col, "Equalizer", rkr, 0, &rkr->EQ1_Bypass,
+				[rkr](int32 n, int32 v) { rkr->efx_EQ1->changepar(n, v); },
+				[rkr](int32 n) { return rkr->efx_EQ1->getpar(n); },
+				bands);
+		}
+
+		BuildEffectBox(col, "Analog Phaser", rkr, 18, &rkr->APhaser_Bypass,
+			[rkr](int32 n, int32 v) { rkr->efx_APhaser->changepar(n, v); },
+			[rkr](int32 n) { return rkr->efx_APhaser->getpar(n); },
+			{
+				{"Tempo", 1, 600, 2, 0},
+				{"Width", 0, 127, 6, 0},
+				{"Depth", 0, 127, 11, 0},
+				{"Feedback", -64, 64, 7, 64},
+				{"Distort", 0, 100, 1, 0},
+				{"Mismatch", 0, 100, 9, 0},
+				{"Stereo", 0, 127, 5, 0},
+			});
+
+		BuildEffectBox(col, "Phaser", rkr, 6, &rkr->Phaser_Bypass,
+			[rkr](int32 n, int32 v) { rkr->efx_Phaser->changepar(n, v); },
+			[rkr](int32 n) { return rkr->efx_Phaser->getpar(n); },
+			{
+				{"Tempo", 1, 600, 2, 0},
+				{"Depth", 0, 127, 6, 0},
+				{"Feedback", 0, 127, 7, 0},
+				{"Phase", 0, 127, 11, 0},
+				{"Stereo", 0, 127, 5, 0},
+				{"L/R Cr.", -64, 63, 9, 64},
+			});
+
+		BuildEffectBox(col, "Overdrive", rkr, 3, &rkr->Overdrive_Bypass,
+			[rkr](int32 n, int32 v) { rkr->efx_Overdrive->changepar(n, v); },
+			[rkr](int32 n) { return rkr->efx_Overdrive->getpar(n); },
+			{
+				{"Drive", 0, 127, 3, 0},
+				{"Level", 0, 127, 4, 0},
+				{"LPF", 20, 26000, 7, 0},
+				{"HPF", 20, 20000, 8, 0},
+			},
+			{}, &kDistTypeNames, 5, "Type");
+
+		BuildEffectBox(col, "Opticaltrem", rkr, 44, &rkr->Opticaltrem_Bypass,
+			[rkr](int32 n, int32 v) { rkr->efx_Opticaltrem->changepar(n, v); },
+			[rkr](int32 n) { return rkr->efx_Opticaltrem->getpar(n); },
+			{
+				{"Depth", 0, 127, 0, 0},
+				{"Tempo", 1, 600, 1, 0},
+				{"Rnd", 0, 127, 2, 0},
+				{"Stereo", 0, 127, 4, 0},
+			});
+	}
+
+	void BuildColumn3(BView* col)
+	{
+		RKR* rkr = fRkr;
+
+		BuildEffectBox(col, "Ring Modulator", rkr, 21, &rkr->Ring_Bypass,
+			[rkr](int32 n, int32 v) { rkr->efx_Ring->changepar(n, v); },
+			[rkr](int32 n) { return rkr->efx_Ring->getpar(n); },
+			{
+				{"Input", 1, 127, 11, 0},
+				{"Level", 0, 127, 3, 0},
+				{"Depth", 0, 100, 4, 0},
+				{"Freq", 1, 20000, 5, 0},
+				{"Sin", 0, 100, 7, 0},
+				{"Tri", 0, 100, 8, 0},
+				{"Saw", 0, 100, 9, 0},
+				{"Squ", 0, 100, 10, 0},
+			});
+
+		BuildEffectBox(col, "Reverb", rkr, 8, &rkr->Reverb_Bypass,
+			[rkr](int32 n, int32 v) { rkr->efx_Rev->changepar(n, v); },
+			[rkr](int32 n) { return rkr->efx_Rev->getpar(n); },
+			{
+				{"Time", 0, 127, 2, 0},
+				{"I.Del", 0, 127, 3, 0},
+				{"Del.E/R", 0, 127, 4, 0},
+				{"LPF", 20, 26000, 7, 0},
+				{"HPF", 20, 20000, 8, 0},
+				{"Damp", 64, 127, 9, 0},
+				{"R.Size", 1, 127, 11, 0},
+			});
+
+		std::vector<ParamDef> chorusFlangerParams = {
+			{"Tempo", 1, 600, 2, 0},
+			{"Depth", 0, 127, 6, 0},
+			{"Delay", 0, 127, 7, 0},
+			{"Feedback", 0, 127, 8, 0},
+			{"Stereo", 0, 127, 5, 0},
+			{"L/R Cr.", -64, 63, 9, 64},
+		};
+
+		BuildEffectBox(col, "Flanger", rkr, 7, &rkr->Flanger_Bypass,
+			[rkr](int32 n, int32 v) { rkr->efx_Flanger->changepar(n, v); },
+			[rkr](int32 n) { return rkr->efx_Flanger->getpar(n); },
+			chorusFlangerParams);
+
+		BuildEffectBox(col, "Alienwah", rkr, 11, &rkr->Alienwah_Bypass,
+			[rkr](int32 n, int32 v) { rkr->efx_Alienwah->changepar(n, v); },
+			[rkr](int32 n) { return rkr->efx_Alienwah->getpar(n); },
+			{
+				{"Tempo", 1, 600, 2, 0},
+				{"Depth", 0, 127, 6, 0},
+				{"Feedback", 0, 127, 7, 0},
+				{"Delay", 0, 127, 8, 0},
+				{"Phase", 0, 127, 10, 0},
+			});
+
+		BuildEffectBox(col, "Echo", rkr, 4, &rkr->Echo_Bypass,
+			[rkr](int32 n, int32 v) { rkr->efx_Echo->changepar(n, v); },
+			[rkr](int32 n) { return rkr->efx_Echo->getpar(n); },
+			{
+				{"Delay", 20, 2000, 2, 0},
+				{"Feedback", 0, 127, 5, 0},
+				{"Damp", 0, 127, 6, 0},
+				{"L/R Cr.", -64, 63, 4, 64},
+			});
+
+		BuildEffectBox(col, "Sustainer", rkr, 36, &rkr->Sustainer_Bypass,
+			[rkr](int32 n, int32 v) { rkr->efx_Sustainer->changepar(n, v); },
+			[rkr](int32 n) { return rkr->efx_Sustainer->getpar(n); },
+			{
+				{"Gain", 0, 127, 0, 0},
+				{"Sustain", 1, 127, 1, 0},
+			});
+	}
+
+	void BuildColumn4(BView* col)
+	{
+		RKR* rkr = fRkr;
+
+		std::vector<ParamDef> chorusFlangerParams = {
+			{"Tempo", 1, 600, 2, 0},
+			{"Depth", 0, 127, 6, 0},
+			{"Delay", 0, 127, 7, 0},
+			{"Feedback", 0, 127, 8, 0},
+			{"Stereo", 0, 127, 5, 0},
+			{"L/R Cr.", -64, 63, 9, 64},
+		};
+
+		BuildEffectBox(col, "Distortion", rkr, 17, &rkr->NewDist_Bypass,
+			[rkr](int32 n, int32 v) { rkr->efx_NewDist->changepar(n, v); },
+			[rkr](int32 n) { return rkr->efx_NewDist->getpar(n); },
+			{
+				{"Drive", 1, 127, 3, 0},
+				{"Level", 0, 127, 4, 0},
+				{"Color", 0, 127, 9, 0},
+				{"Sub Octv", 0, 127, 11, 0},
+				{"LPF", 20, 26000, 7, 0},
+				{"HPF", 20, 20000, 8, 0},
+			},
+			{}, &kDistTypeNames, 5, "Type");
+
+		BuildEffectBox(col, "Noise Gate", rkr, 16, &rkr->Gate_Bypass,
+			[rkr](int32 n, int32 v) { rkr->efx_Gate->Gate_Change(n, v); },
+			[rkr](int32 n) { return rkr->efx_Gate->getpar(n); },
+			{
+				{"A. Time", 1, 250, 3, 0},
+				{"R. Time", 2, 250, 4, 0},
+				{"Range", -90, 0, 2, 0},
+				{"Threshold", -70, 20, 1, 0},
+				{"Hold", 2, 500, 7, 0},
+				{"LPF", 20, 26000, 5, 0},
+				{"HPF", 20, 20000, 6, 0},
+			});
+
+		BuildEffectBox(col, "Chorus", rkr, 5, &rkr->Chorus_Bypass,
+			[rkr](int32 n, int32 v) { rkr->efx_Chorus->changepar(n, v); },
+			[rkr](int32 n) { return rkr->efx_Chorus->getpar(n); },
+			chorusFlangerParams);
+
+		BuildEffectBox(col, "StompBox", rkr, 39, &rkr->StompBox_Bypass,
+			[rkr](int32 n, int32 v) { rkr->efx_StompBox->changepar(n, v); },
+			[rkr](int32 n) { return rkr->efx_StompBox->getpar(n); },
+			{
+				{"Level", 0, 127, 0, 0},
+				{"Gain", 0, 127, 4, 0},
+				{"Low", -64, 64, 3, 0},
+				{"Mid", -64, 64, 2, 0},
+				{"High", -64, 64, 1, 0},
+			},
+			{}, &kStompBoxModeNames, 5, "Mode");
+
+		BuildEffectBox(col, "WhaWha", rkr, 10, &rkr->WhaWha_Bypass,
+			[rkr](int32 n, int32 v) { rkr->efx_WhaWha->changepar(n, v); },
+			[rkr](int32 n) { return rkr->efx_WhaWha->getpar(n); },
+			{
+				{"Tempo", 1, 600, 2, 0},
+				{"Depth", 0, 127, 6, 0},
+				{"Amp.Sens", 0, 127, 7, 0},
+				{"Smooth", 0, 127, 9, 0},
+			});
+	}
+
 	RKR* fRkr;
 	BStringView* fCpuDisplay;
 	BCheckBox* fMasterFX;
+	OrderWindow* fOrderWindow = nullptr;
 	std::vector<std::function<void(int32)>> fActions;
 	std::vector<BMenu*> fMenus;
 };
