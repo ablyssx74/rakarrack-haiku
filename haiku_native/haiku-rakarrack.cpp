@@ -205,29 +205,48 @@ public:
 			});
 		master->GroupLayout()->AddItem(BSpaceLayoutItem::CreateGlue());
 
-		// Three scrollable columns of effect racks, mirroring the layout of
+		// The sliders above only set their on-screen position from
+		// Input_Gain/Master_Volume -- they never fire their own callback, so
+		// without this, Log_I_Gain/Log_M_Volume (the actual gain multipliers
+		// used in the audio path, see process.C's calculavol()) stay
+		// uninitialized until the user manually touches a slider. Mirrors
+		// rakarrack.cxx's own startup priming (RKRGUI's constructor).
+		rkr->calculavol(1);
+		rkr->calculavol(2);
+
+		// Five scrollable columns of effect racks, mirroring the layout of
 		// src/rakarrack.cxx without trying to reproduce its exact pixel
 		// geometry.
 		BGroupView* col1 = new BGroupView(B_VERTICAL, 8);
 		BGroupView* col2 = new BGroupView(B_VERTICAL, 8);
 		BGroupView* col3 = new BGroupView(B_VERTICAL, 8);
+		BGroupView* col4 = new BGroupView(B_VERTICAL, 8);
+		BGroupView* col5 = new BGroupView(B_VERTICAL, 8);
 		col1->GroupLayout()->SetInsets(5);
 		col2->GroupLayout()->SetInsets(5);
 		col3->GroupLayout()->SetInsets(5);
+		col4->GroupLayout()->SetInsets(5);
+		col5->GroupLayout()->SetInsets(5);
 
 		BuildColumn1(col1);
 		BuildColumn2(col2);
 		BuildColumn3(col3);
+		BuildColumn4(col4);
+		BuildColumn5(col5);
 
 		col1->GroupLayout()->AddItem(BSpaceLayoutItem::CreateGlue());
 		col2->GroupLayout()->AddItem(BSpaceLayoutItem::CreateGlue());
 		col3->GroupLayout()->AddItem(BSpaceLayoutItem::CreateGlue());
+		col4->GroupLayout()->AddItem(BSpaceLayoutItem::CreateGlue());
+		col5->GroupLayout()->AddItem(BSpaceLayoutItem::CreateGlue());
 
 		BGroupView* columns = new BGroupView(B_HORIZONTAL, 8);
 		columns->GroupLayout()->SetInsets(10);
 		columns->AddChild(col1);
 		columns->AddChild(col2);
 		columns->AddChild(col3);
+		columns->AddChild(col4);
+		columns->AddChild(col5);
 
 		BLayoutBuilder::Group<>(this, B_VERTICAL, 0)
 			.Add(master)
@@ -344,22 +363,36 @@ private:
 		BGroupView* content = new BGroupView(B_VERTICAL, 4);
 		content->GroupLayout()->SetInsets(8);
 
+		// Everything but the "On" checkbox itself -- hidden whenever the
+		// effect is off, so an inactive effect collapses to just its title
+		// bar instead of eating vertical space in the rack.
+		BGroupView* body = new BGroupView(B_VERTICAL, 4);
+
 		AddToggle(content, "on", "On", *bypass != 0,
-			[bypass](int32 v) { *bypass = v ? 1 : 0; });
+			[bypass, body](int32 v) {
+				*bypass = v ? 1 : 0;
+				if (v)
+					body->Show();
+				else
+					body->Hide();
+			});
+		if (*bypass == 0)
+			body->Hide();
+		content->AddChild(body);
 
 		if (typeItems != nullptr && typeNpar >= 0) {
-			AddTypeMenu(content, "type", typeLabel, *typeItems,
+			AddTypeMenu(body, "type", typeLabel, *typeItems,
 				getFn(typeNpar),
 				[changeFn, typeNpar](int32 v) { changeFn(typeNpar, v); });
 		}
 
 		for (const ToggleDef& t : toggles) {
-			AddToggle(content, t.label, t.label, getFn(t.npar) != 0,
+			AddToggle(body, t.label, t.label, getFn(t.npar) != 0,
 				[changeFn, t](int32 v) { changeFn(t.npar, v); });
 		}
 
 		for (const ParamDef& p : params) {
-			AddSlider(content, p.label, p.label, p.min, p.max,
+			AddSlider(body, p.label, p.label, p.min, p.max,
 				getFn(p.npar) - p.offset,
 				[changeFn, p](int32 v) { changeFn(p.npar, v + p.offset); });
 		}
@@ -430,6 +463,11 @@ private:
 				{"LPF", 20, 26000, 5, 0},
 				{"HPF", 20, 20000, 6, 0},
 			});
+	}
+
+	void BuildColumn2(BView* col)
+	{
+		RKR* rkr = fRkr;
 
 		BuildEffectBox(col, "Reverb", &rkr->Reverb_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Rev->changepar(n, v); },
@@ -457,11 +495,6 @@ private:
 				[rkr](int32 n) { return rkr->efx_EQ1->getpar(n); },
 				bands);
 		}
-	}
-
-	void BuildColumn2(BView* col)
-	{
-		RKR* rkr = fRkr;
 
 		std::vector<ParamDef> chorusFlangerParams = {
 			{"Tempo", 1, 600, 2, 0},
@@ -481,6 +514,11 @@ private:
 			[rkr](int32 n, int32 v) { rkr->efx_Flanger->changepar(n, v); },
 			[rkr](int32 n) { return rkr->efx_Flanger->getpar(n); },
 			chorusFlangerParams);
+	}
+
+	void BuildColumn3(BView* col)
+	{
+		RKR* rkr = fRkr;
 
 		BuildEffectBox(col, "Phaser", &rkr->Phaser_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Phaser->changepar(n, v); },
@@ -527,6 +565,11 @@ private:
 				{"Delay", 0, 127, 8, 0},
 				{"Phase", 0, 127, 10, 0},
 			});
+	}
+
+	void BuildColumn4(BView* col)
+	{
+		RKR* rkr = fRkr;
 
 		BuildEffectBox(col, "Valve", &rkr->Valve_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Valve->changepar(n, v); },
@@ -539,11 +582,6 @@ private:
 				{"LPF", 20, 26000, 6, 0},
 				{"HPF", 20, 20000, 7, 0},
 			});
-	}
-
-	void BuildColumn3(BView* col)
-	{
-		RKR* rkr = fRkr;
 
 		BuildEffectBox(col, "Ring Modulator", &rkr->Ring_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Ring->changepar(n, v); },
@@ -577,6 +615,11 @@ private:
 				{"Mid", -64, 64, 2, 0},
 				{"High", -64, 64, 1, 0},
 			});
+	}
+
+	void BuildColumn5(BView* col)
+	{
+		RKR* rkr = fRkr;
 
 		{
 			std::vector<ParamDef> exciterParams = {
