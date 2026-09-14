@@ -25,6 +25,7 @@
 */
 #include <app/Looper.h>
 #include <app/Application.h>
+#include <MessageQueue.h>
 
 #include <signal.h>
 #include <unistd.h>
@@ -204,17 +205,143 @@ show_help ()
 
 
 
+// A quit request delivered from outside the app -- Deskbar/
+// ProcessController's "Quit Application", a session shutdown, anything
+// that posts B_QUIT_REQUESTED straight to the app -- arrives here as
+// BApplication::QuitRequested(). A plain, un-subclassed BApplication (what
+// this used to be) has nowhere useful to send that on to: in --haiku mode
+// its default "true" answer would just let Run() return, fine, but in the
+// normal FLTK/headless path nothing ever called Run() at all, so the
+// message would sit in myApp's port forever, unread -- exactly the
+// reported bug ("It does nothing"). Subclassing lets this app's own quit
+// logic (gAppQuitting, the default per-window cascade) reach every mode
+// the normal way, through BLooper::Loop()'s own automatic dispatch, once
+// Run() is actually being called somewhere -- see AppThreadEntry() below
+// for where and why.
+//
+// sAppAlreadyQuit (checked in main()'s own final cleanup, far below) is
+// what actually makes the difference between "quit reaches the app but
+// the process then hangs forever after finishing every shutdown step" and
+// a clean exit: once this returns true, BLooper's own Quit() machinery
+// tears the BApplication down (on its own dedicated thread -- see
+// AppThreadEntry()) as part of the same dispatch that got us here, so
+// main()'s myApp pointer is stale from this point on. Touching it again
+// (Lock()/PostMessage(), which main()'s cleanup used to always do
+// unconditionally) is undefined behavior on an already-deleted BLooper --
+// confirmed the hard way, from a real terminal session that printed every
+// shutdown message through to "Shutdown complete." and then simply never
+// returned to the prompt.
+static bool sAppAlreadyQuit = false;
+
+class RakarrackApp : public BApplication {
+public:
+	RakarrackApp(const char* signature) : BApplication(signature) { }
+
+	virtual bool QuitRequested()
+	{
+		if (haiku_mode) {
+			// Native mode: RakarrackWindow, and (once created)
+			// OrderWindow, are real BWindows this app itself owns -- ask
+			// them the normal way. gAppQuitting (declared in
+			// rakarrack_haiku_bridge.h, defined in
+			// haiku_native/haiku-rakarrack.cpp) distinguishes this
+			// whole-app cascade from a user just closing OrderWindow on
+			// its own -- see its own QuitRequested() comment for why that
+			// distinction matters. Set before the default implementation
+			// below asks every window in turn.
+			gAppQuitting = true;
+			bool ok = BApplication::QuitRequested();
+			if (!ok) {
+				// Don't leave that flag set for next time, when it might
+				// genuinely just be that one window's own close button
+				// again.
+				gAppQuitting = false;
+				return false;
+			}
+		} else {
+			// FLTK/headless mode: the default per-window cascade above
+			// would also ask whatever BWindow(s) FLTK's own Haiku backend
+			// creates internally to render its window -- code outside
+			// this repository (libfltk.so.1.4.4), whose QuitRequested()
+			// behavior is opaque here, and (confirmed against a real
+			// repro) declines by default -- silently vetoing every
+			// external quit request, exactly the same failure pattern
+			// this app's own OrderWindow used to have (see its
+			// QuitRequested() comment), except in code this repository
+			// can't patch. Skipped outright: FLTK's own window lifecycle
+			// is driven entirely by its own event loop and the
+			// Fl::first_window() == NULL check in main()'s "while
+			// (Pexitprogram == 0)" loop, not by this cascade, so there's
+			// nothing meaningful to ask it anyway.
+		}
+
+		// Flips the flag the FLTK/headless "while (Pexitprogram == 0)"
+		// loop near the bottom of main() is already watching, and that
+		// the --haiku branch's wait_for_thread() call is a proxy for.
+		// This runs on this BApplication's own dedicated thread (see
+		// AppThreadEntry()), never the thread running that loop, so this
+		// plain global is the only thing connecting the two -- consistent
+		// with how the rest of this codebase already hands simple flags
+		// like this one across threads (e.g. Pexitprogram itself).
+		Pexitprogram = 1;
+		sAppAlreadyQuit = true;
+		return true;
+	}
+};
+
+// BApplication::Run() blocks the calling thread until the app quits, which
+// is exactly what the --haiku branch below used to do directly, as its
+// whole main loop -- but Run() is NOT safe to call on just any thread: it
+// must execute on the very thread that constructed the BApplication
+// (BLooper's own constructor locks the object for the constructing
+// thread, and BLooper::Loop(), which Run() calls straight into, asserts
+// the calling thread already holds that lock). An earlier version of this
+// fix constructed the object on main()'s own thread as before but spawned
+// only Run() itself on a separate thread -- confirmed the hard way, from a
+// real debug report, that this trips BLooper::AssertLocked()'s debugger
+// breakpoint and crashes the app before its window even appears.
+//
+// So constructing the object and calling Run() on it happen together, on
+// this one small dedicated thread, for the life of the app -- in every
+// mode. That frees main()'s own thread to do FLTK/headless setup and run
+// its own loop instead (FLTK/headless mode), or to just wait for this
+// thread to finish (--haiku mode, replacing its old direct Run() call --
+// see that branch below). sAppReadySem hands the constructed pointer back
+// to main() before it does anything that needs it (starting with
+// HaikuDetectAudioSettingsEarly() -- BMediaRoster needs a live
+// BApplication for rate detection); after that handoff this thread's
+// Run() takes over as the object's one and only owner, and every other
+// thread that still needs to reach it (the final cleanup's
+// PostMessage(B_QUIT_REQUESTED) included) does so the normal way, through
+// Lock()/Unlock(), same as always.
+static BApplication* sApp = nullptr;
+static sem_id sAppReadySem = -1;
+
+static int32
+AppThreadEntry(void*)
+{
+	sApp = new RakarrackApp("application/x-vnd.rakarrack-haiku");
+	release_sem(sAppReadySem);
+	sApp->Run();
+	return 0;
+}
+
 int
 main (int argc, char *argv[])
 {
 	BApplication* myApp = nullptr;
 
-	// Must happen before "RKR rkr;" below -- see
+	// See AppThreadEntry()'s own comment.
+	sAppReadySem = create_sem(0, "rakarrack app ready");
+	thread_id appThread = spawn_thread(AppThreadEntry, "RakarrackApp",
+		B_NORMAL_PRIORITY, nullptr);
+	resume_thread(appThread);
+	acquire_sem(sAppReadySem);
+	delete_sem(sAppReadySem);
+	myApp = sApp;
+
+	// Must happen after myApp exists -- see
 	// HaikuDetectAudioSettingsEarly()'s own comment in jack.C for why.
-	// BMediaRoster (used for rate detection) needs a running
-	// BApplication, so it's constructed here unconditionally now,
-	// instead of later inside the haiku_mode/FLTK branches.
-	myApp = new BApplication("application/x-vnd.rakarrack-haiku");
 	HaikuDetectAudioSettingsEarly();
 
 	RKR rkr;
@@ -277,9 +404,14 @@ main (int argc, char *argv[])
 
         
 		printf("[Rakarrack] Haiku Native Mode Started.\n");
-        myApp->Run();
+        // myApp->Run() itself now happens on its own dedicated thread --
+        // see AppThreadEntry()'s comment -- so this just blocks until
+        // that thread (and therefore the app) is done, the same as a
+        // direct Run() call here used to.
+        status_t appResult;
+        wait_for_thread(appThread, &appResult);
 
-        
+
     } else {
         // --- FLTK / Standard Path ---
 
@@ -330,6 +462,12 @@ main (int argc, char *argv[])
 
 
   // --- Haiku Main Loop ---
+  // Pexitprogram is also set from RakarrackApp::QuitRequested(), running
+  // on myApp's own dedicated thread (see AppThreadEntry()) -- an external
+  // B_QUIT_REQUESTED (Deskbar/ProcessController's "Quit Application", a
+  // session shutdown) reaches it there the normal way, through
+  // BLooper::Loop()'s automatic dispatch, since that thread really is
+  // running Run() now.
   while (Pexitprogram == 0) {
 
       if (gui) {
@@ -354,14 +492,21 @@ main (int argc, char *argv[])
     printf("[Rakarrack] loop ended. Cleaning up audio...\n");
     HaikuAudioShutdown();
     fflush(stdout);
-    if (myApp) {
+    // See sAppAlreadyQuit's own comment -- only still-alive here when
+    // Pexitprogram was set some other way (the FLTK window itself closing,
+    // via the Fl::first_window() == NULL check in the loop just above,
+    // without the app ever having been asked to quit), in which case
+    // myApp is presumed to still be alive and waiting on its own dedicated
+    // thread (AppThreadEntry()) -- nudge it to quit too before this
+    // process exits out from under it.
+    if (myApp && !sAppAlreadyQuit) {
 
         if (myApp->Lock()) {
             myApp->PostMessage(B_QUIT_REQUESTED);
             myApp->Unlock();
         }
     }
-  _exit(0); 
+  _exit(0);
 }
   
 

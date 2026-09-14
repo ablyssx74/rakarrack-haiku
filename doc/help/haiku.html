@@ -17,50 +17,36 @@
 
 <h2>Haiku Hardware / MIDI / MISC Settings</h2>
 
-<p>Rakarrack Haiku offers the user the option to set Sample Rate (Hz) and
-Buffer Size (Frames).  These settings work optimally if realtime audio is enabled. 
+<p>Rakarrack for Haiku auto detects the users frequency and automatically applies the correct Buffer Size (Frames) inside rakarrack on first run. <br>
+However, for the best experience with rakarrack on Haiku, real-time audio should be enabled and a frequency of 48khz or lower.<br>
+Setting a frequency higher than 48khz will still work in some cases, but some effects like reverb are currently known to crash rakarrack.<br>
 To enable realtime audio, you would first check if your audio card has a settings file
 that is applicable for setting realtime audio, then edit it and put in /boot/home/config/settings/kernel/drivers </p>
-<p><img src="imagenes/screenshot4.png" alt="rakarrack Order Window" align="middle" border="1" height="484" width="600"></p>
 
 <p> You can visit <a target="_BLANK" href="https://github.com/haiku/haiku/tree/master/src/add-ons/kernel/drivers/audio">https://github.com/haiku/haiku/tree/master/src/add-ons/kernel/drivers/audio</a>
 to check if your audio card has an applicable realtime settings file.</p>
 
+
+Alternatively, you can use this app I made for Haiku that detects your audio driver and if it supports real-time audio it adds the settings file for you.<br>
+It is found here: <a href="https://github.com/ablyssx74/RealTimeGUI/releases" TARGET=_BLANK>https://github.com/ablyssx74/RealTimeGUI/releases</a>
+
+<p><img src="imagenes/screenshot4.png" alt="rakarrack Order Window" align="middle" border="1" height="484" width="600"></p>
+
+
+
 <p>To enable realtime audio for an HDA driver, the settings file would look similar to this:</p>
 <pre>
-# Settings file for the HDA driver
-#
-#  This file should be moved to the directory
-#  ~/config/settings/kernel/drivers/
-#  Uncomment and edit any of the setting lines you wish to set.
-#  The values shown are just the defaults.
-#  Don't uncomment any that you don't need to differ from the default.
+	# Settings file for the HDA driver
 
-#  Remember that latency will probably be at least
-#   2*buffer_frames/sample_rate
-#  For real time audio, a buffer of 1024 frames at 192000
-#  should be good (<15ms).
-#  You will need more buffers if they're small.
-#  e.g.:
-#     play_buffer_frames	1024
-#     play_buffer_count	4
+	# For 48khz this works really well
+	play_buffer_frames	128
+	play_buffer_count	4
 
-###########################################################
+	record_buffer_frames	128
+	record_buffer_count	4
 
-#play_buffer_frames	512
-#play_buffer_count	4
-
-#record_buffer_frames	512
-#record_buffer_count	4
-
-# Just uncomment this four lines and restart Media Server
-# To enable realtime audio
-
-#play_buffer_frames	1024  
-#play_buffer_count	2
- 
-#record_buffer_frames	1024
-#record_buffer_count	2
+	# If clicking a popping are heard
+	# Increase buffer_count would be first choice before changing buffer_frames	
 
 </pre>
 
@@ -72,7 +58,7 @@ to check if your audio card has an applicable realtime settings file.</p>
 <p><img src="imagenes/screenshot6.png" alt="rakarrack Order Window" align="middle" border="1" height="484" width="600"></p>
 
 <p>Once rakarrack-out is checked in MidiSynth then you would enable the MIDI playback in the main rakarrack control board ( yellow circle ).
-<p>Trigger should be kept low as seen in the orange circult.  Velocity currently does not work.</p>
+<p>Trigger should be kept high in most cases for lower sensitivity.  Velocity currently does nothing.</p>
 <p><img src="imagenes/screenshot8.png" alt="rakarrack Order Window" align="middle" border="1" height="200" width="600"></p>
 
 
@@ -90,5 +76,15 @@ to check if your audio card has an applicable realtime settings file.</p>
 <p>Rakarrack Haiku supports Online Version Checking.  New updates will show a notification if available.  
 You can toggle this option off in Misc tab menu.</p>
 <p><img src="imagenes/screenshot5.png" alt="rakarrack Order Window" align="middle" border="1" height="484" width="600"></p>
+
+<p>Rakarrack Haiku has an experimental Haiku Native version called Haikurack. <br>
+Some feature may not work and / or crash.   
+You can try Haikurack by running:</p>
+<pre>
+	# Open Terminal and type:
+	rakarrack -H
+</pre>
+<p><img src="imagenes/haikurack.png" alt="rakarrack Order Window" align="middle" border="1" height="484" width="600"></p>
 <p><a href="help.html">Table of Contents</a> -  <a href="hardware.html">Hardware Connections</a></p>
+
 </body></html>

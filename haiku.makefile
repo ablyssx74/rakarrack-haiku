@@ -6,7 +6,8 @@ SHELL := /bin/bash
 PACKAGE_DIR := build/package
 NAME = rakarrack
 VERSION = 0.6.1
-REVISION = 7
+REVISION = 8
+
 UNAME_M := $(shell uname -m)
 ifeq ($(UNAME_M), BePC)
 CXX = g++-x86
@@ -150,7 +151,7 @@ package: all
 	mkdir -p $(PACKAGE_DIR)/bin
 	mkdir -p $(PACKAGE_DIR)/data/deskbar/menu/Applications
 	mkdir -p $(PACKAGE_DIR)/data/$(NAME)/share/doc/$(NAME)
-	mkdir -p $(PACKAGE_DIR)/data/$(NAME)/share/man
+	mkdir -p $(PACKAGE_DIR)/documentation/man/man1
 	#mkdir -p $(PACKAGE_DIR)/data/$(NAME)/share/pixmaps
 	mkdir -p $(PACKAGE_DIR)/data/$(NAME)/share/man/man1
 	mkdir -p $(PACKAGE_DIR)/data/$(NAME)/share/$(NAME)
@@ -165,6 +166,7 @@ package: all
 	cp  COPYING $(PACKAGE_DIR)/data/$(NAME)/share/doc/$(NAME)/
 	cp  ChangeLog $(PACKAGE_DIR)/data/$(NAME)/share/doc/$(NAME)/
 	cp  NEWS $(PACKAGE_DIR)/data/$(NAME)/share/doc/$(NAME)/
+	cp  man/rakarrack.1 $(PACKAGE_DIR)/documentation/man/man1/
 	cp $(NAME) $(PACKAGE_DIR)/apps/$(NAME)
 	ln -s ../apps/$(NAME) $(PACKAGE_DIR)/bin/rakarrack
 	ln -s ../../../../apps/$(NAME) $(PACKAGE_DIR)/data/deskbar/menu/Applications/Rakarrack
@@ -188,21 +190,16 @@ help:
 	@echo " Building Rakarrack for Haiku 64bit"
 	@echo ""
 	@echo ""
-	@echo " 1. Default Build: make -f haiku.makefile config"
+	@echo " 1. Default Generic Build:. . .: make -f haiku.makefile config build package"
+	@echo "    Or in one step:. . . . . . : make -f haiku.makefile release"
 	@echo ""
-	@echo " 2. Custom Build:"
-	@echo "     make -fhaiku.makefile clean "
-	@echo "     make -f haiku.makefile config"
-	@echo "     make -f haiku.makefile build SIMD_FLAGS=\"-O3 -march=native\""
+	@echo " 2. Custom Builds: . . . . . . : make -fhaiku.makefile clean "
+	@echo "     		   . . . . . . : make -f haiku.makefile config"
+	@echo "     		   . . . . . . : make -f haiku.makefile build SIMD_FLAGS=\"-O3 -march=native\""
+	@echo "     		   . . . . . . : make -f haiku.makefile package"
 	@echo ""
-	@echo " 3. Build: make -f haiku.makefile"
+	@echo " 3. Clean: . . .  .  . . . . . : make -f haiku.makefile clean"
 	@echo ""
-	@echo " 4. Package: make -f haiku.makefile package"
-	@echo ""
-	@echo " 5. Custom Package: make -f haiku.makefile package SIMD_FLAGS=\"-O3 -march=native\""
-	@echo ""
-	@echo " 6. Clean: make -f haiku.makefile clean"
-	@echo ""
-	@echo " 7. List Required Libs: make -f haiku.makefile deps"
+	@echo " 4. List Required Libs:. . . . : make -f haiku.makefile deps"
 	@echo ""
 	@echo "============================================================================"	

@@ -74,6 +74,11 @@
 
 #include "../src/rakarrack_haiku_bridge.h"
 
+// See rakarrack_haiku_bridge.h's own comment on the declaration -- defined
+// here (not main.C) purely so every target that links this file, extra/'s
+// tiny utilities included, has a real definition without needing a weak
+// fallback for it too.
+bool gAppQuitting = false;
 
 // This "weak" function satisfies the linker for small utilities
 // like rakverb, but gets overridden by the real one in the main app.
@@ -856,8 +861,23 @@ public:
 	// still open was enough to trip it and take the whole app down.
 	// Hiding instead of quitting means this window is never subtracted
 	// from that count in the first place.
+	//
+	// BUT that "hide, refuse" answer must not be unconditional: it's also
+	// exactly what BApplication::QuitRequested()'s default implementation
+	// asks every window (this one included) when the app is asked to quit
+	// as a whole -- Deskbar/ProcessController's "Quit Application", a
+	// session shutdown, B_QUIT_REQUESTED sent straight to the app. Once
+	// this window has been created at all (a single "Effects Order..."
+	// click, any time in the session), answering "no" there every single
+	// time would permanently veto the whole app's shutdown from then on --
+	// which is the exact bug this fixes. gAppQuitting (see
+	// rakarrack_haiku_bridge.h) is set by RakarrackApp::QuitRequested() in
+	// main.C before that cascade runs, so this only refuses the narrower,
+	// original case: the user closing just this one window on its own.
 	virtual bool QuitRequested()
 	{
+		if (gAppQuitting)
+			return true;
 		Hide();
 		return false;
 	}
