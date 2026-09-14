@@ -101,6 +101,14 @@ __attribute__((weak)) void RKR::cleanup_efx() { }
 __attribute__((weak)) void RKR::loadfile(char *filename) { }
 __attribute__((weak)) void RKR::savefile(char *filename) { }
 
+// MIDIConverter (the guitar-to-MIDI "MIDI" panel in the header, see
+// BuildHeader) isn't part of the changepar()/getpar() effect chain either --
+// same reasoning, same fix.
+__attribute__((weak)) void MIDIConverter::setmidichannel(int) { }
+__attribute__((weak)) void MIDIConverter::panic() { }
+__attribute__((weak)) void MIDIConverter::setTriggerAdjust(int) { }
+__attribute__((weak)) void MIDIConverter::setVelAdjust(int) { }
+
 #define RKR_HAIKU_WEAK_CHANGEPAR(EffectClass) \
 	__attribute__((weak)) void EffectClass::changepar(int, int) { } \
 	__attribute__((weak)) int EffectClass::getpar(int) { return 0; }
@@ -161,6 +169,81 @@ __attribute__((weak)) int Gate::getpar(int) { return 0; }
 // Compressor/Gate above.
 __attribute__((weak)) void Expander::Expander_Change(int, int) { }
 __attribute__((weak)) int Expander::getpar(int) { return 0; }
+
+// Same story again, this time for every effect's Preset dropdown (see
+// PresetMenuDef) -- setpreset() (and the Compressor/Gate/Expander
+// equivalents that don't use that name) are called directly from this file
+// now, so the small extra/ utilities need weak fallbacks for these too, on
+// top of changepar()/getpar() above.
+#define RKR_HAIKU_WEAK_SETPRESET(EffectClass) \
+	__attribute__((weak)) void EffectClass::setpreset(int) { }
+
+RKR_HAIKU_WEAK_SETPRESET(Exciter)
+RKR_HAIKU_WEAK_SETPRESET(Valve)
+RKR_HAIKU_WEAK_SETPRESET(Vibe)
+RKR_HAIKU_WEAK_SETPRESET(Pan)
+RKR_HAIKU_WEAK_SETPRESET(Reverbtron)
+RKR_HAIKU_WEAK_SETPRESET(MusicDelay)
+RKR_HAIKU_WEAK_SETPRESET(CompBand)
+RKR_HAIKU_WEAK_SETPRESET(Arpie)
+RKR_HAIKU_WEAK_SETPRESET(Vocoder)
+RKR_HAIKU_WEAK_SETPRESET(Analog_Phaser)
+RKR_HAIKU_WEAK_SETPRESET(Phaser)
+RKR_HAIKU_WEAK_SETPRESET(Opticaltrem)
+RKR_HAIKU_WEAK_SETPRESET(MBDist)
+RKR_HAIKU_WEAK_SETPRESET(Echotron)
+RKR_HAIKU_WEAK_SETPRESET(Harmonizer)
+RKR_HAIKU_WEAK_SETPRESET(Shifter)
+RKR_HAIKU_WEAK_SETPRESET(ShelfBoost)
+RKR_HAIKU_WEAK_SETPRESET(Ring)
+RKR_HAIKU_WEAK_SETPRESET(Reverb)
+RKR_HAIKU_WEAK_SETPRESET(Alienwah)
+RKR_HAIKU_WEAK_SETPRESET(Echo)
+RKR_HAIKU_WEAK_SETPRESET(Sustainer)
+RKR_HAIKU_WEAK_SETPRESET(Synthfilter)
+RKR_HAIKU_WEAK_SETPRESET(Dflange)
+RKR_HAIKU_WEAK_SETPRESET(RyanWah)
+RKR_HAIKU_WEAK_SETPRESET(Shuffle)
+RKR_HAIKU_WEAK_SETPRESET(RBEcho)
+RKR_HAIKU_WEAK_SETPRESET(Convolotron)
+RKR_HAIKU_WEAK_SETPRESET(NewDist)
+RKR_HAIKU_WEAK_SETPRESET(StompBox)
+RKR_HAIKU_WEAK_SETPRESET(DynamicFilter)
+RKR_HAIKU_WEAK_SETPRESET(Looper)
+RKR_HAIKU_WEAK_SETPRESET(Sequence)
+RKR_HAIKU_WEAK_SETPRESET(StereoHarm)
+RKR_HAIKU_WEAK_SETPRESET(MBVvol)
+RKR_HAIKU_WEAK_SETPRESET(CoilCrafter)
+
+#undef RKR_HAIKU_WEAK_SETPRESET
+
+// Distorsion::setpreset() and Chorus::setpreset() take an extra "dgui"
+// selector arg -- Overdrive (also a Distorsion instance, see efx_Overdrive
+// in global.h) and Flanger (also a Chorus instance, see efx_Flanger) share
+// these same two stubs, not separate ones.
+__attribute__((weak)) void Distorsion::setpreset(int, int) { }
+__attribute__((weak)) void Chorus::setpreset(int, int) { }
+
+// Compressor/Gate/Expander's preset selector uses their own bespoke
+// *_Change_Preset() name instead of setpreset() -- same as their regular
+// parameter-change methods above.
+__attribute__((weak)) void Compressor::Compressor_Change_Preset(int, int) { }
+__attribute__((weak)) void Gate::Gate_Change_Preset(int) { }
+__attribute__((weak)) void Expander::Expander_Change_Preset(int) { }
+
+// EQ1/EQ2/Cabinet's presets are RKR-level free functions (see the
+// RKR::loadfile/savefile stubs above), not methods on the effect object.
+__attribute__((weak)) void RKR::EQ1_setpreset(int) { }
+__attribute__((weak)) void RKR::EQ2_setpreset(int) { }
+__attribute__((weak)) int RKR::Cabinet_setpreset(int) { return 0; }
+
+// PERIOD (src/process.C) is a plain global, not a function -- same linking
+// problem, same fix: a weak fallback definition that the strong one in
+// process.C overrides whenever this file is linked into the real
+// "rakarrack" binary. ScopeView::Draw() is the only thing here that reads
+// it.
+extern int PERIOD;
+__attribute__((weak)) int PERIOD = 0;
 
 
 extern pthread_mutex_t jmutex;
@@ -237,6 +320,7 @@ static const std::vector<std::string> kSeqModeNames = { // menu_seq_mode
 	"Lineal", "UpDown", "Stepper", "Shifter", "Tremor", "Arpegiator", "Chorus"
 };
 static const std::vector<std::string> kShifterModeNames = { "Trigger", "Whammy" }; // menu_shifter_mode
+static const std::vector<std::string> kMIDIOctaveNames = { "-2", "-1", "0", "1", "2" }; // menu_MIDIOctave
 
 // Built-in impulse-response/cabinet selectors for the three effects that can
 // also load a *custom* file via a Browse button in the FLTK GUI (Convol,
@@ -255,6 +339,168 @@ static const std::vector<std::string> kEchotronIRNames = { // menu_echotron_fnum
 	"SwingPong", "Short Delays", "Flange + Echo", "Comb", "EchoFlange",
 	"Filtered Echo", "Notch-Wah", "Multi-Chorus", "PingPong", "90-Shifter",
 	"Basic LR Delay"
+};
+
+// Built-in factory presets, one list per effect -- each taken verbatim from
+// the matching RKRGUI::menu_*_preset array in rakarrack.cxx (same order,
+// same labels) so "Preset N" here always means the same thing it does in
+// the FLTK GUI. See PresetMenuDef / BuildEffectBox's "preset" argument for
+// how these get wired up: unlike every other dropdown in this file, a
+// preset selection doesn't drive a single changepar() index -- it calls
+// the effect's own setpreset()-family method, which writes many parameters
+// at once from a table built into the effect class itself.
+static const std::vector<std::string> kExciterPresetNames = { // menu_exciter_preset
+	"Plain", "Loudness", "Exciter 1", "Exciter 2", "Exciter 3"
+};
+static const std::vector<std::string> kCompressorPresetNames = { // menu_compress_preset
+	"2:1", "4:1", "8:1"
+};
+static const std::vector<std::string> kValvePresetNames = { // menu_valve_preset
+	"Valve 1", "Valve 2", "Valve 3"
+};
+static const std::vector<std::string> kVibePresetNames = { // menu_vibe_preset
+	"Classic", "Stereo Classic", "Wide Vibe", "Classic Chorus",
+	"Vibe Chorus", "Lush Chorus", "Sick Phaser", "Warble"
+};
+static const std::vector<std::string> kPanPresetNames = { // menu_pan_preset
+	"AutoPan", "Extra Stereo"
+};
+static const std::vector<std::string> kReverbtronPresetNames = { // menu_revtron_preset
+	"Chamber", "Concrete Stairwell", "Hall", "Med Hall", "Room", "Hall",
+	"Guitar", "Studio", "Cathedral"
+};
+static const std::vector<std::string> kMusDelayPresetNames = { // menu_musdelay_preset
+	"Echo 1", "Echo 2"
+};
+static const std::vector<std::string> kCompBandPresetNames = { // menu_cband_preset
+	"Good Start", "Loudness", "Loudness 2"
+};
+static const std::vector<std::string> kEQ2PresetNames = { // menu_eqp_preset
+	"Plain", "Pop", "Jazz"
+};
+static const std::vector<std::string> kArpiePresetNames = { // menu_arpie_preset
+	"Arpie 1", "Arpie 2", "Arpie 3", "Simple Arpie", "Canyon",
+	"Panning Arpie 1", "Panning Arpie 2", "Panning Arpie 3",
+	"Feedback Arpie"
+};
+static const std::vector<std::string> kVocoderPresetNames = { // menu_vo_preset
+	"Vocoder 1", "Vocoder 2", "Vocoder 3", "Vocoder 4"
+};
+static const std::vector<std::string> kEQ1PresetNames = { // menu_eq_preset
+	"Plain", "Pop", "Jazz"
+};
+static const std::vector<std::string> kAPhaserPresetNames = { // menu_aphaser_preset
+	"Phaser 1", "Phaser 2", "Phaser 3", "Phaser 4", "Phaser 5", "Phaser 6"
+};
+static const std::vector<std::string> kPhaserPresetNames = { // menu_phaser_preset
+	"Phaser 1", "Phaser 2", "Phaser 3", "Phaser 4", "Phaser 5", "Phaser 6"
+};
+static const std::vector<std::string> kOverdrivePresetNames = { // menu_ovrd_preset
+	"Overdrive 1", "Overdrive 2"
+};
+static const std::vector<std::string> kOpticaltremPresetNames = { // menu_otrem_preset
+	"Fast", "Trem 2", "Hard Pan", "Soft Pan", "Ramp Down", "Hard Ramp"
+};
+static const std::vector<std::string> kMBDistPresetNames = { // menu_mbdist_preset
+	"Saturation", "Distorsion 1", "Soft", "Modulated", "Crunch",
+	"Distortion 2", "Distortion 3", "Distortion 4"
+};
+static const std::vector<std::string> kEchotronPresetNames = { // menu_echotron_preset
+	"Summer", "Ambience", "Arranjer", "Suction", "SuctionFlange"
+};
+static const std::vector<std::string> kDistorsionPresetNames = { // menu_dist_preset
+	"Distorsion 1", "Distorsion 2", "Distorsion 3", "Guitar Amp"
+};
+static const std::vector<std::string> kHarmonizerPresetNames = { // menu_har_preset
+	"Plain", "Octavator", "3m Down"
+};
+static const std::vector<std::string> kShifterPresetNames = { // menu_shifter_preset
+	"Fast", "Slow Up", "Slow Down", "Chorus", "Trig. Chorus"
+};
+static const std::vector<std::string> kShelfBoostPresetNames = { // menu_shelf_preset
+	"Trebble", "Mid", "Low", "Distortion 1"
+};
+static const std::vector<std::string> kCabinetPresetNames = { // menu_Cabinet_preset
+	"Marshall-4-12", "Celestion G12M", "Jensen Alnico P12N",
+	"Jensen Alnico P15N", "Delta Demon", "Celestion-EVH12",
+	"Eminence Copperhead", "Mesa Boogie", "Jazz-Chorus", "Vox-Bright",
+	"Marshall-I"
+};
+static const std::vector<std::string> kRingPresetNames = { // menu_ring_preset
+	"Saw_Sin", "E string", "A string", "Dissonance", "Fast Beat", "Ring Amp"
+};
+static const std::vector<std::string> kReverbPresetNames = { // menu_reverb_preset
+	"Cathedral 1", "Cathedral 2", "Cathedral 3", "Hall 1", "Hall 2",
+	"Room 1", "Room 2", "Basement", "Tunnel", "Echoed 1", "Echoed 2",
+	"Very Long 1", "Very Long 2"
+};
+static const std::vector<std::string> kFlangerPresetNames = { // menu_flanger_preset
+	"Flange 1", "Flange 2", "Flange 3", "Flange 4", "Flange 5"
+};
+static const std::vector<std::string> kAlienwahPresetNames = { // menu_Alienwah_preset
+	"AlienWah1", "AlienWah2", "AlienWah3", "AlienWah4"
+};
+static const std::vector<std::string> kEchoPresetNames = { // menu_echo_preset
+	"Echo 1", "Echo 2", "Echo 3", "Simple Echo", "Canyon", "Panning Echo 1",
+	"Panning Echo 2", "Panning Echo 3", "Feedback Echo"
+};
+static const std::vector<std::string> kSustainerPresetNames = { // menu_sus_preset
+	"Sustain 1", "Sustain 2", "Sustain 3"
+};
+static const std::vector<std::string> kSynthfilterPresetNames = { // menu_synthfilter_preset
+	"Low Pass", "High Pass", "Band Pass", "Lead Synth", "Water",
+	"Pan Filter", "Multi"
+};
+static const std::vector<std::string> kDFlangePresetNames = { // menu_dflange_preset
+	"Dual Flange 1", "Flange-Wah", "FbFlange", "SoftFlange", "Flanger",
+	"Deep Chorus", "Bright Chorus"
+};
+static const std::vector<std::string> kRyanWahPresetNames = { // menu_ryanwah_preset
+	"WahWah", "Mutron", "Phase Wah", "Phaser", "Quack Quack"
+};
+static const std::vector<std::string> kShufflePresetNames = { // menu_shuffle_preset
+	"Shuffle 1", "Shuffle 2", "Shuffle 3", "Remover"
+};
+static const std::vector<std::string> kRBEchoPresetNames = { // menu_rbecho_preset
+	"Echo 1", "Echo 2", "Echo 3"
+};
+static const std::vector<std::string> kConvolotronPresetNames = { // menu_convo_preset
+	"Marshall JCM200", "Fender Superchamp", "Mesa Boogie", "Mesa Boogie 2"
+};
+static const std::vector<std::string> kNewDistPresetNames = { // menu_newdist_preset
+	"New Dist 1", "New Dist 2", "New Dist 3"
+};
+static const std::vector<std::string> kGatePresetNames = { // menu_gate_preset
+	"0dB", "-10dB", "-20dB"
+};
+static const std::vector<std::string> kChorusPresetNames = { // menu_chorus_preset
+	"Chorus 1", "Chorus 2", "Chorus 3", "Celeste 1", "Celeste 2"
+};
+static const std::vector<std::string> kStompBoxPresetNames = { // menu_stomp_preset
+	"Odie", "Grunger", "Hard Dist.", "Ratula", "Classic Dist",
+	"Morbid Impalement", "Sharp Metal", "Classic Fuzz"
+};
+static const std::vector<std::string> kWhaWhaPresetNames = { // menu_WhaWha_preset
+	"WahWah", "AutoWah", "Sweep", "VocalMorph1", "VocalMorph2"
+};
+static const std::vector<std::string> kLooperPresetNames = { // menu_looper_preset
+	"Looper", "Reverse"
+};
+static const std::vector<std::string> kSequencePresetNames = { // menu_seq_preset
+	"Jumpy", "Stair Step", "Mild", "Wah Wah", "Filter Pan", "Stepper",
+	"Shifter", "Zeke Trem", "Boogie", "Chorus"
+};
+static const std::vector<std::string> kStereoHarmPresetNames = { // menu_shar_preset
+	"Plain", "Octavator", "Chorus", "Hard Chorus"
+};
+static const std::vector<std::string> kMBVvolPresetNames = { // menu_mbvvol_preset
+	"VaryVol 1", "VaryVol 2", "VaryVol 3"
+};
+static const std::vector<std::string> kCoilCrafterPresetNames = { // menu_coil_preset
+	"H to S", "S to H"
+};
+static const std::vector<std::string> kExpanderPresetNames = { // menu_expander_preset
+	"Noise Gate", "Boost Gate", "Treble swell"
 };
 
 // One slider: on-screen label/range plus which changepar() index it drives.
@@ -295,9 +541,8 @@ struct ToggleDef {
 };
 
 // A dropdown that drives a single changepar() index (an algorithm/mode/LFO
-// type, not a "Preset" dropdown that loads many params at once via
-// setpreset() -- those aren't wired up anywhere in this file, existing
-// effects included, so new ones stay consistent by skipping them too).
+// type). See PresetMenuDef below for the other kind of dropdown -- a
+// "Preset" selector that loads many params at once via setpreset().
 struct TypeMenuDef {
 	const char* label;
 	const std::vector<std::string>* items;
@@ -307,6 +552,22 @@ struct TypeMenuDef {
 	                  // getFn() -- most of these dropdowns store the raw
 	                  // 0-based menu index, but a few (MusDelay's) store
 	                  // index+1 instead.
+};
+
+// The "Preset" dropdown -- distinct from TypeMenuDef because a preset
+// selection doesn't map onto a single changepar() index/value pair the way
+// every other dropdown in this file does. It calls the effect's own
+// setpreset()-family method instead (setpreset(), Compressor_Change_Preset(),
+// Gate_Change_Preset(), Expander_Change_Preset()...), which writes many
+// parameters at once from a table built into the effect class itself --
+// see src/fileio.C-adjacent *.C files' own setpreset() bodies. There's no
+// matching getpreset() to prime the dropdown's initial selection from (the
+// FLTK GUI doesn't try either -- its preset Fl_Choice always just opens on
+// its first item), so BuildEffectBox always marks index 0 initially,
+// regardless of what's actually loaded.
+struct PresetMenuDef {
+	const std::vector<std::string>* items = nullptr;
+	std::function<void(int32)> apply = nullptr;
 };
 
 // Dark theme, chosen to read close to src/rakarrack.cxx's own black
@@ -672,6 +933,90 @@ private:
 	std::vector<int> fSlotIndices;
 };
 
+// A stereo waveform view for the header -- a native port of src/rakarrack.cxx's
+// "Sco" (Scope) widget, the one that appears over the Tuner box there when its
+// title is clicked. It draws straight from the same two buffers the FLTK GUI
+// itself uses (rkr->anall/rkr->analr -- see Scope::init()'s call site in
+// rakarrack.cxx): PERIOD samples of the final, post-FX output, refreshed by
+// the real-time audio callback every buffer. Unlike rakarrack.cxx, this is
+// always visible here (no click-to-reveal toggle) rather than sharing screen
+// space with a Tuner box native mode doesn't have.
+//
+// Reads anall/analr with no lock, same as rakarrack.cxx's own Scope::draw()
+// -- the audio thread is free to be mid-memcpy into them on any given frame,
+// but a plain float read/write races only into torn *values* here (never a
+// crash, and self-correcting one frame later), the same tradeoff every VU
+// meter and scope in this codebase already makes for real-time-safe display
+// code.
+class ScopeView : public BView {
+public:
+	ScopeView(RKR* rkr)
+		:
+		BView("scope", B_WILL_DRAW | B_PULSE_NEEDED),
+		fRkr(rkr)
+	{
+		SetViewColor(kPanelColor);
+		SetExplicitMinSize(BSize(220, 60));
+		SetExplicitMaxSize(BSize(220, 60));
+	}
+
+	virtual void Pulse()
+	{
+		Invalidate();
+	}
+
+	virtual void Draw(BRect updateRect)
+	{
+		BRect b = Bounds();
+		SetHighColor(kPanelColor);
+		FillRect(b);
+		SetHighColor(70, 70, 70, 255);
+		StrokeRect(b);
+		SetHighColor(50, 50, 50, 255);
+		StrokeLine(BPoint(b.Width() / 2.0f, b.top + 1),
+			BPoint(b.Width() / 2.0f, b.bottom - 1));
+
+		if (!fRkr || !fRkr->anall || !fRkr->analr || PERIOD <= 1)
+			return;
+
+		float gutter = 4.0f;
+		float halfW = (b.Width() - 3.0f * gutter) / 2.0f;
+		BRect left(b.left + gutter, b.top + 2, b.left + gutter + halfW, b.bottom - 2);
+		BRect right(left.right + gutter, left.top, left.right + gutter + halfW, left.bottom);
+		DrawChannel(fRkr->anall, left);
+		DrawChannel(fRkr->analr, right);
+	}
+
+private:
+	void DrawChannel(float* samples, BRect area)
+	{
+		SetHighColor(kAccentColor);
+		float midY = (area.top + area.bottom) / 2.0f;
+		float halfH = area.Height() / 2.0f;
+		float stepX = area.Width() / (float)PERIOD;
+		BPoint prev(area.left, midY);
+		// PERIOD can be a few thousand at low sample rates/large buffers --
+		// no need to plot every single sample when several land on the same
+		// pixel column, so stride through in ~1px steps instead of all of
+		// them.
+		int stride = (int)(1.0f / stepX);
+		if (stride < 1)
+			stride = 1;
+		for (int i = 0; i < PERIOD; i += stride) {
+			float v = samples[i];
+			if (v > 1.0f)
+				v = 1.0f;
+			else if (v < -1.0f)
+				v = -1.0f;
+			BPoint pt(area.left + i * stepX, midY - v * halfH);
+			if (i > 0)
+				StrokeLine(prev, pt);
+			prev = pt;
+		}
+	}
+
+	RKR* fRkr;
+};
 
 // Main rack content view: builds every effect box and owns the table of
 // callbacks ("actions") that the controls' messages are dispatched through.
@@ -810,7 +1155,7 @@ public:
 		loadPresetBtn->SetViewColor(kPanelColor);
 
 		BGroupView* controls = new BGroupView(B_HORIZONTAL, 10);
-		controls->GroupLayout()->SetInsets(10, 0, 10, 10);
+		controls->GroupLayout()->SetInsets(10, 0, 10, 4);
 		controls->SetViewColor(kBgColor);
 		controls->AddChild(fCpuDisplay);
 		controls->AddChild(fMasterFX);
@@ -818,19 +1163,28 @@ public:
 		controls->AddChild(orderBtn);
 		controls->AddChild(savePresetBtn);
 		controls->AddChild(loadPresetBtn);
-		AddSlider(controls, "in_gain", "Input Gain", -50, 50,
+		controls->GroupLayout()->AddItem(BSpaceLayoutItem::CreateGlue());
+
+		// Third row: Input Gain/Master Volume (wrapped down from the controls
+		// row above so it has room to breathe) plus the waveform view, left
+		// to right. Half the usual 190px track width (see AddSlider's
+		// "width" parameter) -- full-width here made this row noticeably
+		// wider than it needed to be next to the compact scope/MIDI panel.
+		static const int32 kHeaderSliderWidth = 95;
+		BGroupView* volumeGroup = new BGroupView(B_HORIZONTAL, 10);
+		volumeGroup->SetViewColor(kBgColor);
+		AddSlider(volumeGroup, "in_gain", "Input Gain", -50, 50,
 			(int32)(rkr->Input_Gain * 100.0f) - 50,
 			[rkr](int32 v) {
 				rkr->Input_Gain = (float)((v + 50) / 100.0);
 				rkr->calculavol(1);
-			});
-		AddSlider(controls, "out_gain", "Master Volume", -50, 50,
+			}, kHeaderSliderWidth);
+		AddSlider(volumeGroup, "out_gain", "Master Volume", -50, 50,
 			(int32)(rkr->Master_Volume * 100.0f) - 50,
 			[rkr](int32 v) {
 				rkr->Master_Volume = (float)((v + 50) / 100.0);
 				rkr->calculavol(2);
-			});
-		controls->GroupLayout()->AddItem(BSpaceLayoutItem::CreateGlue());
+			}, kHeaderSliderWidth);
 
 		// The sliders above only set their on-screen position from
 		// Input_Gain/Master_Volume -- they never fire their own callback, so
@@ -842,6 +1196,169 @@ public:
 		rkr->calculavol(2);
 		rkr->booster = 1.0f;
 
+		ScopeView* scope = new ScopeView(rkr);
+
+		// The MIDI (guitar-to-MIDI) converter panel -- a native port of
+		// rakarrack.cxx's "Midi" group (nidi_activar/MIDIOctave/
+		// Midi_out_Counter/Trig_Adj). Velocity (Vel_Adj there) is left out,
+		// per instructions -- it doesn't work. This effect sits outside the
+		// changepar()/getpar() rack chain entirely (no effect-type ID, never
+		// occupies an efx_order[] slot), so it's built directly here instead
+		// of through BuildEffectBox/BuildColumnN. Its own row, below Input
+		// Gain/Master Volume/the scope, rather than crowding them.
+		BBox* midiBox = new BBox("midi_box");
+		midiBox->SetViewColor(kPanelColor);
+		BStringView* midiTitle = new BStringView("midi_title", "MIDI");
+		midiTitle->SetHighColor(kTitleColor);
+		midiTitle->SetLowColor(kBgColor);
+		BFont midiTitleFont(be_bold_font);
+		midiTitle->SetFont(&midiTitleFont);
+		midiBox->SetLabel(midiTitle);
+
+		BGroupView* midiContent = new BGroupView(B_VERTICAL, 6);
+		midiContent->GroupLayout()->SetInsets(8);
+		midiContent->SetViewColor(kPanelColor);
+
+		// Everything below the "On" checkbox -- hidden whenever MIDI is off,
+		// the same way each effect box's body collapses to just its title
+		// bar in BuildEffectBox. Built before midiOn since its callback
+		// below needs to reach it.
+		BGroupView* midiBody = new BGroupView(B_VERTICAL, 4);
+		midiBody->SetViewColor(kPanelColor);
+
+		BCheckBox* midiOn = new BCheckBox("midi_on", "On",
+			MakeMessage(Bind([rkr, midiBody](int32 v) {
+				// Mirrors cb_nidi_activar_i: silence any note the converter
+				// currently thinks is held before switching it off, so
+				// nothing gets stuck on.
+				if (!v)
+					rkr->efx_MIDIConverter->panic();
+				rkr->MIDIConverter_Bypass = v ? 1 : 0;
+				if (v)
+					midiBody->Show();
+				else
+					midiBody->Hide();
+			})));
+		midiOn->SetValue(rkr->MIDIConverter_Bypass ? B_CONTROL_ON : B_CONTROL_OFF);
+		midiOn->SetViewColor(kPanelColor);
+		midiContent->AddChild(midiOn);
+		if (rkr->MIDIConverter_Bypass == 0)
+			midiBody->Hide();
+		midiContent->AddChild(midiBody);
+
+		// Wide gap between controls (vs. AddSlider's own tight 6px
+		// label/value/slider spacing within each one) so each slider
+		// clearly reads as trailing its own preceding label+value instead
+		// of blending into the next control's label -- with only 8px
+		// either side that trailing slider was easy to misread as
+		// belonging to whichever label came right after it instead.
+		BGroupView* midiRow1 = new BGroupView(B_HORIZONTAL, 24);
+		midiRow1->SetViewColor(kPanelColor);
+		midiBody->AddChild(midiRow1);
+
+		AddSlider(midiRow1, "midi_channel", "Channel", 1, 16,
+			rkr->efx_MIDIConverter->channel + 1,
+			[rkr](int32 v) { rkr->efx_MIDIConverter->setmidichannel(v - 1); },
+			kHeaderSliderWidth);
+
+		AddSlider(midiRow1, "midi_trigger", "Trigger", 2, 60,
+			rkr->efx_MIDIConverter->TrigVal > 0.0f
+				? (int32)(1.0f / rkr->efx_MIDIConverter->TrigVal + 0.5f)
+				: 4,
+			[rkr](int32 v) { rkr->efx_MIDIConverter->setTriggerAdjust(v); },
+			kHeaderSliderWidth);
+
+		AddTypeMenu(midiRow1, "midi_octave", "Octave", kMIDIOctaveNames,
+			rkr->efx_MIDIConverter->Moctave + 2,
+			[rkr](int32 v) { rkr->efx_MIDIConverter->Moctave = v - 2; });
+
+		// Second row: the guitar-to-MIDI pitch tracker's own fine-tune
+		// knobs (Conv_Trig_Counter/Conv_Stable_Counter/Conv_Off_Counter/
+		// Conv_Freq_Ceiling_Counter/Conv_Freq_Floor_Counter in
+		// rakarrack.cxx). Unlike Channel/Trigger/Octave above, these five
+		// don't need explicit startup priming -- p_trigfact/
+		// p_stable_threshold/p_off_count_max/p_freq_ceiling/p_freq_floor
+		// all already have constructor defaults in MIDIConverter.C that
+		// match rakarrack.cxx's own widget defaults exactly (0.5, 2, 5,
+		// 320, 20).
+		//
+		// Trigger Sensitivity is the one float among these with a
+		// fractional step (0.1-1.0 by 0.05) -- shown as a plain integer
+		// slider like everything else here (10-100) rather than adding a
+		// decimal-display slider variant just for this one control, with
+		// the /100 conversion happening in the callback.
+		BGroupView* midiRow2 = new BGroupView(B_HORIZONTAL, 24);
+		midiRow2->SetViewColor(kPanelColor);
+		midiBody->AddChild(midiRow2);
+
+		AddSlider(midiRow2, "midi_trigsens", "Trig Sens", 10, 100,
+			(int32)(rkr->efx_MIDIConverter->p_trigfact * 100.0f + 0.5f),
+			[rkr](int32 v) { rkr->efx_MIDIConverter->p_trigfact = (float)v / 100.0f; },
+			kHeaderSliderWidth);
+
+		AddSlider(midiRow2, "midi_stability", "Stability", 1, 10,
+			rkr->efx_MIDIConverter->p_stable_threshold,
+			[rkr](int32 v) { rkr->efx_MIDIConverter->p_stable_threshold = v; },
+			kHeaderSliderWidth);
+
+		AddSlider(midiRow2, "midi_offgrace", "Off Grace", 1, 30,
+			rkr->efx_MIDIConverter->p_off_count_max,
+			[rkr](int32 v) { rkr->efx_MIDIConverter->p_off_count_max = v; },
+			kHeaderSliderWidth);
+
+		AddSlider(midiRow2, "midi_freqceil", "Freq Ceil", 50, 5000,
+			(int32)rkr->efx_MIDIConverter->p_freq_ceiling,
+			[rkr](int32 v) { rkr->efx_MIDIConverter->p_freq_ceiling = (float)v; },
+			kHeaderSliderWidth);
+
+		AddSlider(midiRow2, "midi_freqfloor", "Freq Floor", 20, 300,
+			(int32)rkr->efx_MIDIConverter->p_freq_floor,
+			[rkr](int32 v) { rkr->efx_MIDIConverter->p_freq_floor = (float)v; },
+			kHeaderSliderWidth);
+
+		midiBox->AddChild(midiContent);
+
+		// Like the Input Gain/Master Volume sliders above, AddSlider() only
+		// sets the Channel/Trigger sliders' on-screen position from
+		// MIDIConverter's current channel/TrigVal -- it never fires their
+		// callback, so setmidichannel()/setTriggerAdjust() themselves are
+		// never actually called unless the user touches those sliders.
+		// Channel and Trigger happened to still work without this because
+		// MIDIConverter's own constructor defaults (channel 0, TrigVal
+		// .25f) already match what's shown here -- but VelVal (which
+		// MIDI_Send_Note_On() uses to compute the velocity byte sent to an
+		// external synth) has NO constructor default at all, so it was
+		// whatever garbage happened to be on the heap. rakarrack.cxx always
+		// primes this at startup too (see its "Velocity Adjust" pref,
+		// default 50) even though no Velocity slider is exposed here
+		// (per instructions -- it doesn't work). Without this, notes could
+		// reach an external synth (e.g. MidiSynth) and visibly trigger
+		// there -- schmittFloat()'s note detection doesn't depend on
+		// VelVal -- while playing at whatever garbage velocity resulted,
+		// typically silent once clamped to the 1-127 range.
+		rkr->efx_MIDIConverter->setmidichannel(rkr->efx_MIDIConverter->channel);
+		rkr->efx_MIDIConverter->setTriggerAdjust(
+			rkr->efx_MIDIConverter->TrigVal > 0.0f
+				? (int32)(1.0f / rkr->efx_MIDIConverter->TrigVal + 0.5f)
+				: 4);
+		rkr->efx_MIDIConverter->setVelAdjust(50);
+
+		// Row 3: Input Gain/Master Volume next to the scope.
+		BGroupView* meterRow = new BGroupView(B_HORIZONTAL, 10);
+		meterRow->GroupLayout()->SetInsets(10, 0, 10, 6);
+		meterRow->SetViewColor(kBgColor);
+		meterRow->AddChild(volumeGroup);
+		meterRow->AddChild(scope);
+		meterRow->GroupLayout()->AddItem(BSpaceLayoutItem::CreateGlue());
+
+		// Row 4: the MIDI panel, wrapped below row 3 instead of crowding it
+		// on one line.
+		BGroupView* midiRow = new BGroupView(B_HORIZONTAL, 10);
+		midiRow->GroupLayout()->SetInsets(10, 0, 10, 10);
+		midiRow->SetViewColor(kBgColor);
+		midiRow->AddChild(midiBox);
+		midiRow->GroupLayout()->AddItem(BSpaceLayoutItem::CreateGlue());
+
 		BGroupView* logoRow = new BGroupView(B_HORIZONTAL, 10);
 		logoRow->GroupLayout()->SetInsets(10, 10, 10, 4);
 		logoRow->SetViewColor(kBgColor);
@@ -851,6 +1368,8 @@ public:
 		BLayoutBuilder::Group<>(headerParent, B_VERTICAL, 0)
 			.Add(logoRow)
 			.Add(controls)
+			.Add(meterRow)
+			.Add(midiRow)
 			.End();
 	}
 
@@ -981,7 +1500,11 @@ private:
 	// next to it and keeps it in sync on every value change). Label/value
 	// widths are fixed so sliders line up across a whole effect box.
 	BSlider* AddSlider(BView* parent, const char* name, const char* label,
-		int32 min, int32 max, int32 initial, std::function<void(int32)> fn)
+		int32 min, int32 max, int32 initial, std::function<void(int32)> fn,
+		// Every effect box slider relies on the 190px default; only the
+		// header's Input Gain/Master Volume/MIDI Channel/MIDI Trigger pass
+		// something narrower (see BuildHeader) to keep that row compact.
+		int32 width = 190)
 	{
 		BGroupView* row = new BGroupView(B_HORIZONTAL, 6);
 		row->SetViewColor(kPanelColor);
@@ -1020,7 +1543,7 @@ private:
 		s->SetBarColor(kAccentColor);
 		// Roughly doubles the effect boxes' width over the default track
 		// size -- cramped sliders were hard to drag precisely.
-		s->SetExplicitMinSize(BSize(190, B_SIZE_UNSET));
+		s->SetExplicitMinSize(BSize(width, B_SIZE_UNSET));
 
 		row->AddChild(labelView);
 		row->AddChild(valueView);
@@ -1152,7 +1675,12 @@ private:
 		// model -- Looper's transport buttons are the only user of this so
 		// far. Called with the effect's body BGroupView after every param
 		// above has already been added to it.
-		std::function<void(BView*)> extraWidgets = nullptr)
+		std::function<void(BView*)> extraWidgets = nullptr,
+		// Added at the very end, after every other optional parameter, so
+		// every existing call site above (with whatever mix of toggles/
+		// typeMenus/extraWidgets it already passes) keeps compiling
+		// unchanged -- see PresetMenuDef.
+		const PresetMenuDef& preset = PresetMenuDef())
 	{
 		BBox* box = new BBox(title);
 		box->SetViewColor(kPanelColor);
@@ -1216,6 +1744,11 @@ private:
 			body->Hide();
 		content->AddChild(body);
 
+		// Rendered first, same as rakarrack.cxx's own effect panels (the
+		// preset Fl_Choice always sits above every slider/toggle/type menu).
+		if (preset.items && preset.apply)
+			AddTypeMenu(body, "Preset", "Preset", *preset.items, 0, preset.apply);
+
 		for (const TypeMenuDef& t : typeMenus) {
 			AddTypeMenu(body, t.label, t.label, *t.items,
 				getFn(t.npar) - t.offset,
@@ -1271,7 +1804,8 @@ private:
 			BuildEffectBox(col, "Exciter", rkr, 22, &rkr->Exciter_Bypass,
 				[rkr](int32 n, int32 v) { rkr->efx_Exciter->changepar(n, v); },
 				[rkr](int32 n) { return rkr->efx_Exciter->getpar(n); },
-				exciterParams);
+				exciterParams, {}, {}, nullptr,
+				{&kExciterPresetNames, [rkr](int32 v) { rkr->efx_Exciter->setpreset(v); }});
 		}
 
 		BuildEffectBox(col, "Compressor", rkr, 1, &rkr->Compressor_Bypass,
@@ -1284,7 +1818,8 @@ private:
 				{"Knee", 0, 100, 7, 0},
 				{"Threshold", -60, -3, 1, 0},
 				{"Output", -40, 0, 3, 0},
-			});
+			}, {}, {}, nullptr,
+			{&kCompressorPresetNames, [rkr](int32 v) { rkr->efx_Compressor->Compressor_Change_Preset(1, v); }});
 
 		BuildEffectBox(col, "Valve", rkr, 19, &rkr->Valve_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Valve->changepar(n, v); },
@@ -1296,7 +1831,8 @@ private:
 				{"Presence", 0, 100, 12, 0},
 				{"LPF", 20, 26000, 6, 0},
 				{"HPF", 20, 20000, 7, 0},
-			});
+			}, {}, {}, nullptr,
+			{&kValvePresetNames, [rkr](int32 v) { rkr->efx_Valve->setpreset(v); }});
 
 		BuildEffectBox(col, "Vibe", rkr, 45, &rkr->Vibe_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Vibe->changepar(n, v); },
@@ -1307,7 +1843,8 @@ private:
 				{"Depth", 0, 127, 8, 0},
 				{"Feedback", -64, 64, 7, 64},
 				{"L/R Cr.", -64, 64, 9, 64},
-			});
+			}, {}, {}, nullptr,
+			{&kVibePresetNames, [rkr](int32 v) { rkr->efx_Vibe->setpreset(v); }});
 
 		BuildEffectBox(col, "Auto Pan", rkr, 13, &rkr->Pan_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Pan->changepar(n, v); },
@@ -1319,7 +1856,8 @@ private:
 			{
 				{"Auto Pan", 7},
 				{"Extra On", 8},
-			});
+			}, {}, nullptr,
+			{&kPanPresetNames, [rkr](int32 v) { rkr->efx_Pan->setpreset(v); }});
 
 		BuildEffectBox(col, "Reverbtron", rkr, 40, &rkr->Reverbtron_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Reverbtron->changepar(n, v); },
@@ -1342,7 +1880,8 @@ private:
 				{"ES", 12},
 				{"Safe", 2},
 			},
-			{{"IR", &kReverbtronIRNames, 8}});
+			{{"IR", &kReverbtronIRNames, 8}}, nullptr,
+			{&kReverbtronPresetNames, [rkr](int32 v) { rkr->efx_Reverbtron->setpreset(v); }});
 
 		BuildEffectBox(col, "MusDelay", rkr, 15, &rkr->MusDelay_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_MusDelay->changepar(n, v); },
@@ -1364,7 +1903,8 @@ private:
 				{"Div 1", &kSubDivNames, 2, 1},
 				{"Div 2", &kSubDivNames, 8, 1},
 				{"Div 3", &kMusDelayDiv7Names, 3, 1},
-			});
+			}, nullptr,
+			{&kMusDelayPresetNames, [rkr](int32 v) { rkr->efx_MusDelay->setpreset(v); }});
 
 		BuildEffectBox(col, "CompBand", rkr, 43, &rkr->CompBand_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_CompBand->changepar(n, v); },
@@ -1383,7 +1923,8 @@ private:
 				{"Cross1", 20, 1000, 9, 0},
 				{"Cross2", 1000, 8000, 10, 0},
 				{"Cross3", 2000, 26000, 11, 0},
-			});
+			}, {}, {}, nullptr,
+			{&kCompBandPresetNames, [rkr](int32 v) { rkr->efx_CompBand->setpreset(v); }});
 
 		BuildEffectBox(col, "EQ2", rkr, 9, &rkr->EQ2_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_EQ2->changepar(n, v); },
@@ -1399,7 +1940,8 @@ private:
 				{"High F.", 6000, 26000, 21, 0},
 				{"High G.", -64, 63, 22, 64},
 				{"High Q", -64, 63, 23, 64},
-			});
+			}, {}, {}, nullptr,
+			{&kEQ2PresetNames, [rkr](int32 v) { rkr->EQ2_setpreset(v); }});
 
 		BuildEffectBox(col, "Arpie", rkr, 24, &rkr->Arpie_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Arpie->changepar(n, v); },
@@ -1419,7 +1961,8 @@ private:
 			{
 				{"SubDiv", &kSubDivNames, 12, 0},
 				{"Pattern", &kArpiePatternNames, 9, 0},
-			});
+			}, nullptr,
+			{&kArpiePresetNames, [rkr](int32 v) { rkr->efx_Arpie->setpreset(v); }});
 
 		BuildEffectBox(col, "Vocoder", rkr, 35, &rkr->Vocoder_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Vocoder->changepar(n, v); },
@@ -1432,7 +1975,8 @@ private:
 				{"Q", 40, 170, 3, 0},
 				{"Ring", 0, 127, 6, 0},
 				{"Level", 0, 127, 5, 0},
-			});
+			}, {}, {}, nullptr,
+			{&kVocoderPresetNames, [rkr](int32 v) { rkr->efx_Vocoder->setpreset(v); }});
 	}
 
 	void BuildColumn2(BView* col)
@@ -1450,7 +1994,8 @@ private:
 			BuildEffectBox(col, "Equalizer", rkr, 0, &rkr->EQ1_Bypass,
 				[rkr](int32 n, int32 v) { rkr->efx_EQ1->changepar(n, v); },
 				[rkr](int32 n) { return rkr->efx_EQ1->getpar(n); },
-				bands);
+				bands, {}, {}, nullptr,
+				{&kEQ1PresetNames, [rkr](int32 v) { rkr->EQ1_setpreset(v); }});
 		}
 
 		BuildEffectBox(col, "Analog Phaser", rkr, 18, &rkr->APhaser_Bypass,
@@ -1464,7 +2009,8 @@ private:
 				{"Distort", 0, 100, 1, 0},
 				{"Mismatch", 0, 100, 9, 0},
 				{"Stereo", 0, 127, 5, 0},
-			});
+			}, {}, {}, nullptr,
+			{&kAPhaserPresetNames, [rkr](int32 v) { rkr->efx_APhaser->setpreset(v); }});
 
 		BuildEffectBox(col, "Phaser", rkr, 6, &rkr->Phaser_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Phaser->changepar(n, v); },
@@ -1476,7 +2022,8 @@ private:
 				{"Phase", 0, 127, 11, 0},
 				{"Stereo", 0, 127, 5, 0},
 				{"L/R Cr.", -64, 63, 9, 64},
-			});
+			}, {}, {}, nullptr,
+			{&kPhaserPresetNames, [rkr](int32 v) { rkr->efx_Phaser->setpreset(v); }});
 
 		BuildEffectBox(col, "Overdrive", rkr, 3, &rkr->Overdrive_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Overdrive->changepar(n, v); },
@@ -1487,7 +2034,8 @@ private:
 				{"LPF", 20, 26000, 7, 0},
 				{"HPF", 20, 20000, 8, 0},
 			},
-			{}, {{"Type", &kDistTypeNames, 5}});
+			{}, {{"Type", &kDistTypeNames, 5}}, nullptr,
+			{&kOverdrivePresetNames, [rkr](int32 v) { rkr->efx_Overdrive->setpreset(1, v); }});
 
 		BuildEffectBox(col, "Opticaltrem", rkr, 44, &rkr->Opticaltrem_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Opticaltrem->changepar(n, v); },
@@ -1497,7 +2045,8 @@ private:
 				{"Tempo", 1, 600, 1, 0},
 				{"Rnd", 0, 127, 2, 0},
 				{"Stereo", 0, 127, 4, 0},
-			});
+			}, {}, {}, nullptr,
+			{&kOpticaltremPresetNames, [rkr](int32 v) { rkr->efx_Opticaltrem->setpreset(v); }});
 
 		BuildEffectBox(col, "MBDist", rkr, 23, &rkr->MBDist_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_MBDist->changepar(n, v); },
@@ -1522,7 +2071,8 @@ private:
 				{"Type L", &kDistTypeNames, 5},
 				{"Type M", &kDistTypeNames, 6},
 				{"Type H", &kDistTypeNames, 7},
-			});
+			}, nullptr,
+			{&kMBDistPresetNames, [rkr](int32 v) { rkr->efx_MBDist->setpreset(v); }});
 
 		BuildEffectBox(col, "Echotron", rkr, 41, &rkr->Echotron_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Echotron->changepar(n, v); },
@@ -1547,7 +2097,8 @@ private:
 			{
 				{"LFO Type", &kLfoTypeNames, 14},
 				{"IR", &kEchotronIRNames, 8},
-			});
+			}, nullptr,
+			{&kEchotronPresetNames, [rkr](int32 v) { rkr->efx_Echotron->setpreset(v); }});
 
 		BuildEffectBox(col, "Distorsion", rkr, 2, &rkr->Distorsion_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Distorsion->changepar(n, v); },
@@ -1567,7 +2118,8 @@ private:
 				{"Pre Filter", 10},
 				{"Stereo", 9},
 			},
-			{{"Type", &kDistTypeNames, 5}});
+			{{"Type", &kDistTypeNames, 5}}, nullptr,
+			{&kDistorsionPresetNames, [rkr](int32 v) { rkr->efx_Distorsion->setpreset(0, v + 2); }});
 
 		BuildEffectBox(col, "Harmonizer", rkr, 14, &rkr->Harmonizer_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Har->changepar(n, v); },
@@ -1586,7 +2138,8 @@ private:
 			{
 				{"MIDI", 10},
 				{"SEL", 5},
-			});
+			}, {}, nullptr,
+			{&kHarmonizerPresetNames, [rkr](int32 v) { rkr->efx_Har->setpreset(v); }});
 
 		BuildEffectBox(col, "Shifter", rkr, 38, &rkr->Shifter_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Shifter->changepar(n, v); },
@@ -1604,7 +2157,8 @@ private:
 			{
 				{"Down", 7},
 			},
-			{{"Mode", &kShifterModeNames, 8}});
+			{{"Mode", &kShifterModeNames, 8}}, nullptr,
+			{&kShifterPresetNames, [rkr](int32 v) { rkr->efx_Shifter->setpreset(v); }});
 
 		BuildEffectBox(col, "ShelfBoost", rkr, 34, &rkr->ShelfBoost_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_ShelfBoost->changepar(n, v); },
@@ -1617,14 +2171,16 @@ private:
 			},
 			{
 				{"Stereo", 3},
-			});
+			}, {}, nullptr,
+			{&kShelfBoostPresetNames, [rkr](int32 v) { rkr->efx_ShelfBoost->setpreset(v); }});
 
 		BuildEffectBox(col, "Cabinet", rkr, 12, &rkr->Cabinet_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Cabinet->changepar(n, v); },
 			[rkr](int32 n) { return rkr->efx_Cabinet->getpar(n); },
 			{
 				{"Gain", -64, 63, 0, 64},
-			});
+			}, {}, {}, nullptr,
+			{&kCabinetPresetNames, [rkr](int32 v) { rkr->Cabinet_setpreset(v); }});
 	}
 
 	void BuildColumn3(BView* col)
@@ -1643,7 +2199,8 @@ private:
 				{"Tri", 0, 100, 8, 0},
 				{"Saw", 0, 100, 9, 0},
 				{"Squ", 0, 100, 10, 0},
-			});
+			}, {}, {}, nullptr,
+			{&kRingPresetNames, [rkr](int32 v) { rkr->efx_Ring->setpreset(v); }});
 
 		BuildEffectBox(col, "Reverb", rkr, 8, &rkr->Reverb_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Rev->changepar(n, v); },
@@ -1656,7 +2213,8 @@ private:
 				{"HPF", 20, 20000, 8, 0},
 				{"Damp", 64, 127, 9, 0},
 				{"R.Size", 1, 127, 11, 0},
-			});
+			}, {}, {}, nullptr,
+			{&kReverbPresetNames, [rkr](int32 v) { rkr->efx_Rev->setpreset(v); }});
 
 		std::vector<ParamDef> chorusFlangerParams = {
 			{"Tempo", 1, 600, 2, 0},
@@ -1670,7 +2228,8 @@ private:
 		BuildEffectBox(col, "Flanger", rkr, 7, &rkr->Flanger_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Flanger->changepar(n, v); },
 			[rkr](int32 n) { return rkr->efx_Flanger->getpar(n); },
-			chorusFlangerParams);
+			chorusFlangerParams, {}, {}, nullptr,
+			{&kFlangerPresetNames, [rkr](int32 v) { rkr->efx_Flanger->setpreset(1, v + 5); }});
 
 		BuildEffectBox(col, "Alienwah", rkr, 11, &rkr->Alienwah_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Alienwah->changepar(n, v); },
@@ -1681,7 +2240,8 @@ private:
 				{"Feedback", 0, 127, 7, 0},
 				{"Delay", 0, 127, 8, 0},
 				{"Phase", 0, 127, 10, 0},
-			});
+			}, {}, {}, nullptr,
+			{&kAlienwahPresetNames, [rkr](int32 v) { rkr->efx_Alienwah->setpreset(v); }});
 
 		BuildEffectBox(col, "Echo", rkr, 4, &rkr->Echo_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Echo->changepar(n, v); },
@@ -1691,7 +2251,8 @@ private:
 				{"Feedback", 0, 127, 5, 0},
 				{"Damp", 0, 127, 6, 0},
 				{"L/R Cr.", -64, 63, 4, 64},
-			});
+			}, {}, {}, nullptr,
+			{&kEchoPresetNames, [rkr](int32 v) { rkr->efx_Echo->setpreset(v); }});
 
 		BuildEffectBox(col, "Sustainer", rkr, 36, &rkr->Sustainer_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Sustainer->changepar(n, v); },
@@ -1699,7 +2260,8 @@ private:
 			{
 				{"Gain", 0, 127, 0, 0},
 				{"Sustain", 1, 127, 1, 0},
-			});
+			}, {}, {}, nullptr,
+			{&kSustainerPresetNames, [rkr](int32 v) { rkr->efx_Sustainer->setpreset(v); }});
 
 		BuildEffectBox(col, "Synthfilter", rkr, 27, &rkr->Synthfilter_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Synthfilter->changepar(n, v); },
@@ -1722,7 +2284,8 @@ private:
 			{
 				{"Subtr.", 10},
 			},
-			{{"LFO Type", &kLfoTypeNames, 4}});
+			{{"LFO Type", &kLfoTypeNames, 4}}, nullptr,
+			{&kSynthfilterPresetNames, [rkr](int32 v) { rkr->efx_Synthfilter->setpreset(v); }});
 
 		BuildEffectBox(col, "DFlange", rkr, 20, &rkr->DFlange_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_DFlange->changepar(n, v); },
@@ -1744,7 +2307,8 @@ private:
 				{"Subtract", 8},
 				{"Th. zero", 9},
 			},
-			{{"LFO Type", &kLfoTypeNames, 12}});
+			{{"LFO Type", &kLfoTypeNames, 12}}, nullptr,
+			{&kDFlangePresetNames, [rkr](int32 v) { rkr->efx_DFlange->setpreset(v); }});
 
 		BuildEffectBox(col, "RyanWah", rkr, 31, &rkr->RyanWah_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_RyanWah->changepar(n, v); },
@@ -1766,7 +2330,8 @@ private:
 			{
 				{"Mode", 17},
 			},
-			{{"LFO", &kLfoTypeNames, 4}});
+			{{"LFO", &kLfoTypeNames, 4}}, nullptr,
+			{&kRyanWahPresetNames, [rkr](int32 v) { rkr->efx_RyanWah->setpreset(v); }});
 
 		BuildEffectBox(col, "Shuffle", rkr, 26, &rkr->Shuffle_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Shuffle->changepar(n, v); },
@@ -1785,7 +2350,8 @@ private:
 			},
 			{
 				{"Rev", 10},
-			});
+			}, {}, nullptr,
+			{&kShufflePresetNames, [rkr](int32 v) { rkr->efx_Shuffle->setpreset(v); }});
 
 		BuildEffectBox(col, "RBEcho", rkr, 32, &rkr->RBEcho_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_RBEcho->changepar(n, v); },
@@ -1802,7 +2368,8 @@ private:
 				{"Angle", -64, 64, 4, 64},
 			},
 			{},
-			{{"SubDiv", &kSubDivNames, 8}});
+			{{"SubDiv", &kSubDivNames, 8}}, nullptr,
+			{&kRBEchoPresetNames, [rkr](int32 v) { rkr->efx_RBEcho->setpreset(v); }});
 
 		BuildEffectBox(col, "Convolotron", rkr, 29, &rkr->Convol_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Convol->changepar(n, v); },
@@ -1818,7 +2385,8 @@ private:
 			{
 				{"Safe Mode", 2},
 			},
-			{{"IR", &kConvolIRNames, 8}});
+			{{"IR", &kConvolIRNames, 8}}, nullptr,
+			{&kConvolotronPresetNames, [rkr](int32 v) { rkr->efx_Convol->setpreset(v); }});
 	}
 
 	void BuildColumn4(BView* col)
@@ -1845,7 +2413,8 @@ private:
 				{"LPF", 20, 26000, 7, 0},
 				{"HPF", 20, 20000, 8, 0},
 			},
-			{}, {{"Type", &kDistTypeNames, 5}});
+			{}, {{"Type", &kDistTypeNames, 5}}, nullptr,
+			{&kNewDistPresetNames, [rkr](int32 v) { rkr->efx_NewDist->setpreset(v); }});
 
 		BuildEffectBox(col, "Noise Gate", rkr, 16, &rkr->Gate_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Gate->Gate_Change(n, v); },
@@ -1858,12 +2427,14 @@ private:
 				{"Hold", 2, 500, 7, 0},
 				{"LPF", 20, 26000, 5, 0},
 				{"HPF", 20, 20000, 6, 0},
-			});
+			}, {}, {}, nullptr,
+			{&kGatePresetNames, [rkr](int32 v) { rkr->efx_Gate->Gate_Change_Preset(v); }});
 
 		BuildEffectBox(col, "Chorus", rkr, 5, &rkr->Chorus_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Chorus->changepar(n, v); },
 			[rkr](int32 n) { return rkr->efx_Chorus->getpar(n); },
-			chorusFlangerParams);
+			chorusFlangerParams, {}, {}, nullptr,
+			{&kChorusPresetNames, [rkr](int32 v) { rkr->efx_Chorus->setpreset(0, v); }});
 
 		BuildEffectBox(col, "StompBox", rkr, 39, &rkr->StompBox_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_StompBox->changepar(n, v); },
@@ -1875,7 +2446,8 @@ private:
 				{"Mid", -64, 64, 2, 0},
 				{"High", -64, 64, 1, 0},
 			},
-			{}, {{"Mode", &kStompBoxModeNames, 5}});
+			{}, {{"Mode", &kStompBoxModeNames, 5}}, nullptr,
+			{&kStompBoxPresetNames, [rkr](int32 v) { rkr->efx_StompBox->setpreset(v); }});
 
 		BuildEffectBox(col, "WhaWha", rkr, 10, &rkr->WhaWha_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_WhaWha->changepar(n, v); },
@@ -1885,7 +2457,8 @@ private:
 				{"Depth", 0, 127, 6, 0},
 				{"Amp.Sens", 0, 127, 7, 0},
 				{"Smooth", 0, 127, 9, 0},
-			});
+			}, {}, {}, nullptr,
+			{&kWhaWhaPresetNames, [rkr](int32 v) { rkr->efx_WhaWha->setpreset(v); }});
 
 		BuildEffectBox(col, "Looper", rkr, 30, &rkr->Looper_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Looper->changepar(n, v); },
@@ -1927,7 +2500,8 @@ private:
 					[rkr](int32) { rkr->efx_Looper->changepar(7, 1); });
 				AddButton(transport, "t2", "Trk 2", 1,
 					[rkr](int32) { rkr->efx_Looper->changepar(8, 1); });
-			});
+			},
+			{&kLooperPresetNames, [rkr](int32 v) { rkr->efx_Looper->setpreset(v); }});
 
 		BuildEffectBox(col, "Sequence", rkr, 37, &rkr->Sequence_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Sequence->changepar(n, v); },
@@ -1950,7 +2524,8 @@ private:
 			{
 				{"Amp.", 11},
 			},
-			{{"Mode", &kSeqModeNames, 13}});
+			{{"Mode", &kSeqModeNames, 13}}, nullptr,
+			{&kSequencePresetNames, [rkr](int32 v) { rkr->efx_Sequence->setpreset(v); }});
 
 		BuildEffectBox(col, "StereoHarm", rkr, 42, &rkr->StereoHarm_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_StereoHarm->changepar(n, v); },
@@ -1970,7 +2545,8 @@ private:
 			{
 				{"MIDI", 10},
 				{"SEL", 7},
-			});
+			}, {}, nullptr,
+			{&kStereoHarmPresetNames, [rkr](int32 v) { rkr->efx_StereoHarm->setpreset(v); }});
 
 		BuildEffectBox(col, "MBVvol", rkr, 28, &rkr->MBVvol_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_MBVvol->changepar(n, v); },
@@ -1990,7 +2566,8 @@ private:
 				{"LFO 1", &kLfoTypeNames, 2},
 				{"LFO 2", &kLfoTypeNames, 5},
 				{"Combi", &kMBVvolCombiNames, 10},
-			});
+			}, nullptr,
+			{&kMBVvolPresetNames, [rkr](int32 v) { rkr->efx_MBVvol->setpreset(v); }});
 
 		BuildEffectBox(col, "CoilCrafter", rkr, 33, &rkr->CoilCrafter_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_CoilCrafter->changepar(n, v); },
@@ -2009,7 +2586,8 @@ private:
 			{
 				{"Origin", &kCoilOriginNames, 1},
 				{"Destiny", &kCoilOriginNames, 2},
-			});
+			}, nullptr,
+			{&kCoilCrafterPresetNames, [rkr](int32 v) { rkr->efx_CoilCrafter->setpreset(v); }});
 
 		BuildEffectBox(col, "Expander", rkr, 25, &rkr->Expander_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Expander->Expander_Change(n, v); },
@@ -2022,7 +2600,8 @@ private:
 				{"Level", 1, 127, 7, 0},
 				{"LPF", 20, 26000, 5, 0},
 				{"HPF", 20, 20000, 6, 0},
-			});
+			}, {}, {}, nullptr,
+			{&kExpanderPresetNames, [rkr](int32 v) { rkr->efx_Expander->Expander_Change_Preset(v); }});
 	}
 
 	RKR* fRkr;
