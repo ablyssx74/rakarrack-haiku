@@ -17,7 +17,7 @@ To see help:  ```make -f haiku.makefile help```
 
 3. To package:  ```make -f haiku.makefile package ```
 
-Steps 1,2,3 all together ```` make -f haiku.makefile release ```
+Steps 1,2,3 all together ``` make -f haiku.makefile release ```
 
 To clean: ``` make -f haiku.makefile clean``` 
 
