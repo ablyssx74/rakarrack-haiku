@@ -95,6 +95,12 @@ __attribute__((weak)) void RKR::calculavol(int i) { }
 // like the RKR::calculavol() stub above already does.
 __attribute__((weak)) void RKR::cleanup_efx() { }
 
+// Same story for loadfile()/savefile(): the real implementations live in
+// src/fileio.C (never linked into the small extra/ utilities), but this
+// file now calls them directly from the Save Preset/Load Preset buttons.
+__attribute__((weak)) void RKR::loadfile(char *filename) { }
+__attribute__((weak)) void RKR::savefile(char *filename) { }
+
 #define RKR_HAIKU_WEAK_CHANGEPAR(EffectClass) \
 	__attribute__((weak)) void EffectClass::changepar(int, int) { } \
 	__attribute__((weak)) int EffectClass::getpar(int) { return 0; }
@@ -118,12 +124,43 @@ RKR_HAIKU_WEAK_CHANGEPAR(Vibe)
 RKR_HAIKU_WEAK_CHANGEPAR(Opticaltrem)
 RKR_HAIKU_WEAK_CHANGEPAR(Pan)
 
+// Added when the remaining 25 effects were wired into native mode.
+// (Cabinet and EQ2 are both actually "class EQ *" in global.h -- see
+// efx_Cabinet/efx_EQ2 -- so they already resolve via RKR_HAIKU_WEAK_CHANGEPAR(EQ)
+// above and don't need their own entry here.)
+RKR_HAIKU_WEAK_CHANGEPAR(Convolotron)
+RKR_HAIKU_WEAK_CHANGEPAR(Looper)
+RKR_HAIKU_WEAK_CHANGEPAR(Sequence)
+RKR_HAIKU_WEAK_CHANGEPAR(StereoHarm)
+RKR_HAIKU_WEAK_CHANGEPAR(MBVvol)
+RKR_HAIKU_WEAK_CHANGEPAR(CoilCrafter)
+RKR_HAIKU_WEAK_CHANGEPAR(Reverbtron)
+RKR_HAIKU_WEAK_CHANGEPAR(MusicDelay)
+RKR_HAIKU_WEAK_CHANGEPAR(CompBand)
+RKR_HAIKU_WEAK_CHANGEPAR(Arpie)
+RKR_HAIKU_WEAK_CHANGEPAR(Vocoder)
+RKR_HAIKU_WEAK_CHANGEPAR(MBDist)
+RKR_HAIKU_WEAK_CHANGEPAR(Echotron)
+RKR_HAIKU_WEAK_CHANGEPAR(Harmonizer)
+RKR_HAIKU_WEAK_CHANGEPAR(Shifter)
+RKR_HAIKU_WEAK_CHANGEPAR(RyanWah)
+RKR_HAIKU_WEAK_CHANGEPAR(RBEcho)
+RKR_HAIKU_WEAK_CHANGEPAR(Synthfilter)
+RKR_HAIKU_WEAK_CHANGEPAR(ShelfBoost)
+RKR_HAIKU_WEAK_CHANGEPAR(Shuffle)
+RKR_HAIKU_WEAK_CHANGEPAR(Dflange)
+
 #undef RKR_HAIKU_WEAK_CHANGEPAR
 
 __attribute__((weak)) void Compressor::Compressor_Change(int, int) { }
 __attribute__((weak)) int Compressor::getpar(int) { return 0; }
 __attribute__((weak)) void Gate::Gate_Change(int, int) { }
 __attribute__((weak)) int Gate::getpar(int) { return 0; }
+
+// Expander uses Expander_Change() instead of changepar(), same pattern as
+// Compressor/Gate above.
+__attribute__((weak)) void Expander::Expander_Change(int, int) { }
+__attribute__((weak)) int Expander::getpar(int) { return 0; }
 
 
 extern pthread_mutex_t jmutex;
