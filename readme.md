@@ -11,11 +11,13 @@ Requires: Haiku 64bit or 32bit
 
 To see help:  ```make -f haiku.makefile help```
 
-To configure:  ```make -f haiku.makefile config ```
+1. To configure:  ```make -f haiku.makefile config ```
 
-To build:  ``` make -f haiku.makefile ``` 
+2. To build:  ``` make -f haiku.makefile ``` 
 
-To package:  ```make -f haiku.makefile package ```
+3. To package:  ```make -f haiku.makefile package ```
+
+Steps 1,2,3 all together ```` make -f haiku.makefile release ```
 
 To clean: ``` make -f haiku.makefile clean``` 
 
