@@ -11,7 +11,7 @@ Requires: Haiku 64bit or 32bit
 
 To see help:  ```make -f haiku.makefile help```
 
-Building from:
+Building From Source:
 
 1. Configure:  ```make -f haiku.makefile config ```
 
