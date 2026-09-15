@@ -326,6 +326,7 @@ static const std::vector<std::string> kSeqModeNames = { // menu_seq_mode
 };
 static const std::vector<std::string> kShifterModeNames = { "Trigger", "Whammy" }; // menu_shifter_mode
 static const std::vector<std::string> kMIDIOctaveNames = { "-2", "-1", "0", "1", "2" }; // menu_MIDIOctave
+static const std::vector<std::string> kCCMapNames = { "Default", "MIDI Learn" }; // Mw0/Mw1
 
 // Built-in impulse-response/cabinet selectors for the three effects that can
 // also load a *custom* file via a Browse button in the FLTK GUI (Convol,
@@ -1266,6 +1267,52 @@ public:
 			midiBody->Hide();
 		midiContent->AddChild(midiBody);
 
+		// Like the Input Gain/Master Volume sliders above, AddSlider() only
+		// sets a slider's on-screen position from whatever field it's
+		// given as "initial" -- it never fires the slider's own callback,
+		// so anything that needs the *engine* to actually know that value
+		// (not just the widget to display it) has to be primed here,
+		// before any of the sliders below are built (several of them read
+		// these same fields for their own initial display).
+		//
+		// efx_MIDIConverter->channel/TrigVal happen to already be fine
+		// without this -- MIDIConverter's own constructor defaults
+		// (channel 0, TrigVal .25f) already match what's shown below --
+		// but VelVal (which MIDI_Send_Note_On() uses to compute the
+		// velocity byte sent to an external synth) has NO constructor
+		// default at all, so it was whatever garbage happened to be on
+		// the heap. rakarrack.cxx always primes this at startup too (see
+		// its "Velocity Adjust" pref, default 50) even though no Velocity
+		// slider is exposed here (per instructions -- it doesn't work).
+		// Without this, notes could reach an external synth (e.g.
+		// MidiSynth) and visibly trigger there -- schmittFloat()'s note
+		// detection doesn't depend on VelVal -- while playing at whatever
+		// garbage velocity resulted, typically silent once clamped to the
+		// 1-127 range.
+		rkr->efx_MIDIConverter->setmidichannel(rkr->efx_MIDIConverter->channel);
+		rkr->efx_MIDIConverter->setTriggerAdjust(
+			rkr->efx_MIDIConverter->TrigVal > 0.0f
+				? (int32)(1.0f / rkr->efx_MIDIConverter->TrigVal + 0.5f)
+				: 4);
+		rkr->efx_MIDIConverter->setVelAdjust(50);
+
+		// Same story again, this time for incoming MIDI ("Rakarrack IN" --
+		// see src/rkrMIDI.C's RKR::Conecta()/jack_process_midievents()):
+		// rkr->MidiCh and rkr->RControl are given real defaults by
+		// RKR::RKR() itself (src/process.C), shared by every frontend, so
+		// they're already fine here. rkr->HarCh (the channel the
+		// Harmonizer/StereoHarm "MIDI" toggle listens on for chord input
+		// via RecChord::MiraChord()) and rkr->MIDIway (which CC-mapping
+		// table process_midi_controller_events() uses) are NOT -- like
+		// VelVal above, rakarrack.cxx only ever sets them from its own
+		// "MIDI IN Harmonizer"/"MIDI Implementation" prefs at startup, so
+		// without this they'd be whatever garbage was on the heap here.
+		// Defaults match rakarrack.cxx's own fallbacks when no saved
+		// preference exists (channel 1, i.e. HarCh 0; MIDIway 0, the
+		// built-in CC map rather than the empty custom XUserMIDI table).
+		rkr->HarCh = 0;
+		rkr->MIDIway = 0;
+
 		// Wide gap between controls (vs. AddSlider's own tight 6px
 		// label/value/slider spacing within each one) so each slider
 		// clearly reads as trailing its own preceding label+value instead
@@ -1276,7 +1323,11 @@ public:
 		midiRow1->SetViewColor(kPanelColor);
 		midiBody->AddChild(midiRow1);
 
-		AddSlider(midiRow1, "midi_channel", "Channel", 1, 16,
+		// "Out Ch" -- named to distinguish it from "In Ch" below; this is
+		// the channel efx_MIDIConverter sends the guitar's converted
+		// notes out on (the "Rakarrack OUT" MIDI endpoint), not anything
+		// to do with incoming MIDI.
+		AddSlider(midiRow1, "midi_channel", "Out Ch", 1, 16,
 			rkr->efx_MIDIConverter->channel + 1,
 			[rkr](int32 v) { rkr->efx_MIDIConverter->setmidichannel(v - 1); },
 			kHeaderSliderWidth);
@@ -1295,7 +1346,7 @@ public:
 		// Second row: the guitar-to-MIDI pitch tracker's own fine-tune
 		// knobs (Conv_Trig_Counter/Conv_Stable_Counter/Conv_Off_Counter/
 		// Conv_Freq_Ceiling_Counter/Conv_Freq_Floor_Counter in
-		// rakarrack.cxx). Unlike Channel/Trigger/Octave above, these five
+		// rakarrack.cxx). Unlike Out Ch/Trigger/Octave above, these five
 		// don't need explicit startup priming -- p_trigfact/
 		// p_stable_threshold/p_off_count_max/p_freq_ceiling/p_freq_floor
 		// all already have constructor defaults in MIDIConverter.C that
@@ -1336,32 +1387,41 @@ public:
 			[rkr](int32 v) { rkr->efx_MIDIConverter->p_freq_floor = (float)v; },
 			kHeaderSliderWidth);
 
-		midiBox->AddChild(midiContent);
+		// Third row: incoming MIDI ("Rakarrack IN") settings -- a native
+		// port of rakarrack.cxx's Midi_In_Counter/Har_In_Counter/Mw0+Mw1
+		// (Fl_Preferences "MIDI IN Channel"/"MIDI IN Harmonizer"/"MIDI
+		// Implementation"). "In Ch" gates Program Change (preset
+		// switching) and Control Change (parameter control, see
+		// RKR::process_midi_controller_events() in src/rkrMIDI.C); "Har
+		// Ch" is the separate channel the Harmonizer/StereoHarm "MIDI"
+		// toggle listens on for chord input (RecChord::MiraChord()); "CC
+		// Map" (labels match Mw0/Mw1 exactly) picks which table Control
+		// Change messages are looked up in. "MIDI Learn" isn't much use
+		// without a way to fill in XUserMIDI's per-CC assignments --
+		// rakarrack.cxx's own MIDI-learn UI for that ("ML_Menu") isn't
+		// ported here -- so it's included for parity/no-surprises rather
+		// than because it's fully usable yet; "Default" (the default
+		// either way) is the built-in CC map real rakarrack ships with,
+		// and needs no extra setup.
+		BGroupView* midiRow3 = new BGroupView(B_HORIZONTAL, 24);
+		midiRow3->SetViewColor(kPanelColor);
+		midiBody->AddChild(midiRow3);
 
-		// Like the Input Gain/Master Volume sliders above, AddSlider() only
-		// sets the Channel/Trigger sliders' on-screen position from
-		// MIDIConverter's current channel/TrigVal -- it never fires their
-		// callback, so setmidichannel()/setTriggerAdjust() themselves are
-		// never actually called unless the user touches those sliders.
-		// Channel and Trigger happened to still work without this because
-		// MIDIConverter's own constructor defaults (channel 0, TrigVal
-		// .25f) already match what's shown here -- but VelVal (which
-		// MIDI_Send_Note_On() uses to compute the velocity byte sent to an
-		// external synth) has NO constructor default at all, so it was
-		// whatever garbage happened to be on the heap. rakarrack.cxx always
-		// primes this at startup too (see its "Velocity Adjust" pref,
-		// default 50) even though no Velocity slider is exposed here
-		// (per instructions -- it doesn't work). Without this, notes could
-		// reach an external synth (e.g. MidiSynth) and visibly trigger
-		// there -- schmittFloat()'s note detection doesn't depend on
-		// VelVal -- while playing at whatever garbage velocity resulted,
-		// typically silent once clamped to the 1-127 range.
-		rkr->efx_MIDIConverter->setmidichannel(rkr->efx_MIDIConverter->channel);
-		rkr->efx_MIDIConverter->setTriggerAdjust(
-			rkr->efx_MIDIConverter->TrigVal > 0.0f
-				? (int32)(1.0f / rkr->efx_MIDIConverter->TrigVal + 0.5f)
-				: 4);
-		rkr->efx_MIDIConverter->setVelAdjust(50);
+		AddSlider(midiRow3, "midi_in_ch", "In Ch", 1, 16,
+			rkr->MidiCh + 1,
+			[rkr](int32 v) { rkr->MidiCh = v - 1; },
+			kHeaderSliderWidth);
+
+		AddSlider(midiRow3, "midi_har_ch", "Har Ch", 1, 16,
+			rkr->HarCh + 1,
+			[rkr](int32 v) { rkr->HarCh = v - 1; },
+			kHeaderSliderWidth);
+
+		AddTypeMenu(midiRow3, "midi_ccmap", "CC Map", kCCMapNames,
+			rkr->MIDIway,
+			[rkr](int32 v) { rkr->MIDIway = v; });
+
+		midiBox->AddChild(midiContent);
 
 		// Row 3: Input Gain/Master Volume next to the scope.
 		BGroupView* meterRow = new BGroupView(B_HORIZONTAL, 10);
