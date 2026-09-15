@@ -65,6 +65,7 @@
 #include <string>
 #include <deque>
 #include <vector>
+#include <map>
 
 // Pulls in the full RKR engine class (global.h) so we can call the real
 // effect objects' public parameter APIs directly -- the same interface
@@ -684,6 +685,30 @@ static int* BypassPtrForId(RKR* rkr, int effectId) {
 	default: return nullptr;
 	}
 }
+
+// Effects whose on-screen controls get re-synced with the engine's actual
+// values after a Load Preset (see RakarrackView::fEffectRefreshers/
+// RefreshEffectBoxes() and RakarrackWindow::HandleRefsReceived()). Doing
+// this for all 46 effects at once is a much bigger job (every ParamDef/
+// ToggleDef/TypeMenuDef across every BuildColumnN call site needs the same
+// scrutiny this list already got); starting with just these nine, picked
+// for testing, keeps that work bounded and verifiable before widening it.
+// Extending coverage later is just adding more IDs here (each effect's
+// BuildEffectBox call already builds and registers its own refresher
+// unconditionally -- see BuildEffectBox's "refreshers" comment -- so no
+// other code needs to change), using the same effect-type IDs as
+// BypassPtrForId()'s switch just above.
+static const std::vector<int> kPresetRefreshEffectIds = {
+	8,	// Reverb
+	12,	// Cabinet
+	19,	// Valve
+	25,	// Expander
+	29,	// Convolotron
+	33,	// CoilCrafter
+	34,	// ShelfBoost
+	39,	// StompBox
+	40,	// Reverbtron
+};
 
 // Returns true if effectId is now (or already was) occupying a slot.
 // False means all 10 slots are held by other currently-active effects.
@@ -1722,7 +1747,12 @@ private:
 		// Every effect box slider relies on the 190px default; only the
 		// header's Input Gain/Master Volume/MIDI Channel/MIDI Trigger pass
 		// something narrower (see BuildHeader) to keep that row compact.
-		int32 width = 190)
+		int32 width = 190,
+		// See BuildEffectBox's "refreshers" comment -- both null for every
+		// call site outside BuildEffectBox itself (Input Gain/Master
+		// Volume/MIDI), which have no per-effect refresh list to join.
+		std::function<int32()> refreshValue = nullptr,
+		std::vector<std::function<void()>>* refreshers = nullptr)
 	{
 		BGroupView* row = new BGroupView(B_HORIZONTAL, 6);
 		row->SetViewColor(kPanelColor);
@@ -1767,6 +1797,17 @@ private:
 		row->AddChild(valueView);
 		row->AddChild(s);
 		parent->AddChild(row);
+
+		if (refreshers && refreshValue) {
+			refreshers->push_back([s, valueView, refreshValue]() {
+				int32 v = refreshValue();
+				s->SetValue(v);
+				char buf[16];
+				snprintf(buf, sizeof(buf), "%d", (int)v);
+				valueView->SetText(buf);
+			});
+		}
+
 		return s;
 	}
 
@@ -1777,7 +1818,9 @@ private:
 	// below, rather than firing on every single drag step.
 	BSlider* AddDebouncedSlider(BView* parent, const char* name,
 		const char* label, int32 min, int32 max, int32 initial,
-		std::function<void(int32)> fn)
+		std::function<void(int32)> fn,
+		std::function<int32()> refreshValue = nullptr,
+		std::vector<std::function<void()>>* refreshers = nullptr)
 	{
 		BGroupView* row = new BGroupView(B_HORIZONTAL, 6);
 		row->SetViewColor(kPanelColor);
@@ -1830,17 +1873,41 @@ private:
 		row->AddChild(valueView);
 		row->AddChild(s);
 		parent->AddChild(row);
+
+		if (refreshers && refreshValue) {
+			// A refresh is a programmatic snap-to-the-loaded-value, not a
+			// drag -- goes straight to the slider/label, bypassing the
+			// pending-entry/Pulse() debounce machinery above entirely
+			// (nothing to coalesce; there's exactly one value to show).
+			refreshers->push_back([s, valueView, refreshValue]() {
+				int32 v = refreshValue();
+				s->SetValue(v);
+				char buf[16];
+				snprintf(buf, sizeof(buf), "%d", (int)v);
+				valueView->SetText(buf);
+			});
+		}
+
 		return s;
 	}
 
 	BCheckBox* AddToggle(BView* parent, const char* name, const char* label,
-		bool initial, std::function<void(int32)> fn)
+		bool initial, std::function<void(int32)> fn,
+		std::function<int32()> refreshValue = nullptr,
+		std::vector<std::function<void()>>* refreshers = nullptr)
 	{
 		int32 idx = Bind(fn);
 		BCheckBox* c = new BCheckBox(name, label, MakeMessage(idx));
 		c->SetValue(initial ? B_CONTROL_ON : B_CONTROL_OFF);
 		c->SetViewColor(kPanelColor);
 		parent->AddChild(c);
+
+		if (refreshers && refreshValue) {
+			refreshers->push_back([c, refreshValue]() {
+				c->SetValue(refreshValue() != 0 ? B_CONTROL_ON : B_CONTROL_OFF);
+			});
+		}
+
 		return c;
 	}
 
@@ -1860,7 +1927,9 @@ private:
 
 	BMenuField* AddTypeMenu(BView* parent, const char* name, const char* label,
 		const std::vector<std::string>& items, int32 initial,
-		std::function<void(int32)> fn)
+		std::function<void(int32)> fn,
+		std::function<int32()> refreshValue = nullptr,
+		std::vector<std::function<void()>>* refreshers = nullptr)
 	{
 		int32 idx = Bind(fn);
 		BPopUpMenu* menu = new BPopUpMenu(label);
@@ -1875,6 +1944,15 @@ private:
 		BMenuField* field = new BMenuField(name, label, menu);
 		field->SetViewColor(kPanelColor);
 		parent->AddChild(field);
+
+		if (refreshers && refreshValue) {
+			refreshers->push_back([menu, refreshValue]() {
+				BMenuItem* item = menu->ItemAt(refreshValue());
+				if (item)
+					item->SetMarked(true);
+			});
+		}
+
 		return field;
 	}
 
@@ -1967,26 +2045,40 @@ private:
 		if (preset.items && preset.apply)
 			AddTypeMenu(body, "Preset", "Preset", *preset.items, 0, preset.apply);
 
+		// Collects one "snap this control to getFn()'s current value" closure
+		// per type menu/toggle/slider below (each Add* pushes its own, given
+		// refreshValue+refreshers) so that, after this box is fully built,
+		// they can all be replayed together to re-prime every widget from
+		// the engine's current state -- see fEffectRefreshers/
+		// RefreshEffectBoxes() and RakarrackWindow::HandleRefsReceived()'s
+		// use of it after a Load Preset. Never touched again once this
+		// function returns.
+		std::vector<std::function<void()>> refreshers;
+
 		for (const TypeMenuDef& t : typeMenus) {
 			AddTypeMenu(body, t.label, t.label, *t.items,
 				getFn(t.npar) - t.offset,
-				[changeFn, t](int32 v) { changeFn(t.npar, v + t.offset); });
+				[changeFn, t](int32 v) { changeFn(t.npar, v + t.offset); },
+				[getFn, t]() { return getFn(t.npar) - t.offset; }, &refreshers);
 		}
 
 		for (const ToggleDef& t : toggles) {
 			AddToggle(body, t.label, t.label, getFn(t.npar) != 0,
-				[changeFn, t](int32 v) { changeFn(t.npar, v); });
+				[changeFn, t](int32 v) { changeFn(t.npar, v); },
+				[getFn, t]() { return getFn(t.npar); }, &refreshers);
 		}
 
 		for (const ParamDef& p : params) {
 			if (p.debounced) {
 				AddDebouncedSlider(body, p.label, p.label, p.min, p.max,
 					getFn(p.npar) - p.offset,
-					[changeFn, p](int32 v) { changeFn(p.npar, v + p.offset); });
+					[changeFn, p](int32 v) { changeFn(p.npar, v + p.offset); },
+					[getFn, p]() { return getFn(p.npar) - p.offset; }, &refreshers);
 			} else {
 				AddSlider(body, p.label, p.label, p.min, p.max,
 					getFn(p.npar) - p.offset,
-					[changeFn, p](int32 v) { changeFn(p.npar, v + p.offset); });
+					[changeFn, p](int32 v) { changeFn(p.npar, v + p.offset); }, 190,
+					[getFn, p]() { return getFn(p.npar) - p.offset; }, &refreshers);
 			}
 		}
 
@@ -1996,6 +2088,24 @@ private:
 		box->AddChild(content);
 		column->AddChild(box);
 		fEffectBoxes.push_back({box, bypass});
+
+		// Re-primes this box's "On" state and every control above from the
+		// engine's CURRENT values -- exactly the same reads BuildEffectBox
+		// itself just did at construction, just replayed later. See
+		// RefreshEffectBoxes()/fEffectRefreshers' own comment for when this
+		// actually gets called.
+		fEffectRefreshers[effectId] = [rkr, effectId, bypass, onToggle, body,
+			refreshers]() {
+			if (*bypass != 0 && !ActivateEffectSlot(rkr, effectId))
+				*bypass = 0;
+			onToggle->SetValue(*bypass != 0 ? B_CONTROL_ON : B_CONTROL_OFF);
+			if (*bypass != 0)
+				body->Show();
+			else
+				body->Hide();
+			for (const std::function<void()>& fn : refreshers)
+				fn();
+		};
 	}
 
 	// Four columns instead of five -- with each slider now ~2x as wide (see
@@ -2897,6 +3007,30 @@ private:
 				e.box->Show();
 		}
 	}
+
+public:
+	// One "re-prime every widget in this box from getFn()" closure per
+	// effect, built by BuildEffectBox regardless of which effect it is --
+	// see that function's own "refreshers" comment. Keyed by the same
+	// effect-type ID BypassPtrForId()/efx_order[] use.
+	std::map<int, std::function<void()>> fEffectRefreshers;
+
+	// Re-syncs the given effects' on-screen controls (On toggle, sliders,
+	// toggles, type menus) with whatever the engine's current parameter
+	// values actually are. Called by RakarrackWindow::HandleRefsReceived()
+	// right after a Load Preset -- loadfile() changes the engine and audio
+	// immediately, but every widget here was only ever primed once, at its
+	// own construction, so without this the on-screen positions would keep
+	// showing whatever was there before the load. Silently does nothing for
+	// an effectId this session hasn't wired a refresher for.
+	void RefreshEffectBoxes(const std::vector<int>& effectIds)
+	{
+		for (int id : effectIds) {
+			auto it = fEffectRefreshers.find(id);
+			if (it != fEffectRefreshers.end())
+				it->second();
+		}
+	}
 };
 
 class RakarrackWindow : public BWindow {
@@ -3030,16 +3164,21 @@ private:
 		pthread_mutex_unlock(&jmutex);
 
 		// The engine and audio output switch to the loaded preset
-		// immediately; the on-screen slider/toggle/dropdown positions
-		// don't, since nothing here re-primes those widgets from the
-		// engine's new state after the fact (every effect box reads its
-		// initial values once, at construction). Rebuilding all of them
-		// live is a real project of its own -- flagging it plainly rather
-		// than leaving the mismatch to look like a bug.
+		// immediately; every widget was only ever primed once, at its own
+		// construction, so without this the on-screen positions would keep
+		// showing whatever was there before the load. Re-synced here for
+		// kPresetRefreshEffectIds' effects specifically -- see that list's
+		// own comment for why it's not all 46 yet. Plain int reads (getpar()
+		// and friends), same as BuildEffectBox's own construction-time
+		// priming, so no lock needed here either.
+		fMainView->RefreshEffectBoxes(kPresetRefreshEffectIds);
+
 		BAlert* alert = new BAlert("Preset Loaded",
 			"The preset was loaded and is already playing -- audio reflects "
-			"it now. The on-screen slider and toggle positions won't catch "
-			"up until Rakarrack is restarted, though.",
+			"it now. Reverb, Cabinet, Valve, Expander, Convolotron, "
+			"CoilCrafter, ShelfBoost, StompBox and Reverbtron's on-screen "
+			"controls now match it too; every other effect's positions "
+			"won't catch up until Rakarrack is restarted.",
 			"OK", NULL, NULL, B_WIDTH_AS_USUAL, B_INFO_ALERT);
 		alert->Go(NULL);
 	}
