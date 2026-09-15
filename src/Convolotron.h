@@ -44,7 +44,30 @@ public:
   int setfile (int value);
   void adjust(int DS);
   void loaddefault();
-  
+
+  // Two-phase preset apply, added for native (Haiku) mode: setpreset()
+  // above loads its IR file (via setfile() -> process_rbuf()) as part of
+  // one synchronous call, which native mode was invoking with the
+  // real-time audio callback's lock held -- fine for the other 10 cheap
+  // int parameters a preset sets, but the disk read (and, if the file's
+  // sample rate differs, a resample pass) could stall that lock for far
+  // longer than the callback can tolerate, flooding the audio backend
+  // with buffer underruns. setpresetPrefetch() below does that same read
+  // into a private scratch buffer that out()/Alg() never touch, so it is
+  // safe to call without holding any lock; setpresetCommit() then applies
+  // everything -- the prefetched IR plus the other 10 parameters -- and
+  // must be called with that lock held, same as any other changepar().
+  // setpreset() itself is untouched and still used as-is elsewhere.
+  void setpresetPrefetch (int npreset);
+  void setpresetCommit ();
+
+  // The same split, exposed directly for native mode's standalone "IR"
+  // dropdown (a plain changepar(8, ...) outside of any preset) -- see
+  // haiku_native/haiku-rakarrack.cpp's Convolotron box for how these two
+  // are paired around an unlock/relock the same way.
+  void prefetchIR (int value);
+  void commitIR ();
+
   int Ppreset;
 
   float *efxoutl;
@@ -70,6 +93,21 @@ private:
   void setpanning (int Ppanning);
   void sethidamp (int Phidamp);
   void process_rbuf();
+
+  // State for the setpresetPrefetch()/setpresetCommit() split above.
+  // ioScratch/rsScratch are read/resample scratch space sized exactly
+  // like buf/rbuf but never touched by out(), so prefetchIR() can fill
+  // them without any lock; commitIR() copies the result into the real
+  // rbuf (which out() does read) under the caller's lock.
+  float *ioScratch, *rsScratch;
+  int scratchLen;
+  bool scratchValid;
+  bool scratchOpenFailed;
+  char scratchFilename[128];
+  int scratchFilenum;
+  int pendingParams[11];
+  int pendingPreset;
+  bool pendingValid;
 
   int offset;
   int maxx_size,maxx_read,real_len,length;

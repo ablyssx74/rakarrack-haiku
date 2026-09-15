@@ -56,7 +56,15 @@ Convolotron::Convolotron (float * efxoutl_, float * efxoutr_,int DS, int uq, int
   maxx_size = (int) (nfSAMPLE_RATE * convlength);  //just to get the max memory allocated
   buf = (float *) malloc (sizeof (float) * maxx_size);
   rbuf = (float *) malloc (sizeof (float) * maxx_size);
-  lxn = (float *) malloc (sizeof (float) * maxx_size);  
+  lxn = (float *) malloc (sizeof (float) * maxx_size);
+  ioScratch = (float *) malloc (sizeof (float) * maxx_size);
+  rsScratch = (float *) malloc (sizeof (float) * maxx_size);
+  scratchLen = 0;
+  scratchValid = false;
+  scratchOpenFailed = false;
+  memset (scratchFilename, 0, sizeof (scratchFilename));
+  scratchFilenum = 0;
+  pendingValid = false;
   maxx_size--;
   offset = 0;  
   M_Resample = new Resample(0);
@@ -397,6 +405,160 @@ Convolotron::setpreset (int npreset)
   }
   Ppreset = npreset;
 };
+
+
+// See Convolotron.h for why this pair exists. Mirrors setpreset() above
+// exactly (same tables, same Fpre/pdata path for a saved custom preset)
+// but only computes what the preset would apply and prefetches its IR
+// file (param 8) into scratch space -- no member out()/Alg() reads is
+// touched, so this is safe to call without the caller's lock held.
+void
+Convolotron::setpresetPrefetch (int npreset)
+{
+  const int PRESET_SIZE = 11;
+  const int NUM_PRESETS = 4;
+  int presets[NUM_PRESETS][PRESET_SIZE] = {
+    {67, 64, 1, 100, 0, 64, 30, 20, 0, 0, 0},
+    {67, 64, 1, 100, 0, 64, 30, 20, 1, 0, 0},
+    {67, 75, 1, 100, 0, 64, 30, 20, 2, 0, 0},
+    {67, 60, 1, 100, 0, 64, 30, 20, 3, 0, 0}
+  };
+
+  if (npreset > NUM_PRESETS - 1)
+    {
+      Fpre->ReadPreset (29, npreset - NUM_PRESETS + 1);
+      for (int n = 0; n < PRESET_SIZE; n++)
+        pendingParams[n] = pdata[n];
+    }
+  else
+    {
+      for (int n = 0; n < PRESET_SIZE; n++)
+        pendingParams[n] = presets[npreset][n];
+    }
+  pendingPreset = npreset;
+
+  // changepar()'s own loop in setpreset() applies param 4 (Puser) before
+  // param 8 (the IR file index), so setfile() always sees this preset's
+  // Puser, not a stale one -- do the same here before prefetching.
+  Puser = pendingParams[4];
+  prefetchIR (pendingParams[8]);
+  pendingValid = true;
+}
+
+// Applies everything setpresetPrefetch() computed: the prefetched IR
+// (via commitIR(), replacing what changepar(8, ...) would have done) and
+// the other 10 params through the normal changepar() cases. Must be
+// called with the caller's lock held -- this is where buf/rbuf/length,
+// which out() reads every callback, actually change.
+void
+Convolotron::setpresetCommit ()
+{
+  if (!pendingValid)
+    return;
+  const int PRESET_SIZE = 11;
+  for (int n = 0; n < PRESET_SIZE; n++)
+    {
+      if (n == 8)
+        commitIR ();
+      else
+        changepar (n, pendingParams[n]);
+    }
+  Ppreset = pendingPreset;
+  pendingValid = false;
+}
+
+// The read+resample steps of setfile() below, unchanged, except the
+// result lands in ioScratch/rsScratch instead of rbuf -- so this touches
+// nothing out()/Alg() reads and needs no lock. Presets never set Puser
+// (see setpresetPrefetch()), so the Puser==1 (user-chosen file) case is
+// handled for completeness but isn't exercised from a preset.
+void
+Convolotron::prefetchIR (int value)
+{
+  SNDFILE *lf;
+  SF_INFO lsfinfo;
+  char lFilename[128];
+  int frames, readcount;
+  double sr_ratio;
+
+  scratchLen = 0;
+  scratchValid = false;
+  scratchOpenFailed = false;
+
+  memset (lFilename, 0, sizeof (lFilename));
+  if (!Puser)
+    sprintf (lFilename, "%s/%d.wav", DATADIR, value + 1);
+  else
+    strncpy (lFilename, Filename, sizeof (lFilename) - 1);
+
+  scratchFilenum = value;
+  strncpy (scratchFilename, lFilename, sizeof (scratchFilename) - 1);
+
+  lsfinfo.format = 0;
+  if (!(lf = sf_open (lFilename, SFM_READ, &lsfinfo)))
+    {
+      scratchOpenFailed = true;
+      scratchValid = true;
+      return;
+    }
+
+  frames = (int) lsfinfo.frames;
+  if (frames > maxx_read)
+    frames = maxx_read;
+  readcount = sf_seek (lf, 0, SEEK_SET);
+  readcount = sf_readf_float (lf, ioScratch, frames);
+  sf_close (lf);
+
+  if (lsfinfo.samplerate != (int) nSAMPLE_RATE)
+    {
+      sr_ratio = (double) nSAMPLE_RATE / ((double) lsfinfo.samplerate);
+      M_Resample->mono_out (ioScratch, rsScratch, frames, sr_ratio,
+        lrint ((double) frames * sr_ratio));
+      frames = lrintf ((float) frames * (float) sr_ratio);
+      memcpy (ioScratch, rsScratch, frames * sizeof (float));
+    }
+
+  scratchLen = frames;
+  scratchValid = true;
+}
+
+// The rest of setfile() below: copies the prefetched IR into the live
+// rbuf and re-runs process_rbuf() -- must run under the caller's lock,
+// same as changepar(8, ...) always did.
+void
+Convolotron::commitIR ()
+{
+  if (!scratchValid)
+    return;
+
+  offset = 0;
+  maxx_read = maxx_size / 2;
+  memset (buf, 0, sizeof (float) * maxx_size);
+  memset (rbuf, 0, sizeof (float) * maxx_size);
+
+  if (!Puser)
+    {
+      Filenum = scratchFilenum;
+      memset (Filename, 0, sizeof (Filename));
+      strncpy (Filename, scratchFilename, sizeof (Filename) - 1);
+    }
+
+  if (scratchOpenFailed)
+    {
+      real_len = 1;
+      length = 1;
+      rbuf[0] = 1.0f;
+      process_rbuf ();
+      error_num = 1;
+      scratchValid = false;
+      return;
+    }
+
+  real_len = scratchLen;
+  memcpy (rbuf, ioScratch, real_len * sizeof (float));
+  process_rbuf ();
+  scratchValid = false;
+}
 
 
 void

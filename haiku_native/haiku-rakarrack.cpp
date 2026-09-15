@@ -242,6 +242,14 @@ __attribute__((weak)) void RKR::EQ1_setpreset(int) { }
 __attribute__((weak)) void RKR::EQ2_setpreset(int) { }
 __attribute__((weak)) int RKR::Cabinet_setpreset(int) { return 0; }
 
+// Convolotron's setpresetPrefetch()/setpresetCommit()/prefetchIR()/
+// commitIR() (src/Convolotron.h) are called directly from this file's
+// Convolotron box (BuildColumn3) for the same reason as every stub above.
+__attribute__((weak)) void Convolotron::setpresetPrefetch(int) { }
+__attribute__((weak)) void Convolotron::setpresetCommit() { }
+__attribute__((weak)) void Convolotron::prefetchIR(int) { }
+__attribute__((weak)) void Convolotron::commitIR() { }
+
 // PERIOD (src/process.C) is a plain global, not a function -- same linking
 // problem, same fix: a weak fallback definition that the strong one in
 // process.C overrides whenever this file is linked into the real
@@ -1181,6 +1189,32 @@ public:
 		fCpuDisplay->SetExplicitMinSize(BSize(80, B_SIZE_UNSET));
 		fCpuDisplay->SetExplicitMaxSize(BSize(80, B_SIZE_UNSET));
 
+		// "Hide Inactive Effects" + the live "Max Concurrent Effects
+		// Allowed: N of 10" readout, stacked directly under the CPU display
+		// -- see fEffectBoxes/RefreshEffectVisibility() and Pulse() below.
+		fHideInactive = new BCheckBox("hide_inactive", "Hide Inactive Effects",
+			MakeMessage(Bind([this](int32 v) {
+				fHideInactiveEffects = v != 0;
+				RefreshEffectVisibility();
+			})));
+		fHideInactive->SetViewColor(kBgColor);
+
+		fMaxEffectsLabel = new BStringView("max_effects",
+			"Max Concurrent Effects Allowed: 0 of 10");
+		fMaxEffectsLabel->SetHighColor(kLabelColor);
+		fMaxEffectsLabel->SetLowColor(kBgColor);
+		BFont maxEffectsFont(be_plain_font);
+		maxEffectsFont.SetSize(10.0f);
+		maxEffectsFont.SetFace(B_ITALIC_FACE);
+		fMaxEffectsLabel->SetFont(&maxEffectsFont);
+
+		BGroupView* cpuGroup = new BGroupView(B_VERTICAL, 2);
+		cpuGroup->SetViewColor(kBgColor);
+		cpuGroup->GroupLayout()->SetInsets(0);
+		cpuGroup->AddChild(fCpuDisplay);
+		cpuGroup->AddChild(fHideInactive);
+		cpuGroup->AddChild(fMaxEffectsLabel);
+
 		fMasterFX = new BCheckBox("master_fx", "FX Engine",
 			MakeMessage(Bind([rkr](int32 v) {
 				rkr->Bypass = v ? 1 : 0;
@@ -1225,7 +1259,7 @@ public:
 		BGroupView* controls = new BGroupView(B_HORIZONTAL, 10);
 		controls->GroupLayout()->SetInsets(10, 0, 10, 4);
 		controls->SetViewColor(kBgColor);
-		controls->AddChild(fCpuDisplay);
+		controls->AddChild(cpuGroup);
 		controls->AddChild(fMasterFX);
 		controls->AddChild(boost);
 		controls->AddChild(orderBtn);
@@ -1565,6 +1599,22 @@ public:
 		char cpuBuf[32];
 		sprintf(cpuBuf, "CPU: %5.2f%%", (float)fRkr->cpuload);
 		fCpuDisplay->SetText(cpuBuf);
+
+		// Live count of effects currently occupying one of the engine's 10
+		// efx_order[] slots (see fEffectBoxes' own comment) -- any box's
+		// "On" toggle can change this at any time, so this, like the CPU
+		// readout above, is refreshed every Pulse() rather than only when
+		// a box is built.
+		int activeCount = 0;
+		for (EffectBoxEntry& e : fEffectBoxes) {
+			if (*e.bypass != 0)
+				activeCount++;
+		}
+		char maxEffectsBuf[64];
+		snprintf(maxEffectsBuf, sizeof(maxEffectsBuf),
+			"Max Concurrent Effects Allowed: %d of 10", activeCount);
+		fMaxEffectsLabel->SetText(maxEffectsBuf);
+		RefreshEffectVisibility();
 
 		// Apply any AddDebouncedSlider() value that's settled -- no further
 		// drag movement for kDebounceUsec -- since the last check. Locked
@@ -1927,6 +1977,7 @@ private:
 
 		box->AddChild(content);
 		column->AddChild(box);
+		fEffectBoxes.push_back({box, bypass});
 	}
 
 	// Four columns instead of five -- with each slider now ~2x as wide (see
@@ -2521,8 +2572,35 @@ private:
 			{{"SubDiv", &kSubDivNames, 8}}, nullptr,
 			{&kRBEchoPresetNames, [rkr](int32 v) { rkr->efx_RBEcho->setpreset(v); }});
 
+		// Convolotron's "IR" menu (param 8) and its "Preset" menu (which sets
+		// 11 params including that same IR file) both end up in setfile() --
+		// disk I/O plus a Blackman-window/normalization pass over the whole
+		// impulse response. Called the normal way, that runs synchronously
+		// inside Dispatch(), which MessageReceived already holds jmutex for
+		// -- exactly the same real-time-audio lock jack.C's callback needs
+		// every ~PERIOD samples (see jmutex's own comment there). A slider
+		// drag gets away with this because AddDebouncedSlider() coalesces
+		// it into one call after the drag settles, but a single menu pick
+		// already IS one call -- there's nothing left to coalesce, and disk
+		// I/O can stall the lock far longer than the audio callback can
+		// tolerate, which is what was flooding the backend with buffer
+		// underruns. Both paths below instead unlock for just the file
+		// read/resample (prefetchIR(), which only ever touches Convolotron's
+		// private scratch buffers -- never rbuf/buf/length, which out()
+		// reads every callback) and relock only to commit the result
+		// (commitIR()), so the audio thread can keep servicing callbacks
+		// while the disk read is in flight.
 		BuildEffectBox(col, "Convolotron", rkr, 29, &rkr->Convol_Bypass,
-			[rkr](int32 n, int32 v) { rkr->efx_Convol->changepar(n, v); },
+			[rkr](int32 n, int32 v) {
+				if (n == 8) {
+					pthread_mutex_unlock(&jmutex);
+					rkr->efx_Convol->prefetchIR(v);
+					pthread_mutex_lock(&jmutex);
+					rkr->efx_Convol->commitIR();
+					return;
+				}
+				rkr->efx_Convol->changepar(n, v);
+			},
 			[rkr](int32 n) { return rkr->efx_Convol->getpar(n); },
 			{
 				{"Wet/Dry", -64, 64, 0, 64},
@@ -2536,7 +2614,12 @@ private:
 				{"Safe Mode", 2},
 			},
 			{{"IR", &kConvolIRNames, 8}}, nullptr,
-			{&kConvolotronPresetNames, [rkr](int32 v) { rkr->efx_Convol->setpreset(v); }});
+			{&kConvolotronPresetNames, [rkr](int32 v) {
+				pthread_mutex_unlock(&jmutex);
+				rkr->efx_Convol->setpresetPrefetch(v);
+				pthread_mutex_lock(&jmutex);
+				rkr->efx_Convol->setpresetCommit();
+			}});
 	}
 
 	void BuildColumn4(BView* col)
@@ -2761,6 +2844,41 @@ private:
 	std::vector<std::function<void(int32)>> fActions;
 	std::vector<BMenu*> fMenus;
 	std::deque<DebouncedSlider> fDebounced;
+
+	// "Hide Inactive Effects" + the "Max Concurrent Effects Allowed: N of
+	// 10" status line below the CPU display -- see BuildHeader and
+	// RefreshEffectVisibility()/Pulse() below. Every BuildEffectBox() call
+	// registers its box and bypass pointer here; *bypass != 0 for a
+	// registered effect means it currently occupies one of the engine's 10
+	// efx_order[] slots (BuildEffectBox only lets *bypass go non-zero via
+	// ActivateEffectSlot() succeeding -- see that function's own comment),
+	// so counting non-zero bypass flags here is exactly the same count as
+	// walking efx_order[] itself.
+	struct EffectBoxEntry {
+		BBox* box;
+		int* bypass;
+	};
+	std::vector<EffectBoxEntry> fEffectBoxes;
+	BCheckBox* fHideInactive = nullptr;
+	BStringView* fMaxEffectsLabel = nullptr;
+	bool fHideInactiveEffects = false;
+
+	// Shows/hides every registered effect box to match fHideInactiveEffects
+	// and each box's current bypass state. Safe to call repeatedly (from
+	// Pulse(), since a box's own "On" toggle can flip its bypass at any
+	// time) -- BView::Hide()/Show() nest via a counter, so this only calls
+	// whichever one actually changes a box's visibility, never both.
+	void RefreshEffectVisibility()
+	{
+		for (EffectBoxEntry& e : fEffectBoxes) {
+			bool active = (*e.bypass != 0);
+			bool shouldHide = fHideInactiveEffects && !active;
+			if (shouldHide && !e.box->IsHidden())
+				e.box->Hide();
+			else if (!shouldHide && e.box->IsHidden())
+				e.box->Show();
+		}
+	}
 };
 
 class RakarrackWindow : public BWindow {
