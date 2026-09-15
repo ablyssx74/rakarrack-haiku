@@ -1039,6 +1039,53 @@ private:
 	RKR* fRkr;
 };
 
+// A BSlider that also responds to the mouse wheel, one unit per notch --
+// landing a ~190px drag on one exact integer out of a wide range (Freq
+// Ceil's 50-5000, say) is imprecise; scrolling over it while the pointer
+// just sits there is not. Routed through the exact same Invoke() a normal
+// drag release already uses (BControl folds the current value in as
+// "be:value" automatically), so a wheel nudge goes through Bind()/
+// MakeMessage() exactly like any other value change -- the value label
+// updates immediately, same as dragging, with no separate code path to
+// keep in sync. AddSlider()/AddDebouncedSlider() build every slider in
+// the app as one of these, so this isn't MIDI-panel-specific.
+class WheelSlider : public BSlider {
+public:
+	WheelSlider(const char* name, BMessage* message, int32 minimum,
+		int32 maximum, orientation posture)
+		:
+		BSlider(name, NULL, message, minimum, maximum, posture),
+		fMin(minimum),
+		fMax(maximum)
+	{
+	}
+
+	virtual void MessageReceived(BMessage* msg)
+	{
+		if (msg->what == B_MOUSE_WHEEL_CHANGED) {
+			float dy = 0.0f;
+			msg->FindFloat("be:wheel_delta_y", &dy);
+			if (dy != 0.0f) {
+				int32 v = Value() + (dy < 0 ? 1 : -1);
+				if (v < fMin)
+					v = fMin;
+				if (v > fMax)
+					v = fMax;
+				if (v != Value()) {
+					SetValue(v);
+					Invoke();
+				}
+			}
+			return;
+		}
+		BSlider::MessageReceived(msg);
+	}
+
+private:
+	int32 fMin;
+	int32 fMax;
+};
+
 // Main rack content view: builds every effect box and owns the table of
 // callbacks ("actions") that the controls' messages are dispatched through.
 class RakarrackView : public BView {
@@ -1343,6 +1390,29 @@ public:
 			rkr->efx_MIDIConverter->Moctave + 2,
 			[rkr](int32 v) { rkr->efx_MIDIConverter->Moctave = v - 2; });
 
+		// Rows 2 and 3 below (the guitar-to-MIDI fine-tune knobs and the
+		// incoming-MIDI channel/CC-map settings) are the ones you set once
+		// and rarely touch again, unlike Out Ch/Trigger/Octave above --
+		// tucked behind this "Advanced" checkbox, off by default, so the
+		// MIDI box's everyday footprint stays small. Same collapse
+		// mechanism as the "On" checkbox above (and every effect box's own
+		// "On" toggle): the checkbox itself always stays visible, only
+		// advancedBody's Show()/Hide() toggles.
+		BGroupView* advancedBody = new BGroupView(B_VERTICAL, 6);
+		advancedBody->SetViewColor(kPanelColor);
+
+		BCheckBox* midiAdvanced = new BCheckBox("midi_advanced", "Advanced",
+			MakeMessage(Bind([advancedBody](int32 v) {
+				if (v)
+					advancedBody->Show();
+				else
+					advancedBody->Hide();
+			})));
+		midiAdvanced->SetViewColor(kPanelColor);
+		midiBody->AddChild(midiAdvanced);
+		advancedBody->Hide();
+		midiBody->AddChild(advancedBody);
+
 		// Second row: the guitar-to-MIDI pitch tracker's own fine-tune
 		// knobs (Conv_Trig_Counter/Conv_Stable_Counter/Conv_Off_Counter/
 		// Conv_Freq_Ceiling_Counter/Conv_Freq_Floor_Counter in
@@ -1360,7 +1430,7 @@ public:
 		// the /100 conversion happening in the callback.
 		BGroupView* midiRow2 = new BGroupView(B_HORIZONTAL, 24);
 		midiRow2->SetViewColor(kPanelColor);
-		midiBody->AddChild(midiRow2);
+		advancedBody->AddChild(midiRow2);
 
 		AddSlider(midiRow2, "midi_trigsens", "Trig Sens", 10, 100,
 			(int32)(rkr->efx_MIDIConverter->p_trigfact * 100.0f + 0.5f),
@@ -1405,7 +1475,7 @@ public:
 		// and needs no extra setup.
 		BGroupView* midiRow3 = new BGroupView(B_HORIZONTAL, 24);
 		midiRow3->SetViewColor(kPanelColor);
-		midiBody->AddChild(midiRow3);
+		advancedBody->AddChild(midiRow3);
 
 		AddSlider(midiRow3, "midi_in_ch", "In Ch", 1, 16,
 			rkr->MidiCh + 1,
@@ -1615,7 +1685,7 @@ private:
 			fn(v);
 		});
 
-		BSlider* s = new BSlider(name, NULL, MakeMessage(idx), min, max,
+		WheelSlider* s = new WheelSlider(name, MakeMessage(idx), min, max,
 			B_HORIZONTAL);
 		s->SetValue(initial);
 		s->SetHashMarks(B_HASH_MARKS_NONE);
@@ -1680,7 +1750,7 @@ private:
 			entry->lastChangeTime = system_time();
 		});
 
-		BSlider* s = new BSlider(name, NULL, MakeMessage(idx), min, max,
+		WheelSlider* s = new WheelSlider(name, MakeMessage(idx), min, max,
 			B_HORIZONTAL);
 		s->SetValue(initial);
 		s->SetHashMarks(B_HASH_MARKS_NONE);
