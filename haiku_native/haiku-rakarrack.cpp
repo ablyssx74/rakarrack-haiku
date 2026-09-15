@@ -786,7 +786,12 @@ class OrderWindow : public BWindow {
 public:
 	OrderWindow(RKR* rkr)
 		:
-		BWindow(BRect(160, 160, 460, 480), "Effects Order", B_TITLED_WINDOW,
+		// Wide/tall enough on first open for the hint text to wrap onto its
+		// two full lines and for "Move Up"/"Move Down"/"Close" to all sit on
+		// one row without the list's scrollbar crowding "Close" off the
+		// right edge -- the original 300x320 was too small for that (see
+		// the "before" screenshot in the session that added this comment).
+		BWindow(BRect(160, 160, 680, 580), "Effects Order", B_TITLED_WINDOW,
 			B_ASYNCHRONOUS_CONTROLS | B_NOT_ZOOMABLE),
 		fRkr(rkr)
 	{
@@ -837,7 +842,7 @@ public:
 			.End()
 		.End();
 
-		SetSizeLimits(260, 6000, 260, 6000);
+		SetSizeLimits(420, 6000, 340, 6000);
 		RefreshList();
 	}
 
@@ -1196,6 +1201,19 @@ public:
 			MakeMessage(Bind([this](int32 v) {
 				fHideInactiveEffects = v != 0;
 				RefreshEffectVisibility();
+				// Collapsing down to just the active boxes can leave the
+				// scroll position (unchanged by any of the above) pointing
+				// at empty space below the now-much-shorter content -- e.g.
+				// an effect turned on near the bottom of the full list ends
+				// up the only (and so topmost) visible box once everything
+				// else is hidden, but the view stayed scrolled to where
+				// that box used to be. Scroll back to the top whenever this
+				// is turned on so a newly-collapsed rack is never blank.
+				// (fMainView == this -- see RakarrackWindow's constructor,
+				// which hands this same RakarrackView to BScrollView as the
+				// view it scrolls.)
+				if (fHideInactiveEffects)
+					ScrollTo(BPoint(0, 0));
 			})));
 		fHideInactive->SetViewColor(kBgColor);
 
