@@ -1473,8 +1473,39 @@ public:
 		fMasterFX = new BCheckBox("master_fx", "FX Engine",
 			MakeMessage(Bind([rkr](int32 v) {
 				rkr->Bypass = v ? 1 : 0;
-				if (!v)
+				if (!v) {
+					// A different flavor of the flooding this session has
+					// chased through disk I/O (Convolotron/Reverbtron/
+					// Echotron) and Reverb's comb-filter realloc: no single
+					// slow operation here, just RKR::cleanup_efx()
+					// (process.C) unconditionally zeroing all 46 effects'
+					// buffers in one sweep -- including the sample-rate-
+					// scaled ones (Echo/MusicDelay/RBEcho/Arpie's ~2-second
+					// delay lines, Looper's own loop buffer, potentially
+					// much longer), whose combined cost is enough to starve
+					// several consecutive audio callbacks the same way, all
+					// under this same Dispatch()-held lock. Confirmed in
+					// practice: reported with Convolotron active, but
+					// cleanup_efx() cleans every effect regardless of
+					// whether it's the one currently on, so this was never
+					// really Convolotron-specific.
+					//
+					// Safe to run unlocked here specifically because Bypass
+					// is already 0 by this point: Alg() (process.C) skips
+					// its entire per-effect out() loop whenever Bypass is
+					// false, so nothing on the audio thread reads or writes
+					// any of these buffers while cleanup_efx() zeroes them
+					// -- except for a callback already in flight with a
+					// stale (pre-flip) read of Bypass, which could still
+					// read a buffer mid-zero; that's a torn read (an
+					// inaudible-to-one-sample-glitch risk, not a crash --
+					// nothing here reallocates a pointer the way Reverb's
+					// comb[] did), the same class of risk already accepted
+					// for Convolotron's own prefetchIR()/commitIR().
+					pthread_mutex_unlock(&jmutex);
 					rkr->cleanup_efx();
+					pthread_mutex_lock(&jmutex);
+				}
 			})));
 		fMasterFX->SetValue(rkr->Bypass ? B_CONTROL_ON : B_CONTROL_OFF);
 		fMasterFX->SetViewColor(kBgColor);
