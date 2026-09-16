@@ -1400,13 +1400,6 @@ public:
 		maxEffectsRow->AddChild(randomBtn);
 		maxEffectsRow->GroupLayout()->AddItem(BSpaceLayoutItem::CreateGlue());
 
-		BGroupView* cpuGroup = new BGroupView(B_VERTICAL, 2);
-		cpuGroup->SetViewColor(kBgColor);
-		cpuGroup->GroupLayout()->SetInsets(0);
-		cpuGroup->AddChild(fCpuDisplay);
-		cpuGroup->AddChild(fHideInactive);
-		cpuGroup->AddChild(maxEffectsRow);
-
 		// Primes "Current Preset:" from whatever rkr->Preset_Name already
 		// is at startup (empty unless a bank/preset was already loaded
 		// before this UI existed -- e.g. a command-line preset file).
@@ -1453,16 +1446,28 @@ public:
 			new BMessage(MSG_LOAD_PRESET));
 		loadPresetBtn->SetViewColor(kPanelColor);
 
-		BGroupView* controls = new BGroupView(B_HORIZONTAL, 10);
+		// "Hide Inactive Effects" on the left, FX Engine/Boost/Effects
+		// Order/Save/Load Preset pushed to the right of it via the glue in
+		// between -- its own row, separate from maxEffectsRow below, so
+		// that row's own width (Current Preset/Bank 1-3/Random Preset can
+		// get wide) doesn't drag FX Engine and friends far off to the
+		// right with it the way sharing one row used to.
+		BGroupView* topRow = new BGroupView(B_HORIZONTAL, 10);
+		topRow->SetViewColor(kBgColor);
+		topRow->AddChild(fHideInactive);
+		topRow->GroupLayout()->AddItem(BSpaceLayoutItem::CreateGlue());
+		topRow->AddChild(fMasterFX);
+		topRow->AddChild(boost);
+		topRow->AddChild(orderBtn);
+		topRow->AddChild(savePresetBtn);
+		topRow->AddChild(loadPresetBtn);
+
+		BGroupView* controls = new BGroupView(B_VERTICAL, 2);
 		controls->GroupLayout()->SetInsets(10, 0, 10, 4);
 		controls->SetViewColor(kBgColor);
-		controls->AddChild(cpuGroup);
-		controls->AddChild(fMasterFX);
-		controls->AddChild(boost);
-		controls->AddChild(orderBtn);
-		controls->AddChild(savePresetBtn);
-		controls->AddChild(loadPresetBtn);
-		controls->GroupLayout()->AddItem(BSpaceLayoutItem::CreateGlue());
+		controls->AddChild(fCpuDisplay);
+		controls->AddChild(topRow);
+		controls->AddChild(maxEffectsRow);
 
 		// Third row: Input Gain/Master Volume (wrapped down from the controls
 		// row above so it has room to breathe) plus the waveform view, left
