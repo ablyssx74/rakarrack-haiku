@@ -56,6 +56,7 @@
 #include <StringView.h>
 #include <StatusBar.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <SupportDefs.h>
 #include <Window.h>
 #include <View.h>
@@ -282,11 +283,22 @@ extern pthread_mutex_t jmutex;
 // entirely; the actual savefile()/loadfile() calls those panels lead to
 // (see RakarrackWindow) still take the lock explicitly, since those do
 // touch engine state the audio thread reads.
+// MSG_BANK_PRESET/MSG_RANDOM_PRESET (the header's Bank 1/2/3 dropdowns and
+// Random Preset button -- see BuildHeader) are ALSO deliberately outside
+// MSG_ACTION for a second reason on top of the one above: their handlers
+// (RakarrackView::ApplyBankPreset()/ApplyRandomPreset()) do their own
+// jmutex locking internally (via RunEngineActionConvolSafe(), which needs
+// to unlock/relock partway through for Convolotron's sake -- see that
+// function's comment), so routing them through the already-locked
+// MSG_ACTION/Dispatch() path would deadlock this thread relocking a mutex
+// it already holds.
 enum {
 	MSG_ACTION = 'RKAx',
 	MSG_OPEN_ORDER = 'RKOo',
 	MSG_SAVE_PRESET = 'RKSp',
-	MSG_LOAD_PRESET = 'RKLp'
+	MSG_LOAD_PRESET = 'RKLp',
+	MSG_BANK_PRESET = 'RKBp',
+	MSG_RANDOM_PRESET = 'RKRp'
 };
 
 static const std::vector<std::string> kStompBoxModeNames = {
@@ -749,6 +761,31 @@ static const std::vector<int> kPresetRefreshEffectIds = {
 	44,	// Opticaltrem
 	45,	// Vibe
 };
+
+// Runs `action` -- some engine mutation that ends up calling
+// RKR::Actualizar_Audio() (fileio.C: loadfile(), Bank_to_Preset(), New())
+// -- under jmutex, with Convolotron's own IR-file changepar(8, ...) inside
+// it deferred via SetSuppressFileLoad() (see Convolotron.h's comment on
+// that) exactly like the per-effect Preset/IR dropdowns, so its disk read/
+// windowing pass never happens while jmutex -- which the real-time audio
+// callback needs every ~PERIOD samples, see jack.C -- is held. `action`
+// itself must NOT lock jmutex; this acquires and releases it.
+static void RunEngineActionConvolSafe(RKR* rkr, std::function<void()> action)
+{
+	rkr->efx_Convol->SetSuppressFileLoad(true);
+	pthread_mutex_lock(&jmutex);
+	action();
+	pthread_mutex_unlock(&jmutex);
+	rkr->efx_Convol->SetSuppressFileLoad(false);
+
+	int convolFileValue;
+	if (rkr->efx_Convol->TakeSuppressedFileValue(&convolFileValue)) {
+		rkr->efx_Convol->prefetchIR(convolFileValue);
+		pthread_mutex_lock(&jmutex);
+		rkr->efx_Convol->commitIR();
+		pthread_mutex_unlock(&jmutex);
+	}
+}
 
 // Returns true if effectId is now (or already was) occupying a slot.
 // False means all 10 slots are held by other currently-active effects.
@@ -1291,12 +1328,89 @@ public:
 		maxEffectsFont.SetFace(B_ITALIC_FACE);
 		fMaxEffectsLabel->SetFont(&maxEffectsFont);
 
+		// To the right of "Max Concurrent Effects Allowed": which preset is
+		// currently loaded, then the three factory Bank preset pickers and
+		// a Random Preset button -- rakarrack.cxx's own Bank window
+		// (Default/Extra/Extra1.rkrb, the "1"/"2"/"3" buttons there) and
+		// RKRGUI::RandomPreset(), reworked as plain dropdowns/a button
+		// instead of a whole separate browser window. See ApplyBankPreset()/
+		// ApplyRandomPreset() below for what selecting from these actually
+		// does.
+		fPresetNameLabel = new BStringView("preset_name", "Current Preset: ");
+		fPresetNameLabel->SetHighColor(kLabelColor);
+		fPresetNameLabel->SetLowColor(kBgColor);
+		fPresetNameLabel->SetFont(&maxEffectsFont);
+
+		// "|" separators, same font/color as fMaxEffectsLabel/
+		// fPresetNameLabel, so the whole row reads as one status line.
+		auto makeSeparator = [&]() -> BStringView* {
+			BStringView* sep = new BStringView("sep", "|");
+			sep->SetHighColor(kLabelColor);
+			sep->SetLowColor(kBgColor);
+			sep->SetFont(&maxEffectsFont);
+			return sep;
+		};
+
+		// One Bank 1/2/3 dropdown, listing that bank's named presets --
+		// rkr->B_Names[bankIndex][1..60] is populated once at startup by
+		// RKR::loadnames() (process.C's shared constructor, so this is
+		// already filled in by the time BuildHeader runs regardless of
+		// mode), independently of whichever bank happens to be the live
+		// rkr->Bank[] at the moment -- so this doesn't need to load
+		// anything just to list names. Selecting an item sends
+		// MSG_BANK_PRESET directly (not through Bind()/MSG_ACTION -- see
+		// that message's own declaration comment) with which bank and
+		// which of its slots to actually load, handled by
+		// ApplyBankPreset().
+		auto buildBankMenu = [&](const char* label, int32 bankIndex) -> BMenuField* {
+			BPopUpMenu* menu = new BPopUpMenu(label);
+			for (int32 j = 1; j <= 60; j++) {
+				const char* name = rkr->B_Names[bankIndex][j].Preset_Name;
+				if (name[0] == '\0')
+					continue;
+				BMessage* itemMsg = new BMessage(MSG_BANK_PRESET);
+				itemMsg->AddInt32("bank", bankIndex);
+				itemMsg->AddInt32("index", j);
+				menu->AddItem(new BMenuItem(name, itemMsg));
+			}
+			fMenus.push_back(menu);
+			BMenuField* field = new BMenuField(label, label, menu);
+			field->SetViewColor(kBgColor);
+			field->SetFont(&maxEffectsFont);
+			return field;
+		};
+
+		BButton* randomBtn = new BButton("random_preset", "Random Preset",
+			new BMessage(MSG_RANDOM_PRESET));
+		randomBtn->SetViewColor(kBgColor);
+		randomBtn->SetFont(&maxEffectsFont);
+
+		BGroupView* maxEffectsRow = new BGroupView(B_HORIZONTAL, 6);
+		maxEffectsRow->SetViewColor(kBgColor);
+		maxEffectsRow->AddChild(fMaxEffectsLabel);
+		maxEffectsRow->AddChild(makeSeparator());
+		maxEffectsRow->AddChild(fPresetNameLabel);
+		maxEffectsRow->AddChild(makeSeparator());
+		maxEffectsRow->AddChild(buildBankMenu("Bank 1", 0));
+		maxEffectsRow->AddChild(makeSeparator());
+		maxEffectsRow->AddChild(buildBankMenu("Bank 2", 1));
+		maxEffectsRow->AddChild(makeSeparator());
+		maxEffectsRow->AddChild(buildBankMenu("Bank 3", 2));
+		maxEffectsRow->AddChild(makeSeparator());
+		maxEffectsRow->AddChild(randomBtn);
+		maxEffectsRow->GroupLayout()->AddItem(BSpaceLayoutItem::CreateGlue());
+
 		BGroupView* cpuGroup = new BGroupView(B_VERTICAL, 2);
 		cpuGroup->SetViewColor(kBgColor);
 		cpuGroup->GroupLayout()->SetInsets(0);
 		cpuGroup->AddChild(fCpuDisplay);
 		cpuGroup->AddChild(fHideInactive);
-		cpuGroup->AddChild(fMaxEffectsLabel);
+		cpuGroup->AddChild(maxEffectsRow);
+
+		// Primes "Current Preset:" from whatever rkr->Preset_Name already
+		// is at startup (empty unless a bank/preset was already loaded
+		// before this UI existed -- e.g. a command-line preset file).
+		RefreshPresetName();
 
 		fMasterFX = new BCheckBox("master_fx", "FX Engine",
 			MakeMessage(Bind([rkr](int32 v) {
@@ -1476,6 +1590,12 @@ public:
 		// built-in CC map rather than the empty custom XUserMIDI table).
 		rkr->HarCh = 0;
 		rkr->MIDIway = 0;
+
+		// Octave defaults to -1 (per request) rather than MIDIConverter's
+		// own constructor default of 0 -- primed here, before the "Octave"
+		// dropdown below reads it, so both the dropdown's initial selection
+		// and the actual converted note octave start at -1 together.
+		rkr->efx_MIDIConverter->Moctave = -1;
 
 		// Wide gap between controls (vs. AddSlider's own tight 6px
 		// label/value/slider spacing within each one) so each slider
@@ -2082,8 +2202,16 @@ private:
 
 		// Rendered first, same as rakarrack.cxx's own effect panels (the
 		// preset Fl_Choice always sits above every slider/toggle/type menu).
-		if (preset.items && preset.apply)
+		if (preset.items && preset.apply) {
 			AddTypeMenu(body, "Preset", "Preset", *preset.items, 0, preset.apply);
+			// Registered under the same effectId as fEffectRefreshers, for
+			// the header's Random Preset button (ApplyRandomPreset()) to
+			// pick a random item and invoke this same apply() a preset
+			// menu selection would have -- Convolotron's already does its
+			// own unlock/relock internally (see that call site), so this
+			// needs no special-casing here.
+			fPresetAppliers[effectId] = {(int32)preset.items->size(), preset.apply};
+		}
 
 		// Collects one "snap this control to getFn()'s current value" closure
 		// per type menu/toggle/slider below (each Add* pushes its own, given
@@ -3030,6 +3158,7 @@ private:
 	BCheckBox* fHideInactive = nullptr;
 	BStringView* fMaxEffectsLabel = nullptr;
 	bool fHideInactiveEffects = false;
+	BStringView* fPresetNameLabel = nullptr;
 
 	// Shows/hides every registered effect box to match fHideInactiveEffects
 	// and each box's current bypass state. Safe to call repeatedly (from
@@ -3070,6 +3199,128 @@ public:
 			if (it != fEffectRefreshers.end())
 				it->second();
 		}
+	}
+
+	// One entry per effect that has a "Preset" dropdown (see BuildEffectBox's
+	// "preset" parameter) -- apply() is the exact same closure that dropdown
+	// itself invokes on selection (PresetMenuDef::apply, e.g. Convolotron's
+	// own unlock/relock-wrapped one), count is how many items it has. Used
+	// by ApplyRandomPreset() to pick and apply a random one per effect, the
+	// same thing rakarrack.cxx's own RandomPreset() does to each of its ten
+	// chosen effects' Preset Fl_Choice.
+	struct PresetApplierEntry {
+		int32 count;
+		std::function<void(int32)> apply;
+	};
+	std::map<int, PresetApplierEntry> fPresetAppliers;
+
+	// Refreshes the header's "Current Preset: ..." label from rkr->Preset_Name
+	// -- set by loadfile() (Load Preset) and Bank_to_Preset() (the Bank 1/2/3
+	// dropdowns) alike, so this one read covers both sources. Left alone
+	// (not called) after ApplyRandomPreset(), matching rakarrack.cxx's own
+	// RandomPreset(), which never touches Preset_Name either.
+	void RefreshPresetName()
+	{
+		if (!fRkr || !fPresetNameLabel)
+			return;
+		char buf[96];
+		snprintf(buf, sizeof(buf), "Current Preset: %s", fRkr->Preset_Name);
+		fPresetNameLabel->SetText(buf);
+	}
+
+	// Handles a Bank 1/2/3 dropdown selection (see BuildHeader's
+	// buildBankMenu and MSG_BANK_PRESET) -- bank is 0/1/2 for Default/
+	// Extra/Extra1.rkrb, index is the 1-60 slot within it (see
+	// buildBankMenu for how the two get encoded into each item's
+	// BMessage). Swaps
+	// rkr->Bank[] to the requested file (loadbank()) and applies the
+	// requested slot from it (Bank_to_Preset()) -- both of which, via
+	// Actualizar_Audio(), need the same Convolotron handling as Load
+	// Preset, hence RunEngineActionConvolSafe() instead of a bare lock.
+	void ApplyBankPreset(int32 bank, int32 index)
+	{
+		if (!fRkr)
+			return;
+		static const char* kBankFileNames[3] = {
+			"Default.rkrb", "Extra.rkrb", "Extra1.rkrb"
+		};
+		if (bank < 0 || bank > 2)
+			return;
+		char path[256];
+		snprintf(path, sizeof(path), "%s/%s", DATADIR, kBankFileNames[bank]);
+		std::string pathStr(path);
+		RKR* rkr = fRkr;
+
+		RunEngineActionConvolSafe(rkr, [rkr, pathStr, index]() {
+			if (rkr->loadbank((char*)pathStr.c_str()))
+				rkr->Bank_to_Preset(index);
+		});
+
+		RefreshPresetName();
+		RefreshEffectBoxes(kPresetRefreshEffectIds);
+		RefreshEffectVisibility();
+	}
+
+	// Handles the header's Random Preset button (MSG_RANDOM_PRESET) --
+	// same algorithm as rakarrack.cxx's own RKRGUI::RandomPreset(): reset
+	// to a blank rack, pick 1-6 as how many of ten randomly-chosen, unique
+	// effects end up active, shuffle those ten into efx_order[], and give
+	// each of the ten (active or not, matching the FLTK original) a random
+	// pick from its own Preset dropdown via fPresetAppliers.
+	void ApplyRandomPreset()
+	{
+		if (!fRkr)
+			return;
+		RKR* rkr = fRkr;
+
+		RunEngineActionConvolSafe(rkr, [rkr]() {
+			rkr->New();
+		});
+
+		int numEff = (int)(RND * 6) + 1;
+		int selEff[kOrderSlotCount];
+		selEff[0] = (int)(RND * rkr->NumEffects);
+		for (int i = 1; i < kOrderSlotCount; i++) {
+			bool unique;
+			do {
+				selEff[i] = (int)(RND * rkr->NumEffects);
+				unique = true;
+				for (int j = 0; j < i; j++) {
+					if (selEff[j] == selEff[i]) {
+						unique = false;
+						break;
+					}
+				}
+			} while (!unique);
+		}
+
+		pthread_mutex_lock(&jmutex);
+		for (int i = 0; i < kOrderSlotCount; i++)
+			rkr->efx_order[i] = selEff[i];
+		for (int i = 0; i < kOrderSlotCount; i++) {
+			int id = selEff[i];
+			int* bypass = BypassPtrForId(rkr, id);
+			if (bypass)
+				*bypass = (i < numEff) ? 1 : 0;
+			auto it = fPresetAppliers.find(id);
+			if (it != fPresetAppliers.end() && it->second.count > 0) {
+				int32 pick = (int32)(RND * it->second.count);
+				if (pick >= it->second.count)
+					pick = it->second.count - 1;
+				// Convolotron's own apply() unlocks/relocks internally if
+				// id==29 -- see that PresetMenuDef's own comment -- which
+				// is safe to nest inside this lock exactly like it is when
+				// Dispatch() invokes it directly.
+				it->second.apply(pick);
+			}
+		}
+		rkr->Bypass = 1;
+		pthread_mutex_unlock(&jmutex);
+
+		if (fMasterFX)
+			fMasterFX->SetValue(B_CONTROL_ON);
+		RefreshEffectBoxes(kPresetRefreshEffectIds);
+		RefreshEffectVisibility();
 	}
 };
 
@@ -3125,6 +3376,24 @@ public:
 
 		if (msg->what == MSG_LOAD_PRESET) {
 			ShowLoadPanel();
+			return;
+		}
+
+		if (msg->what == MSG_BANK_PRESET) {
+			// Deliberately outside jmutex -- ApplyBankPreset() takes it
+			// itself via RunEngineActionConvolSafe(). See MSG_BANK_PRESET's
+			// own declaration comment for why routing this through the
+			// already-locked MSG_ACTION path would deadlock instead.
+			int32 bank, index;
+			if (msg->FindInt32("bank", &bank) == B_OK
+				&& msg->FindInt32("index", &index) == B_OK) {
+				fMainView->ApplyBankPreset(bank, index);
+			}
+			return;
+		}
+
+		if (msg->what == MSG_RANDOM_PRESET) {
+			fMainView->ApplyRandomPreset();
 			return;
 		}
 
@@ -3202,26 +3471,17 @@ private:
 		// loadfile() restores Convolotron the same way setpreset() does --
 		// an 11-parameter changepar() loop that, for param 8 (the IR file),
 		// means setfile(): disk I/O plus a Blackman-window/normalization
-		// pass. Left alone, that runs inside the jmutex lock below, same
-		// flood as the Preset/IR dropdowns before they were split into
-		// prefetchIR()/commitIR() (see Convolotron.h). loadfile() itself is
-		// shared with the FLTK build and has no idea jmutex exists, so
-		// suppressing here instead: changepar(8, ...) just remembers the
-		// value while this is set, and prefetchIR()/commitIR() below apply
-		// it the same unlocked-read/locked-commit way as those dropdowns.
-		fRkr->efx_Convol->SetSuppressFileLoad(true);
-		pthread_mutex_lock(&jmutex);
-		fRkr->loadfile((char*)filePath.Path());
-		pthread_mutex_unlock(&jmutex);
-		fRkr->efx_Convol->SetSuppressFileLoad(false);
-
-		int convolFileValue;
-		if (fRkr->efx_Convol->TakeSuppressedFileValue(&convolFileValue)) {
-			fRkr->efx_Convol->prefetchIR(convolFileValue);
-			pthread_mutex_lock(&jmutex);
-			fRkr->efx_Convol->commitIR();
-			pthread_mutex_unlock(&jmutex);
-		}
+		// pass. Left alone, that runs inside the jmutex lock, same flood as
+		// the Preset/IR dropdowns before they were split into prefetchIR()/
+		// commitIR() (see Convolotron.h). loadfile() itself is shared with
+		// the FLTK build and has no idea jmutex exists, so
+		// RunEngineActionConvolSafe() suppresses that one param instead
+		// (changepar(8, ...) just remembers the value while suppressed) and
+		// applies it the same unlocked-read/locked-commit way as those
+		// dropdowns once loadfile() itself is done.
+		RunEngineActionConvolSafe(fRkr, [this, &filePath]() {
+			fRkr->loadfile((char*)filePath.Path());
+		});
 
 		// The engine and audio output switch to the loaded preset
 		// immediately; every widget was only ever primed once, at its own
@@ -3232,8 +3492,11 @@ private:
 		// catch up until restarted" alert needed for the mismatch that used
 		// to leave. Plain int reads (getpar() and friends), same as
 		// BuildEffectBox's own construction-time priming, so no lock needed
-		// here either.
+		// here either. Preset_Name is also set by loadfile() itself (from
+		// the file's own saved name), so the header's "Current Preset:"
+		// label picks up a manually-loaded preset's name here too.
 		fMainView->RefreshEffectBoxes(kPresetRefreshEffectIds);
+		fMainView->RefreshPresetName();
 	}
 
 	RKR* fRkr;
