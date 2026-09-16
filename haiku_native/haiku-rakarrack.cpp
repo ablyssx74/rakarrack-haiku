@@ -826,6 +826,27 @@ static void RunEngineActionFileSafe(RKR* rkr, std::function<void()> action)
 	}
 }
 
+// BView::Hide()/Show() nest via a counter -- Hide() increments it, Show()
+// decrements it, and the view only actually draws once it's back at zero.
+// Calling either one when the view is already in that state overshoots
+// the counter, and a single later call the other way won't undo it: e.g.
+// two Hide()s in a row (counter 2) followed by one Show() (counter 1) is
+// still hidden. Found in practice as exactly this -- an effect box's body
+// (sliders/toggles/menus) getting stuck hidden after a couple of preset
+// loads left it inactive each time (each one a redundant Hide() on top of
+// the last, since nothing checked IsHidden() first), with the "On"
+// checkbox itself unaffected (SetValue() has no such nesting) so it kept
+// showing checked while its own body silently never came back. Every call
+// site that flips a view's visibility from a boolean goes through this
+// now instead of calling Hide()/Show() directly, so repeated calls with
+// an unchanged value are always safe no-ops.
+static void SetViewVisible(BView* view, bool visible) {
+	if (visible && view->IsHidden())
+		view->Show();
+	else if (!visible && !view->IsHidden())
+		view->Hide();
+}
+
 // Returns true if effectId is now (or already was) occupying a slot.
 // False means all 10 slots are held by other currently-active effects.
 static bool ActivateEffectSlot(RKR* rkr, int effectId) {
@@ -2237,10 +2258,7 @@ private:
 				DeactivateEffectSlot(rkr, effectId);
 			}
 			*bypass = v ? 1 : 0;
-			if (v)
-				body->Show();
-			else
-				body->Hide();
+			SetViewVisible(body, v != 0);
 		});
 		onToggle->SetMessage(MakeMessage(onIdx));
 		content->AddChild(onToggle);
@@ -2315,10 +2333,7 @@ private:
 			if (*bypass != 0 && !ActivateEffectSlot(rkr, effectId))
 				*bypass = 0;
 			onToggle->SetValue(*bypass != 0 ? B_CONTROL_ON : B_CONTROL_OFF);
-			if (*bypass != 0)
-				body->Show();
-			else
-				body->Hide();
+			SetViewVisible(body, *bypass != 0);
 			for (const std::function<void()>& fn : refreshers)
 				fn();
 		};
@@ -3258,11 +3273,7 @@ private:
 	{
 		for (EffectBoxEntry& e : fEffectBoxes) {
 			bool active = (*e.bypass != 0);
-			bool shouldHide = fHideInactiveEffects && !active;
-			if (shouldHide && !e.box->IsHidden())
-				e.box->Hide();
-			else if (!shouldHide && e.box->IsHidden())
-				e.box->Show();
+			SetViewVisible(e.box, !fHideInactiveEffects || active);
 		}
 	}
 
