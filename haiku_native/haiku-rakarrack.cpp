@@ -1374,13 +1374,18 @@ public:
 				menu->AddItem(new BMenuItem(name, itemMsg));
 			}
 			fMenus.push_back(menu);
-			BMenuField* field = new BMenuField(label, label, menu);
+			// No attached label (NULL) -- the dropdown's own placeholder
+			// text (the BPopUpMenu's own "label" above, e.g. "Bank 1")
+			// already says which bank this is; a separate BMenuField label
+			// just repeated that redundantly ("Bank 1 [Bank 1 v]") and
+			// widened this already-wide row for nothing.
+			BMenuField* field = new BMenuField(label, NULL, menu);
 			field->SetViewColor(kBgColor);
 			field->SetFont(&maxEffectsFont);
 			return field;
 		};
 
-		BButton* randomBtn = new BButton("random_preset", "Random Preset",
+		BButton* randomBtn = new BButton("random_preset", "Random",
 			new BMessage(MSG_RANDOM_PRESET));
 		randomBtn->SetViewColor(kBgColor);
 		randomBtn->SetFont(&maxEffectsFont);
@@ -1446,28 +1451,27 @@ public:
 			new BMessage(MSG_LOAD_PRESET));
 		loadPresetBtn->SetViewColor(kPanelColor);
 
-		// "Hide Inactive Effects" on the left, FX Engine/Boost/Effects
-		// Order/Save/Load Preset pushed to the right of it via the glue in
-		// between -- its own row, separate from maxEffectsRow below, so
-		// that row's own width (Current Preset/Bank 1-3/Random Preset can
-		// get wide) doesn't drag FX Engine and friends far off to the
-		// right with it the way sharing one row used to.
-		BGroupView* topRow = new BGroupView(B_HORIZONTAL, 10);
-		topRow->SetViewColor(kBgColor);
-		topRow->AddChild(fHideInactive);
-		topRow->GroupLayout()->AddItem(BSpaceLayoutItem::CreateGlue());
-		topRow->AddChild(fMasterFX);
-		topRow->AddChild(boost);
-		topRow->AddChild(orderBtn);
-		topRow->AddChild(savePresetBtn);
-		topRow->AddChild(loadPresetBtn);
+		// FX Engine/Boost/Effects Order/Save/Load Preset, left-aligned on
+		// their own row -- kept off of maxEffectsRow (already wide from
+		// three Bank dropdowns) and off of "Hide Inactive Effects"'s row
+		// (no glue pushing this one over, unlike the previous layout) so
+		// neither row's width drags the other's content around.
+		BGroupView* fxRow = new BGroupView(B_HORIZONTAL, 10);
+		fxRow->SetViewColor(kBgColor);
+		fxRow->AddChild(fMasterFX);
+		fxRow->AddChild(boost);
+		fxRow->AddChild(orderBtn);
+		fxRow->AddChild(savePresetBtn);
+		fxRow->AddChild(loadPresetBtn);
+		fxRow->GroupLayout()->AddItem(BSpaceLayoutItem::CreateGlue());
 
 		BGroupView* controls = new BGroupView(B_VERTICAL, 2);
 		controls->GroupLayout()->SetInsets(10, 0, 10, 4);
 		controls->SetViewColor(kBgColor);
 		controls->AddChild(fCpuDisplay);
-		controls->AddChild(topRow);
+		controls->AddChild(fHideInactive);
 		controls->AddChild(maxEffectsRow);
+		controls->AddChild(fxRow);
 
 		// Third row: Input Gain/Master Volume (wrapped down from the controls
 		// row above so it has room to breathe) plus the waveform view, left
