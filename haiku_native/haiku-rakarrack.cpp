@@ -256,6 +256,24 @@ __attribute__((weak)) void Convolotron::prefetchIR(int) { }
 __attribute__((weak)) void Convolotron::commitIR() { }
 __attribute__((weak)) bool Convolotron::TakeSuppressedFileValue(int*) { return false; }
 
+// Same story for Reverbtron/Echotron -- the "Suction" bank preset (an
+// Echotron factory preset) flooding the audio backend exactly like an
+// unprotected Convolotron preset once did is what prompted giving both of
+// these the identical setpresetPrefetch()/setpresetCommit()/prefetchFile()/
+// commitFile()/TakeSuppressedFileValue() split (see Reverbtron.h/
+// Echotron.h). SetSuppressFileLoad() again needs no stub -- inline in the
+// header.
+__attribute__((weak)) void Reverbtron::setpresetPrefetch(int) { }
+__attribute__((weak)) void Reverbtron::setpresetCommit() { }
+__attribute__((weak)) void Reverbtron::prefetchFile(int) { }
+__attribute__((weak)) void Reverbtron::commitFile() { }
+__attribute__((weak)) bool Reverbtron::TakeSuppressedFileValue(int*) { return false; }
+__attribute__((weak)) void Echotron::setpresetPrefetch(int) { }
+__attribute__((weak)) void Echotron::setpresetCommit() { }
+__attribute__((weak)) void Echotron::prefetchFile(int) { }
+__attribute__((weak)) void Echotron::commitFile() { }
+__attribute__((weak)) bool Echotron::TakeSuppressedFileValue(int*) { return false; }
+
 // PERIOD (src/process.C) is a plain global, not a function -- same linking
 // problem, same fix: a weak fallback definition that the strong one in
 // process.C overrides whenever this file is linked into the real
@@ -287,7 +305,7 @@ extern pthread_mutex_t jmutex;
 // Random Preset button -- see BuildHeader) are ALSO deliberately outside
 // MSG_ACTION for a second reason on top of the one above: their handlers
 // (RakarrackView::ApplyBankPreset()/ApplyRandomPreset()) do their own
-// jmutex locking internally (via RunEngineActionConvolSafe(), which needs
+// jmutex locking internally (via RunEngineActionFileSafe(), which needs
 // to unlock/relock partway through for Convolotron's sake -- see that
 // function's comment), so routing them through the already-locked
 // MSG_ACTION/Dispatch() path would deadlock this thread relocking a mutex
@@ -764,25 +782,46 @@ static const std::vector<int> kPresetRefreshEffectIds = {
 
 // Runs `action` -- some engine mutation that ends up calling
 // RKR::Actualizar_Audio() (fileio.C: loadfile(), Bank_to_Preset(), New())
-// -- under jmutex, with Convolotron's own IR-file changepar(8, ...) inside
-// it deferred via SetSuppressFileLoad() (see Convolotron.h's comment on
-// that) exactly like the per-effect Preset/IR dropdowns, so its disk read/
-// windowing pass never happens while jmutex -- which the real-time audio
-// callback needs every ~PERIOD samples, see jack.C -- is held. `action`
-// itself must NOT lock jmutex; this acquires and releases it.
-static void RunEngineActionConvolSafe(RKR* rkr, std::function<void()> action)
+// -- under jmutex, with Convolotron/Reverbtron/Echotron's own file-loading
+// changepar(8, ...) inside it deferred via each one's SetSuppressFileLoad()
+// (see Convolotron.h/Reverbtron.h/Echotron.h's identical comment on that)
+// exactly like their own per-effect Preset/IR dropdowns, so none of their
+// disk reads (or Convolotron's windowing pass) ever happen while jmutex --
+// which the real-time audio callback needs every ~PERIOD samples, see
+// jack.C -- is held. All three get this, not just whichever one a given
+// bank preset happens to use, since Actualizar_Audio() restores every
+// active effect in the chain in one pass and any of the three could be
+// among them. `action` itself must NOT lock jmutex; this acquires and
+// releases it.
+static void RunEngineActionFileSafe(RKR* rkr, std::function<void()> action)
 {
 	rkr->efx_Convol->SetSuppressFileLoad(true);
+	rkr->efx_Reverbtron->SetSuppressFileLoad(true);
+	rkr->efx_Echotron->SetSuppressFileLoad(true);
 	pthread_mutex_lock(&jmutex);
 	action();
 	pthread_mutex_unlock(&jmutex);
 	rkr->efx_Convol->SetSuppressFileLoad(false);
+	rkr->efx_Reverbtron->SetSuppressFileLoad(false);
+	rkr->efx_Echotron->SetSuppressFileLoad(false);
 
-	int convolFileValue;
-	if (rkr->efx_Convol->TakeSuppressedFileValue(&convolFileValue)) {
-		rkr->efx_Convol->prefetchIR(convolFileValue);
+	int fileValue;
+	if (rkr->efx_Convol->TakeSuppressedFileValue(&fileValue)) {
+		rkr->efx_Convol->prefetchIR(fileValue);
 		pthread_mutex_lock(&jmutex);
 		rkr->efx_Convol->commitIR();
+		pthread_mutex_unlock(&jmutex);
+	}
+	if (rkr->efx_Reverbtron->TakeSuppressedFileValue(&fileValue)) {
+		rkr->efx_Reverbtron->prefetchFile(fileValue);
+		pthread_mutex_lock(&jmutex);
+		rkr->efx_Reverbtron->commitFile();
+		pthread_mutex_unlock(&jmutex);
+	}
+	if (rkr->efx_Echotron->TakeSuppressedFileValue(&fileValue)) {
+		rkr->efx_Echotron->prefetchFile(fileValue);
+		pthread_mutex_lock(&jmutex);
+		rkr->efx_Echotron->commitFile();
 		pthread_mutex_unlock(&jmutex);
 	}
 }
@@ -2365,8 +2404,23 @@ private:
 			}, {}, nullptr,
 			{&kPanPresetNames, [rkr](int32 v) { rkr->efx_Pan->setpreset(v); }});
 
+		// Reverbtron's "IR"/"Preset" menus get the same unlock/relock
+		// treatment as Convolotron's own (see that BuildEffectBox call in
+		// BuildColumn3) for the identical reason: param 8 means setfile(),
+		// a small-but-real fopen()+fgets()/sscanf() read plus cleanup()+
+		// convert_time(), run synchronously inside Dispatch()'s jmutex lock
+		// otherwise.
 		BuildEffectBox(col, "Reverbtron", rkr, 40, &rkr->Reverbtron_Bypass,
-			[rkr](int32 n, int32 v) { rkr->efx_Reverbtron->changepar(n, v); },
+			[rkr](int32 n, int32 v) {
+				if (n == 8) {
+					pthread_mutex_unlock(&jmutex);
+					rkr->efx_Reverbtron->prefetchFile(v);
+					pthread_mutex_lock(&jmutex);
+					rkr->efx_Reverbtron->commitFile();
+					return;
+				}
+				rkr->efx_Reverbtron->changepar(n, v);
+			},
 			[rkr](int32 n) { return rkr->efx_Reverbtron->getpar(n); },
 			{
 				{"Wet/Dry", -64, 64, 0, 64},
@@ -2387,7 +2441,12 @@ private:
 				{"Safe", 2},
 			},
 			{{"IR", &kReverbtronIRNames, 8}}, nullptr,
-			{&kReverbtronPresetNames, [rkr](int32 v) { rkr->efx_Reverbtron->setpreset(v); }});
+			{&kReverbtronPresetNames, [rkr](int32 v) {
+				pthread_mutex_unlock(&jmutex);
+				rkr->efx_Reverbtron->setpresetPrefetch(v);
+				pthread_mutex_lock(&jmutex);
+				rkr->efx_Reverbtron->setpresetCommit();
+			}});
 
 		BuildEffectBox(col, "MusDelay", rkr, 15, &rkr->MusDelay_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_MusDelay->changepar(n, v); },
@@ -2580,8 +2639,24 @@ private:
 			}, nullptr,
 			{&kMBDistPresetNames, [rkr](int32 v) { rkr->efx_MBDist->setpreset(v); }});
 
+		// Same unlock/relock treatment as Convolotron/Reverbtron's "IR"/
+		// "Preset" menus, and for the same reason -- see this file's
+		// Reverbtron BuildEffectBox call for the fuller comment. This is
+		// the effect that actually surfaced the need for it in practice:
+		// "Suction" (preset 4 below) is an Echotron factory preset, and
+		// selecting a bank preset that turns Echotron on with it flooded
+		// the audio backend before this fix.
 		BuildEffectBox(col, "Echotron", rkr, 41, &rkr->Echotron_Bypass,
-			[rkr](int32 n, int32 v) { rkr->efx_Echotron->changepar(n, v); },
+			[rkr](int32 n, int32 v) {
+				if (n == 8) {
+					pthread_mutex_unlock(&jmutex);
+					rkr->efx_Echotron->prefetchFile(v);
+					pthread_mutex_lock(&jmutex);
+					rkr->efx_Echotron->commitFile();
+					return;
+				}
+				rkr->efx_Echotron->changepar(n, v);
+			},
 			[rkr](int32 n) { return rkr->efx_Echotron->getpar(n); },
 			{
 				{"Wet/Dry", -64, 64, 0, 64},
@@ -2604,7 +2679,12 @@ private:
 				{"LFO Type", &kLfoTypeNames, 14},
 				{"IR", &kEchotronIRNames, 8},
 			}, nullptr,
-			{&kEchotronPresetNames, [rkr](int32 v) { rkr->efx_Echotron->setpreset(v); }});
+			{&kEchotronPresetNames, [rkr](int32 v) {
+				pthread_mutex_unlock(&jmutex);
+				rkr->efx_Echotron->setpresetPrefetch(v);
+				pthread_mutex_lock(&jmutex);
+				rkr->efx_Echotron->setpresetCommit();
+			}});
 
 		BuildEffectBox(col, "Distorsion", rkr, 2, &rkr->Distorsion_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Distorsion->changepar(n, v); },
@@ -3245,7 +3325,7 @@ public:
 	// rkr->Bank[] to the requested file (loadbank()) and applies the
 	// requested slot from it (Bank_to_Preset()) -- both of which, via
 	// Actualizar_Audio(), need the same Convolotron handling as Load
-	// Preset, hence RunEngineActionConvolSafe() instead of a bare lock.
+	// Preset, hence RunEngineActionFileSafe() instead of a bare lock.
 	void ApplyBankPreset(int32 bank, int32 index)
 	{
 		if (!fRkr)
@@ -3260,7 +3340,7 @@ public:
 		std::string pathStr(path);
 		RKR* rkr = fRkr;
 
-		RunEngineActionConvolSafe(rkr, [rkr, pathStr, index]() {
+		RunEngineActionFileSafe(rkr, [rkr, pathStr, index]() {
 			if (rkr->loadbank((char*)pathStr.c_str()))
 				rkr->Bank_to_Preset(index);
 		});
@@ -3282,7 +3362,7 @@ public:
 			return;
 		RKR* rkr = fRkr;
 
-		RunEngineActionConvolSafe(rkr, [rkr]() {
+		RunEngineActionFileSafe(rkr, [rkr]() {
 			rkr->New();
 		});
 
@@ -3390,7 +3470,7 @@ public:
 
 		if (msg->what == MSG_BANK_PRESET) {
 			// Deliberately outside jmutex -- ApplyBankPreset() takes it
-			// itself via RunEngineActionConvolSafe(). See MSG_BANK_PRESET's
+			// itself via RunEngineActionFileSafe(). See MSG_BANK_PRESET's
 			// own declaration comment for why routing this through the
 			// already-locked MSG_ACTION path would deadlock instead.
 			int32 bank, index;
@@ -3484,11 +3564,11 @@ private:
 		// the Preset/IR dropdowns before they were split into prefetchIR()/
 		// commitIR() (see Convolotron.h). loadfile() itself is shared with
 		// the FLTK build and has no idea jmutex exists, so
-		// RunEngineActionConvolSafe() suppresses that one param instead
+		// RunEngineActionFileSafe() suppresses that one param instead
 		// (changepar(8, ...) just remembers the value while suppressed) and
 		// applies it the same unlocked-read/locked-commit way as those
 		// dropdowns once loadfile() itself is done.
-		RunEngineActionConvolSafe(fRkr, [this, &filePath]() {
+		RunEngineActionFileSafe(fRkr, [this, &filePath]() {
 			fRkr->loadfile((char*)filePath.Path());
 		});
 

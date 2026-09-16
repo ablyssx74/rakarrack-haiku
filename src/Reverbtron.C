@@ -60,7 +60,18 @@ Reverbtron::Reverbtron (float * efxoutl_, float * efxoutr_,int DS, int uq, int d
   data = (float *) malloc (sizeof (float) * 2000);
   rnddata = (float *) malloc (sizeof (float) * 2000);
   tdata = (float *) malloc (sizeof (float) * 2000);
-  lxn = (float *) malloc (sizeof (float) * (1 + maxx_size));  
+  scratchFtime = (float *) malloc (sizeof (float) * 2000);
+  scratchTdata = (float *) malloc (sizeof (float) * 2000);
+  scratchDataLength = 0;
+  scratchValid = false;
+  scratchOpenFailed = false;
+  memset (scratchFilename, 0, sizeof (scratchFilename));
+  scratchFilenum = 0;
+  pendingValid = false;
+  fSuppressFileLoad = false;
+  fHasSuppressedFileValue = false;
+  fSuppressedFileValue = 0;
+  lxn = (float *) malloc (sizeof (float) * (1 + maxx_size));
   hrtf =  (float *) malloc (sizeof (float) * (1 + hrtf_size)); 
   imax = nSAMPLE_RATE/2;  // 1/2 second available
   imdelay = (float *) malloc (sizeof (float) * imax);
@@ -595,6 +606,185 @@ Reverbtron::setpreset (int npreset)
 };
 
 
+// See Reverbtron.h for why this pair exists. Mirrors setpreset() above
+// exactly (same tables, same Fpre/pdata path for a saved custom preset)
+// but only computes what the preset would apply and prefetches its file
+// (param 8) into scratch space -- no member out() reads is touched, so
+// this is safe to call without the caller's lock held.
+void
+Reverbtron::setpresetPrefetch (int npreset)
+{
+  const int PRESET_SIZE = 16;
+  const int NUM_PRESETS = 9;
+  int presets[NUM_PRESETS][PRESET_SIZE] = {
+    {64, 0, 1, 500, 0, 0, 99, 70, 0, 0, 0, 64, 0, 0, 20000, 0},
+    {64, 0, 1, 500, 0, 0, 0, 40, 1, 0, 0, 64, 0, 0, 20000, 0},
+    {64, 0, 1, 500, 0, 0, 60, 15, 2, 0, 0, 64, 0, 0, 20000, 0},
+    {64, 16, 1, 500, 0, 0, 0, 22, 3, -17, 0, 64, 0, 0, 20000, 0},
+    {64, 0, 1, 1500, 0, 0, 48, 20, 4, 0, 0, 64, 0, 0, 20000, 0},
+    {88, 0, 1, 1500, 0, 0, 88, 14, 5, 0, 0, 64, 0, 0, 20000, 0},
+    {64, 0, 1, 1500, 0, 0, 30, 34, 6, 0, 0, 64, 0, 0, 20000, 0},
+    {64, 0, 1, 1500, 0, 0, 30, 20, 7, 0, 0, 64, 0, 0, 20000, 0},
+    {64, 0, 1, 1500, 0, 30, 0, 40, 9, 0, 0, 64, 0, 0, 20000, 0}
+  };
+
+  if (npreset > NUM_PRESETS - 1)
+    {
+      Fpre->ReadPreset (40, npreset - NUM_PRESETS + 1);
+      for (int n = 0; n < PRESET_SIZE; n++)
+        pendingParams[n] = pdata[n];
+    }
+  else
+    {
+      for (int n = 0; n < PRESET_SIZE; n++)
+        pendingParams[n] = presets[npreset][n];
+    }
+  pendingPreset = npreset;
+
+  // changepar()'s own loop applies param 4 (Puser) before param 8 (the
+  // file index), so setfile() always sees this preset's Puser, not a
+  // stale one -- do the same here before prefetching.
+  Puser = pendingParams[4];
+  prefetchFile (pendingParams[8]);
+  pendingValid = true;
+}
+
+// Applies everything setpresetPrefetch() computed: the prefetched file
+// (via commitFile(), replacing what changepar(8, ...) would have done)
+// and the other 15 params through the normal changepar() cases. Must be
+// called with the caller's lock held.
+void
+Reverbtron::setpresetCommit ()
+{
+  if (!pendingValid)
+    return;
+  const int PRESET_SIZE = 16;
+  for (int n = 0; n < PRESET_SIZE; n++)
+    {
+      if (n == 8)
+        commitFile ();
+      else
+        changepar (n, pendingParams[n]);
+    }
+  Ppreset = pendingPreset;
+  pendingValid = false;
+}
+
+// The read steps of setfile() below, unchanged, except the result lands
+// in scratchFtime/scratchTdata instead of ftime/tdata -- so this touches
+// nothing out() reads (data[]/time[], only ever written by convert_time())
+// and needs no lock. Presets never set Puser to 1 for this effect either
+// (see setpresetPrefetch()), so the Puser==1 (user-chosen file) case is
+// handled for completeness but isn't exercised from a preset.
+void
+Reverbtron::prefetchFile (int value)
+{
+  FILE *fs;
+  char wbuf[128];
+
+  scratchDataLength = 0;
+  scratchValid = false;
+  scratchOpenFailed = false;
+
+  memset (scratchFilename, 0, sizeof (scratchFilename));
+  if (!Puser)
+    sprintf (scratchFilename, "%s/%d.rvb", DATADIR, value + 1);
+  else
+    strncpy (scratchFilename, Filename, sizeof (scratchFilename) - 1);
+  scratchFilenum = value;
+
+  if ((fs = fopen (scratchFilename, "r")) == NULL)
+    {
+      scratchOpenFailed = true;
+      scratchValid = true;
+      return;
+    }
+
+  memset (wbuf, 0, sizeof (wbuf));
+  fgets (wbuf, sizeof wbuf, fs);	// Name
+
+  float compresion = 0.0f, quality = 0.0f;
+  memset (wbuf, 0, sizeof (wbuf));
+  fgets (wbuf, sizeof wbuf, fs);	// Subsample Compresion Skip
+  sscanf (wbuf, "%f,%f\n", &compresion, &quality);
+
+  int dataLength = 0;
+  memset (wbuf, 0, sizeof (wbuf));
+  fgets (wbuf, sizeof wbuf, fs);	// Length
+  sscanf (wbuf, "%d\n", &dataLength);
+  if (dataLength > 2000)
+    dataLength = 2000;
+
+  for (int i = 0; i < dataLength; i++)
+    {
+      memset (wbuf, 0, sizeof (wbuf));
+      fgets (wbuf, sizeof wbuf, fs);
+      sscanf (wbuf, "%f,%f\n", &scratchFtime[i], &scratchTdata[i]);
+    }
+
+  fclose (fs);
+
+  scratchDataLength = dataLength;
+  scratchValid = true;
+}
+
+// The rest of setfile() below: copies the prefetched data into the live
+// ftime/tdata and re-runs cleanup()+convert_time() -- must run under the
+// caller's lock, same as changepar(8, ...) always did.
+void
+Reverbtron::commitFile ()
+{
+  if (!scratchValid)
+    return;
+
+  if (!Puser)
+    {
+      Filenum = scratchFilenum;
+      memset (Filename, 0, sizeof (Filename));
+      strncpy (Filename, scratchFilename, sizeof (Filename) - 1);
+    }
+
+  if (scratchOpenFailed)
+    {
+      loaddefault ();
+      scratchValid = false;
+      return;
+    }
+
+  cleanup ();
+  memset (tdata, 0, sizeof (float) * 2000);
+  memset (ftime, 0, sizeof (float) * 2000);
+  data_length = scratchDataLength;
+  memcpy (ftime, scratchFtime, data_length * sizeof (float));
+  memcpy (tdata, scratchTdata, data_length * sizeof (float));
+
+  maxtime = 0.0f;
+  maxdata = 0.0f;
+  for (int i = 0; i < data_length; i++)
+    {
+      if (ftime[i] > maxtime)
+        maxtime = ftime[i];
+      if (tdata[i] > maxdata)
+        maxdata = tdata[i];
+    }
+
+  cleanup ();
+  convert_time ();
+  scratchValid = false;
+}
+
+// See Reverbtron.h's own comment on the declaration.
+bool
+Reverbtron::TakeSuppressedFileValue (int *outValue)
+{
+  if (!fHasSuppressedFileValue)
+    return false;
+  *outValue = fSuppressedFileValue;
+  fHasSuppressedFileValue = false;
+  return true;
+}
+
+
 void
 Reverbtron::changepar (int npar, int value)
 {
@@ -634,7 +824,12 @@ Reverbtron::changepar (int npar, int value)
       levpanr=level*rpanning;
       break;
     case 8:
-      if(!setfile(value)) error_num=2;
+      if (fSuppressFileLoad)
+        {
+          fSuppressedFileValue = value;
+          fHasSuppressedFileValue = true;
+        }
+      else if(!setfile(value)) error_num=2;
       break;
     case 9:
       Pstretch = value;

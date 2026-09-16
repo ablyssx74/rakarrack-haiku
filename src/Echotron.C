@@ -52,6 +52,16 @@ Echotron::Echotron (float * efxoutl_, float * efxoutr_)
   subdiv_fmod = 1.0f;
   f_qmode = 0;
 
+  scratchValid = false;
+  scratchOpenFailed = false;
+  memset (scratchFilename, 0, sizeof (scratchFilename));
+  scratchFilenum = 0;
+  scratchCount = 0;
+  pendingValid = false;
+  fSuppressFileLoad = false;
+  fHasSuppressedFileValue = false;
+  fSuppressedFileValue = 0;
+
   maxx_size = (SAMPLE_RATE * 6);   //6 Seconds delay time
 
   lxn = (float *) malloc (sizeof (float) * (1 + maxx_size)); 
@@ -527,6 +537,226 @@ Echotron::setpreset (int npreset)
 };
 
 
+// See Echotron.h for why this pair exists. Mirrors setpreset() above
+// exactly (same tables, same Fpre/pdata path for a saved custom preset)
+// but only computes what the preset would apply and prefetches its file
+// (param 8) into scratch space -- no member out() reads is touched, so
+// this is safe to call without the caller's lock held.
+void
+Echotron::setpresetPrefetch (int npreset)
+{
+  const int PRESET_SIZE = 16;
+  const int NUM_PRESETS = 5;
+  int presets[NUM_PRESETS][PRESET_SIZE] = {
+    {64, 45, 34, 4, 0, 76, 3, 41, 0, 96, -13, 64, 1, 1, 1, 1},
+    {96, 64, 16, 4, 0, 180, 50, 64, 1, 96, -4, 64, 1, 0, 0, 0},
+    {64, 64, 10, 4, 0, 400, 32, 64, 1, 96, -8, 64, 1, 0, 0, 0},
+    {0, 47, 28, 8, 0, 92, 0, 64, 3, 32, 0, 64, 1, 1, 1, 1},
+    {64, 36, 93, 8, 0, 81, 0, 64, 3, 32, 0, 64, 1, 0, 1, 1}
+  };
+
+  if (npreset > NUM_PRESETS - 1)
+    {
+      Fpre->ReadPreset (41, npreset - NUM_PRESETS + 1);
+      for (int n = 0; n < PRESET_SIZE; n++)
+        pendingParams[n] = pdata[n];
+    }
+  else
+    {
+      for (int n = 0; n < PRESET_SIZE; n++)
+        pendingParams[n] = presets[npreset][n];
+    }
+  pendingPreset = npreset;
+
+  // changepar()'s own loop applies param 4 (Puser) before param 8 (the
+  // file index), so setfile() always sees this preset's Puser, not a
+  // stale one -- do the same here before prefetching.
+  Puser = pendingParams[4];
+  prefetchFile (pendingParams[8]);
+  pendingValid = true;
+}
+
+// Applies everything setpresetPrefetch() computed: the prefetched file
+// (via commitFile(), replacing what changepar(8, ...) would have done)
+// and the other 15 params through the normal changepar() cases. Must be
+// called with the caller's lock held.
+void
+Echotron::setpresetCommit ()
+{
+  if (!pendingValid)
+    return;
+  const int PRESET_SIZE = 16;
+  for (int n = 0; n < PRESET_SIZE; n++)
+    {
+      if (n == 8)
+        commitFile ();
+      else
+        changepar (n, pendingParams[n]);
+    }
+  Ppreset = pendingPreset;
+  pendingValid = false;
+}
+
+// The read+validate steps of setfile() below, unchanged, except the
+// result lands in the scratch* arrays instead of the live fPan/fTime/...
+// ones -- so this touches nothing out() reads (rtime/ltime/ldata/rdata/
+// filterbank, only ever written by init_params(); iStages is the one raw
+// array out() does read directly, which is exactly why it has its own
+// scratchStages mirror too) and needs no lock. Presets never set Puser to
+// 1 for this effect either (see setpresetPrefetch()), so the Puser==1
+// (user-chosen file) case is handled for completeness but isn't
+// exercised from a preset. error_num is set the same way setfile()'s own
+// caller (changepar's case 8) already does, just deferred to commitFile().
+void
+Echotron::prefetchFile (int value)
+{
+  FILE *fs;
+  char wbuf[128];
+
+  scratchCount = 0;
+  scratchValid = false;
+  scratchOpenFailed = false;
+
+  memset (scratchFilename, 0, sizeof (scratchFilename));
+  if (!Puser)
+    sprintf (scratchFilename, "%s/%d.dly", DATADIR, value + 1);
+  else
+    strncpy (scratchFilename, Filename, sizeof (scratchFilename) - 1);
+  scratchFilenum = value;
+
+  if ((fs = fopen (scratchFilename, "r")) == NULL)
+    {
+      scratchOpenFailed = true;
+      scratchValid = true;
+      return;
+    }
+
+  while (fgets (wbuf, sizeof wbuf, fs) != NULL)
+    {
+      if (wbuf[0] != '#')
+        break;
+      memset (wbuf, 0, sizeof (wbuf));
+    }
+  sscanf (wbuf, "%f\t%f\t%d", &scratchSubdivFmod, &scratchSubdivDmod,
+    &scratchQmode);
+
+  int count = 0;
+  float tPan, tTime, tLevel, tLP, tBP, tHP, tFreq, tQ;
+  int tiStages;
+  while ((fgets (wbuf, sizeof wbuf, fs) != NULL)
+    && (count < ECHOTRON_F_SIZE))
+    {
+      if (wbuf[0] == 10)
+        break;
+      if (wbuf[0] == '#')
+        continue;
+      sscanf (wbuf, "%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%d", &tPan, &tTime,
+        &tLevel, &tLP, &tBP, &tHP, &tFreq, &tQ, &tiStages);
+
+      if ((tPan < -1.0f) || (tPan > 1.0f))
+        break;
+      scratchPan[count] = tPan;
+
+      if ((tTime < -6.0) || (tTime > 6.0f))
+        break;
+      scratchTime[count] = fabs (tTime);
+
+      if ((tLevel < -10.0f) || (tLevel > 10.0f))
+        break;
+      scratchLevel[count] = tLevel;
+
+      if ((tLP < -2.0f) || (tLP > 2.0f))
+        break;
+      scratchLP[count] = tLP;
+
+      if ((tBP < -2.0f) || (tBP > 2.0f))
+        break;
+      scratchBP[count] = tBP;
+
+      if ((tHP < -2.0f) || (tHP > 2.0f))
+        break;
+      scratchHP[count] = tHP;
+
+      if ((tFreq < 20.0f) || (tFreq > 26000.0f))
+        break;
+      scratchFreq[count] = tFreq;
+
+      if ((tQ < 0.0) || (tQ > 300.0f))
+        break;
+      scratchQ[count] = tQ;
+
+      if ((tiStages < 0) || (tiStages > MAX_FILTER_STAGES))
+        break;
+      scratchStages[count] = tiStages - 1;
+
+      memset (wbuf, 0, sizeof (wbuf));
+      count++;
+    }
+  fclose (fs);
+
+  scratchCount = count;
+  scratchValid = true;
+}
+
+// The rest of setfile() below: copies the prefetched arrays into the live
+// fPan/fTime/.../iStages and re-runs cleanup()+init_params() -- must run
+// under the caller's lock, same as changepar(8, ...) always did.
+void
+Echotron::commitFile ()
+{
+  if (!scratchValid)
+    return;
+
+  if (!Puser)
+    {
+      Filenum = scratchFilenum;
+      memset (Filename, 0, sizeof (Filename));
+      strncpy (Filename, scratchFilename, sizeof (Filename) - 1);
+    }
+
+  if (scratchOpenFailed)
+    {
+      loaddefault ();
+      scratchValid = false;
+      return;
+    }
+
+  subdiv_fmod = scratchSubdivFmod;
+  subdiv_dmod = scratchSubdivDmod;
+  f_qmode = scratchQmode;
+  memset (iStages, 0, sizeof (iStages));
+  for (int i = 0; i < scratchCount; i++)
+    {
+      fPan[i] = scratchPan[i];
+      fTime[i] = scratchTime[i];
+      fLevel[i] = scratchLevel[i];
+      fLP[i] = scratchLP[i];
+      fBP[i] = scratchBP[i];
+      fHP[i] = scratchHP[i];
+      fFreq[i] = scratchFreq[i];
+      fQ[i] = scratchQ[i];
+      iStages[i] = scratchStages[i];
+    }
+
+  if (!Pchange)
+    Plength = scratchCount;
+  cleanup ();
+  init_params ();
+  scratchValid = false;
+}
+
+// See Echotron.h's own comment on the declaration.
+bool
+Echotron::TakeSuppressedFileValue (int *outValue)
+{
+  if (!fHasSuppressedFileValue)
+    return false;
+  *outValue = fSuppressedFileValue;
+  fHasSuppressedFileValue = false;
+  return true;
+}
+
+
 void
 Echotron::changepar (int npar, int value)
 {
@@ -571,7 +801,12 @@ float tmptempo;
       ilrcross = 1.0f - abs(lrcross);      
       break;
     case 8:
-      if(!setfile(value)) error_num=4;
+      if (fSuppressFileLoad)
+        {
+          fSuppressedFileValue = value;
+          fHasSuppressedFileValue = true;
+        }
+      else if(!setfile(value)) error_num=4;
       break;
     case 9:
       lfo.Pstereo = value;

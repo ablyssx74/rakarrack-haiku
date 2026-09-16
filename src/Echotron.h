@@ -56,6 +56,26 @@ public:
 
   char Filename[128];
 
+  // Same reasoning and shape as Convolotron.h/Reverbtron.h's identical
+  // comment: setfile() below (fopen()+fgets()/sscanf() of a small .dly
+  // text file, then cleanup()+init_params()) was running from inside the
+  // real-time audio callback's lock via native mode's changepar()/
+  // setpreset() dispatch -- confirmed in practice: "Suction" (this
+  // effect's own factory preset 4 below) flooded the audio backend
+  // exactly like an unprotected Convolotron preset once did, when
+  // selected from a bank that turns this effect on. prefetchFile() reads
+  // into scratch arrays out() never touches, safe unlocked; commitFile()
+  // applies them (cleanup()+init_params(), no I/O) under the caller's
+  // lock. setpresetPrefetch()/setpresetCommit() are the same split for
+  // the 16-param setpreset() above, whose index 8 is this same file.
+  // setfile() itself is untouched, still used exactly as before by every
+  // other caller (FLTK included).
+  void setpresetPrefetch (int npreset);
+  void setpresetCommit ();
+  void prefetchFile (int value);
+  void commitFile ();
+  void SetSuppressFileLoad (bool suppress) { fSuppressFileLoad = suppress; }
+  bool TakeSuppressedFileValue (int *outValue);
 
 private:
 
@@ -114,6 +134,35 @@ float ldata[ECHOTRON_F_SIZE];
 float rdata[ECHOTRON_F_SIZE];
 
 //end text configurable parameters
+
+// Scratch mirror of the "text configurable parameters" above, filled by
+// prefetchFile() (no lock needed -- out() only ever reads the derived
+// rtime/ltime/ldata/rdata/filterbank arrays above, written by
+// init_params(), never these) and copied in by commitFile() under the
+// caller's lock. See the public prefetchFile()/commitFile() declaration
+// above for why this split exists.
+float scratchPan[ECHOTRON_F_SIZE];
+float scratchTime[ECHOTRON_F_SIZE];
+float scratchLevel[ECHOTRON_F_SIZE];
+float scratchLP[ECHOTRON_F_SIZE];
+float scratchBP[ECHOTRON_F_SIZE];
+float scratchHP[ECHOTRON_F_SIZE];
+float scratchFreq[ECHOTRON_F_SIZE];
+float scratchQ[ECHOTRON_F_SIZE];
+int scratchStages[ECHOTRON_F_SIZE];
+float scratchSubdivFmod, scratchSubdivDmod;
+int scratchQmode;
+int scratchCount;
+bool scratchValid;
+bool scratchOpenFailed;
+char scratchFilename[128];
+int scratchFilenum;
+int pendingParams[16];
+int pendingPreset;
+bool pendingValid;
+bool fSuppressFileLoad;
+bool fHasSuppressedFileValue;
+int fSuppressedFileValue;
 
 int initparams;
 

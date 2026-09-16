@@ -52,6 +52,26 @@ public:
 
   char Filename[128];
 
+  // Native (Haiku) mode calls setfile() -- fopen()+fgets()/sscanf() of a
+  // small .rvb text file, then cleanup()+convert_time() -- from inside a
+  // lock the real-time audio callback needs every ~PERIOD samples (see
+  // Convolotron.h's identical comment, which this mirrors exactly; found
+  // needed here in practice when a bank preset ("Suction", an Echotron
+  // preset that turned out to need the very same fix -- see Echotron.h)
+  // flooded the audio backend the same way an unprotected Convolotron
+  // preset once did). prefetchFile() below does the read into scratch
+  // members that out() never touches, so it's safe unlocked; commitFile()
+  // applies it (cleanup()+convert_time(), no I/O) under the caller's lock.
+  // setpresetPrefetch()/setpresetCommit() are the same split for the
+  // 16-param setpreset() above, whose index 8 is this same file. setfile()
+  // itself is untouched, still used exactly as before by every other
+  // caller (FLTK included).
+  void setpresetPrefetch (int npreset);
+  void setpresetCommit ();
+  void prefetchFile (int value);
+  void commitFile ();
+  void SetSuppressFileLoad (bool suppress) { fSuppressFileLoad = suppress; }
+  bool TakeSuppressedFileValue (int *outValue);
 
 private:
 
@@ -62,6 +82,23 @@ private:
   void setfb(int value);
   void convert_time();
   void loaddefault();
+
+  // State for the two splits above. scratchFtime/scratchTdata mirror
+  // ftime/tdata (both sized 2000, see the constructor) but are never read
+  // by out() (which only reads data[]/time[], written by convert_time()),
+  // so prefetchFile() filling them needs no lock.
+  float *scratchFtime, *scratchTdata;
+  int scratchDataLength;
+  bool scratchValid;
+  bool scratchOpenFailed;
+  char scratchFilename[128];
+  int scratchFilenum;
+  int pendingParams[16];
+  int pendingPreset;
+  bool pendingValid;
+  bool fSuppressFileLoad;
+  bool fHasSuppressedFileValue;
+  int fSuppressedFileValue;
 
 
   //Parametrii
