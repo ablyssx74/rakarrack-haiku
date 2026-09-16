@@ -244,12 +244,16 @@ __attribute__((weak)) void RKR::EQ2_setpreset(int) { }
 __attribute__((weak)) int RKR::Cabinet_setpreset(int) { return 0; }
 
 // Convolotron's setpresetPrefetch()/setpresetCommit()/prefetchIR()/
-// commitIR() (src/Convolotron.h) are called directly from this file's
-// Convolotron box (BuildColumn3) for the same reason as every stub above.
+// commitIR()/TakeSuppressedFileValue() (src/Convolotron.h) are called
+// directly from this file's Convolotron box (BuildColumn3) and Load Preset
+// handling (RakarrackWindow::HandleRefsReceived) for the same reason as
+// every stub above. SetSuppressFileLoad() needs no stub of its own -- it's
+// defined inline in the header, so it has no out-of-line symbol to miss.
 __attribute__((weak)) void Convolotron::setpresetPrefetch(int) { }
 __attribute__((weak)) void Convolotron::setpresetCommit() { }
 __attribute__((weak)) void Convolotron::prefetchIR(int) { }
 __attribute__((weak)) void Convolotron::commitIR() { }
+__attribute__((weak)) bool Convolotron::TakeSuppressedFileValue(int*) { return false; }
 
 // PERIOD (src/process.C) is a plain global, not a function -- same linking
 // problem, same fix: a weak fallback definition that the strong one in
@@ -688,26 +692,62 @@ static int* BypassPtrForId(RKR* rkr, int effectId) {
 
 // Effects whose on-screen controls get re-synced with the engine's actual
 // values after a Load Preset (see RakarrackView::fEffectRefreshers/
-// RefreshEffectBoxes() and RakarrackWindow::HandleRefsReceived()). Doing
-// this for all 46 effects at once is a much bigger job (every ParamDef/
-// ToggleDef/TypeMenuDef across every BuildColumnN call site needs the same
-// scrutiny this list already got); starting with just these nine, picked
-// for testing, keeps that work bounded and verifiable before widening it.
-// Extending coverage later is just adding more IDs here (each effect's
-// BuildEffectBox call already builds and registers its own refresher
-// unconditionally -- see BuildEffectBox's "refreshers" comment -- so no
-// other code needs to change), using the same effect-type IDs as
-// BypassPtrForId()'s switch just above.
+// RefreshEffectBoxes() and RakarrackWindow::HandleRefsReceived()). Started
+// as just nine effects (Reverb, Cabinet, Valve, Expander, Convolotron,
+// CoilCrafter, ShelfBoost, StompBox, Reverbtron) to prove the mechanism out
+// before widening it -- now every effect BuildColumn1-4 wires up, since
+// each one's BuildEffectBox call already builds and registers its own
+// refresher unconditionally regardless of which effect it is (see that
+// function's "refreshers" comment), so covering the rest was just listing
+// the remaining IDs here, not new code. Same effect-type IDs as
+// BypassPtrForId()'s switch and EffectName() just above.
 static const std::vector<int> kPresetRefreshEffectIds = {
+	0,	// Equalizer
+	1,	// Compressor
+	2,	// Distorsion
+	3,	// Overdrive
+	4,	// Echo
+	5,	// Chorus
+	6,	// Phaser
+	7,	// Flanger
 	8,	// Reverb
+	9,	// EQ2
+	10,	// WhaWha
+	11,	// Alienwah
 	12,	// Cabinet
+	13,	// Auto Pan
+	14,	// Harmonizer
+	15,	// MusDelay
+	16,	// Noise Gate
+	17,	// Distortion (Overdrive's NewDist sibling)
+	18,	// Analog Phaser
 	19,	// Valve
+	20,	// DFlange
+	21,	// Ring Modulator
+	22,	// Exciter
+	23,	// MBDist
+	24,	// Arpie
 	25,	// Expander
+	26,	// Shuffle
+	27,	// Synthfilter
+	28,	// MBVvol
 	29,	// Convolotron
+	30,	// Looper
+	31,	// RyanWah
+	32,	// RBEcho
 	33,	// CoilCrafter
 	34,	// ShelfBoost
+	35,	// Vocoder
+	36,	// Sustainer
+	37,	// Sequence
+	38,	// Shifter
 	39,	// StompBox
 	40,	// Reverbtron
+	41,	// Echotron
+	42,	// StereoHarm
+	43,	// CompBand
+	44,	// Opticaltrem
+	45,	// Vibe
 };
 
 // Returns true if effectId is now (or already was) occupying a slot.
@@ -3159,28 +3199,41 @@ private:
 			return;
 		BPath filePath(&ref);
 
+		// loadfile() restores Convolotron the same way setpreset() does --
+		// an 11-parameter changepar() loop that, for param 8 (the IR file),
+		// means setfile(): disk I/O plus a Blackman-window/normalization
+		// pass. Left alone, that runs inside the jmutex lock below, same
+		// flood as the Preset/IR dropdowns before they were split into
+		// prefetchIR()/commitIR() (see Convolotron.h). loadfile() itself is
+		// shared with the FLTK build and has no idea jmutex exists, so
+		// suppressing here instead: changepar(8, ...) just remembers the
+		// value while this is set, and prefetchIR()/commitIR() below apply
+		// it the same unlocked-read/locked-commit way as those dropdowns.
+		fRkr->efx_Convol->SetSuppressFileLoad(true);
 		pthread_mutex_lock(&jmutex);
 		fRkr->loadfile((char*)filePath.Path());
 		pthread_mutex_unlock(&jmutex);
+		fRkr->efx_Convol->SetSuppressFileLoad(false);
+
+		int convolFileValue;
+		if (fRkr->efx_Convol->TakeSuppressedFileValue(&convolFileValue)) {
+			fRkr->efx_Convol->prefetchIR(convolFileValue);
+			pthread_mutex_lock(&jmutex);
+			fRkr->efx_Convol->commitIR();
+			pthread_mutex_unlock(&jmutex);
+		}
 
 		// The engine and audio output switch to the loaded preset
 		// immediately; every widget was only ever primed once, at its own
 		// construction, so without this the on-screen positions would keep
-		// showing whatever was there before the load. Re-synced here for
-		// kPresetRefreshEffectIds' effects specifically -- see that list's
-		// own comment for why it's not all 46 yet. Plain int reads (getpar()
-		// and friends), same as BuildEffectBox's own construction-time
-		// priming, so no lock needed here either.
+		// showing whatever was there before the load. kPresetRefreshEffectIds
+		// now covers every effect (see that list's own comment), so this
+		// catches all of them, not just the original nine -- no more "won't
+		// catch up until restarted" alert needed for the mismatch that used
+		// to leave. Plain int reads (getpar() and friends), same as
+		// BuildEffectBox's own construction-time priming, so no lock needed
+		// here either.
 		fMainView->RefreshEffectBoxes(kPresetRefreshEffectIds);
-
-		BAlert* alert = new BAlert("Preset Loaded",
-			"The preset was loaded and is already playing -- audio reflects "
-			"it now. Reverb, Cabinet, Valve, Expander, Convolotron, "
-			"CoilCrafter, ShelfBoost, StompBox and Reverbtron's on-screen "
-			"controls now match it too; every other effect's positions "
-			"won't catch up until Rakarrack is restarted.",
-			"OK", NULL, NULL, B_WIDTH_AS_USUAL, B_INFO_ALERT);
-		alert->Go(NULL);
 	}
 
 	RKR* fRkr;

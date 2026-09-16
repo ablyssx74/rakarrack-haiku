@@ -68,6 +68,24 @@ public:
   void prefetchIR (int value);
   void commitIR ();
 
+  // A third way into the same problem: fileio.C's loadfile() (native
+  // mode's "Load Preset") restores every effect through its own
+  // changepar() loop -- for Convolotron that still means case 8 below
+  // calls the slow, undivided setfile() same as ever, and loadfile()'s
+  // caller (RakarrackWindow::HandleRefsReceived) holds jmutex around the
+  // *entire* loadfile() call, same reasoning as SliderW/setpreset() above.
+  // Rather than teach shared engine code (fileio.C, linked into the FLTK
+  // build too) about a Haiku-only mutex, SetSuppressFileLoad(true) makes
+  // changepar(8, ...) just remember the value instead of acting on it;
+  // the caller then fetches it with TakeSuppressedFileValue() once
+  // loadfile() returns and drives prefetchIR()/commitIR() itself, exactly
+  // like the Preset/IR dropdowns do. Leaving this off (the default) makes
+  // changepar(8, ...) behave exactly as it always has, so no other caller
+  // -- FLTK's own loadfile(), setpreset(), the plain "IR" dropdown -- is
+  // affected unless it explicitly opts in.
+  void SetSuppressFileLoad (bool suppress) { fSuppressFileLoad = suppress; }
+  bool TakeSuppressedFileValue (int *outValue);
+
   int Ppreset;
 
   float *efxoutl;
@@ -108,6 +126,11 @@ private:
   int pendingParams[11];
   int pendingPreset;
   bool pendingValid;
+
+  // State for SetSuppressFileLoad()/TakeSuppressedFileValue() above.
+  bool fSuppressFileLoad;
+  bool fHasSuppressedFileValue;
+  int fSuppressedFileValue;
 
   int offset;
   int maxx_size,maxx_read,real_len,length;

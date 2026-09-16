@@ -65,6 +65,9 @@ Convolotron::Convolotron (float * efxoutl_, float * efxoutr_,int DS, int uq, int
   memset (scratchFilename, 0, sizeof (scratchFilename));
   scratchFilenum = 0;
   pendingValid = false;
+  fSuppressFileLoad = false;
+  fHasSuppressedFileValue = false;
+  fSuppressedFileValue = 0;
   maxx_size--;
   offset = 0;  
   M_Resample = new Resample(0);
@@ -560,6 +563,20 @@ Convolotron::commitIR ()
   scratchValid = false;
 }
 
+// See SetSuppressFileLoad()'s own comment in Convolotron.h. Returns false
+// (leaving *outValue untouched) if changepar(8, ...) never actually ran
+// while suppressed -- e.g. a loaded file predates Convolotron, or this is
+// called without SetSuppressFileLoad(true) ever having been set.
+bool
+Convolotron::TakeSuppressedFileValue (int *outValue)
+{
+  if (!fHasSuppressedFileValue)
+    return false;
+  *outValue = fSuppressedFileValue;
+  fHasSuppressedFileValue = false;
+  return true;
+}
+
 
 void
 Convolotron::changepar (int npar, int value)
@@ -589,7 +606,12 @@ Convolotron::changepar (int npar, int value)
       process_rbuf();
       break;
     case 8:
-      if(!setfile(value)) error_num=1;
+      if (fSuppressFileLoad)
+        {
+          fSuppressedFileValue = value;
+          fHasSuppressedFileValue = true;
+        }
+      else if(!setfile(value)) error_num=1;
       break;
     case 5:
       break;
