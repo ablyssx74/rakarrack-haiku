@@ -2955,6 +2955,15 @@ void RKRGUI::cb_reverb_activar_i(Fl_Light_Button* o, void*) {
  o->value(rkr->Reverb_Bypass);
  return;
 }
+// Belt-and-suspenders alongside this widget's own deactivate() in the
+// RKRGUI constructor -- see that comment for why Reverb is blocked above
+// 48kHz at all.
+if(SAMPLE_RATE>48000)
+{
+o->value(0);
+rkr->Reverb_Bypass=0;
+return;
+}
 rkr->Reverb_Bypass=(int)o->value();
 if((int) o->value()==0)
 rkr->efx_Rev->cleanup();
@@ -22182,6 +22191,29 @@ back = NULL;
 old = NULL;
 make_window();
 
+// Reverb is unstable above 48kHz on Haiku (runaway volume, clicking/
+// popping -- confirmed reproducible from simply enabling it, no parameter
+// touched; not the SliderW/changepar() data race fixed elsewhere in this
+// file and jack.C). SAMPLE_RATE is fixed for the process's lifetime (every
+// effect sizes its own buffers from it once, at construction), so this
+// only needs deciding once, here, right after make_window() builds
+// reverb_activar. deactivate() blocks manual clicks; cb_reverb_activar_i
+// and Put_Loaded()'s own "case 8" refuse/force it off the other two ways
+// Reverb_Bypass can end up set -- a manual toggle that slips through
+// somehow, and Load Preset/a Bank preset/Random Preset, none of which go
+// through this checkbox's callback at all. reverbTip must outlive this
+// constructor (tooltip() only stores the pointer, doesn't copy it), hence
+// static.
+if (SAMPLE_RATE > 48000) {
+  static char reverbTip[256];
+  snprintf(reverbTip, sizeof(reverbTip),
+    "Disabled: Reverb is unstable above 48 kHz on Haiku (runaway volume, "
+    "clicking/popping). Your audio is running at %u Hz -- set Haiku's "
+    "Media preferences to 48000 Hz to use it.", SAMPLE_RATE);
+  reverb_activar->deactivate();
+  reverb_activar->tooltip(reverbTip);
+}
+
 Principal->icon((char *)p);
 BankWindow->icon((char *)p);
 Order->icon((char *)p);
@@ -22989,9 +23021,16 @@ for(i=0;i<10;i++)
      break;
  
      case 8://Reverb
+     // Put_Loaded() is the one choke point every path that can set
+     // Reverb_Bypass funnels through afterward -- Load Preset, a Bank
+     // preset (Compare/Preset Counter), and RandomPreset() (which calls
+     // this at its own end) -- none of which go through
+     // cb_reverb_activar_i above. See that callback's own comment for why
+     // Reverb is blocked above 48kHz at all.
+     if(SAMPLE_RATE>48000) rkr->Reverb_Bypass=0;
      reverb_activar->value(rkr->Reverb_Bypass);
      reverb_preset->do_callback(reverb_preset,1);
-     break;  
+     break;
 
      case 9://EQ2
      eqp_activar->value(rkr->EQ2_Bypass);
@@ -27723,9 +27762,12 @@ for(i=0;i<10;i++)
      break;
  
      case 8://Reverb
-     if (i<numEff)rkr->Reverb_Bypass=1; else rkr->Reverb_Bypass=0;
+     // Put_Loaded(), called at the end of this function, forces this back
+     // off anyway if unsafe (see its own "case 8" comment) -- setting it
+     // correctly here too avoids even a momentary Reverb_Bypass=1.
+     if ((i<numEff) && (SAMPLE_RATE<=48000)) rkr->Reverb_Bypass=1; else rkr->Reverb_Bypass=0;
      reverb_activar->value(rkr->Reverb_Bypass);
-     break;  
+     break;
 
      case 9://EQ2
      if (i<numEff)rkr->EQ2_Bypass=1; else rkr->EQ2_Bypass=0; 
