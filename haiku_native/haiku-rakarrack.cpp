@@ -2205,7 +2205,17 @@ private:
 		// every existing call site above (with whatever mix of toggles/
 		// typeMenus/extraWidgets it already passes) keeps compiling
 		// unchanged -- see PresetMenuDef.
-		const PresetMenuDef& preset = PresetMenuDef())
+		const PresetMenuDef& preset = PresetMenuDef(),
+		// Non-null makes this effect permanently off: the "On" checkbox is
+		// disabled (can't be clicked) and carries this string as its
+		// tooltip, and -- the part that actually matters, since a Load
+		// Preset/Bank preset/Random Preset sets *bypass directly, never
+		// through that checkbox -- fEffectRefreshers below forces *bypass
+		// back to 0 every time it runs, regardless of what a preset just
+		// set it to. Currently only Reverb passes this (see BuildColumn3),
+		// for the sample-rate instability described in its own comment
+		// there.
+		const char* disabledReason = nullptr)
 	{
 		BBox* box = new BBox(title);
 		box->SetViewColor(kPanelColor);
@@ -2229,6 +2239,13 @@ private:
 		BGroupView* body = new BGroupView(B_VERTICAL, 4);
 		body->SetViewColor(kPanelColor);
 
+		// A permanently-disabled effect (see disabledReason's own comment)
+		// never gets to claim a slot at all -- force it off before even
+		// the ActivateEffectSlot() priming below runs, covering a bank/
+		// preset already loaded (e.g. via -p) before this UI existed.
+		if (disabledReason)
+			*bypass = 0;
+
 		// If a loaded bank/preset already has this effect's Bypass flag on
 		// by the time this box is built, claim its chain slot right away so
 		// the checkbox's initial "on" state matches what's actually
@@ -2244,7 +2261,14 @@ private:
 		BCheckBox* onToggle = new BCheckBox("on", "On", nullptr);
 		onToggle->SetValue(*bypass != 0 ? B_CONTROL_ON : B_CONTROL_OFF);
 		onToggle->SetViewColor(kPanelColor);
-		int32 onIdx = Bind([rkr, effectId, bypass, body, onToggle](int32 v) {
+		int32 onIdx = Bind([rkr, effectId, bypass, body, onToggle, disabledReason](int32 v) {
+			if (disabledReason) {
+				// Shouldn't be reachable -- the checkbox itself is disabled
+				// below -- but a disabled BControl still technically has a
+				// message, so refuse explicitly rather than trust that.
+				onToggle->SetValue(B_CONTROL_OFF);
+				return;
+			}
 			if (v) {
 				if (!ActivateEffectSlot(rkr, effectId)) {
 					// All 10 chain slots are taken by other active effects
@@ -2261,6 +2285,11 @@ private:
 			SetViewVisible(body, v != 0);
 		});
 		onToggle->SetMessage(MakeMessage(onIdx));
+		if (disabledReason) {
+			onToggle->SetEnabled(false);
+			onToggle->SetToolTip(disabledReason);
+			box->SetToolTip(disabledReason);
+		}
 		content->AddChild(onToggle);
 		if (*bypass == 0)
 			body->Hide();
@@ -2328,9 +2357,20 @@ private:
 		// itself just did at construction, just replayed later. See
 		// RefreshEffectBoxes()/fEffectRefreshers' own comment for when this
 		// actually gets called.
+		//
+		// This is also the ONLY thing standing between a disabled effect
+		// (disabledReason set) and actually running: Load Preset/a Bank
+		// preset/Random Preset all set *bypass directly through
+		// Actualizar_Audio() (fileio.C), never through the "On" checkbox
+		// above, so disabling that checkbox alone does nothing against any
+		// of the three. All three call RefreshEffectBoxes() right after,
+		// which is what forces *bypass back to 0 here even though the
+		// preset just turned it on.
 		fEffectRefreshers[effectId] = [rkr, effectId, bypass, onToggle, body,
-			refreshers]() {
-			if (*bypass != 0 && !ActivateEffectSlot(rkr, effectId))
+			refreshers, disabledReason]() {
+			if (disabledReason)
+				*bypass = 0;
+			else if (*bypass != 0 && !ActivateEffectSlot(rkr, effectId))
 				*bypass = 0;
 			onToggle->SetValue(*bypass != 0 ? B_CONTROL_ON : B_CONTROL_OFF);
 			SetViewVisible(body, *bypass != 0);
@@ -2803,6 +2843,34 @@ private:
 			}, {}, {}, nullptr,
 			{&kRingPresetNames, [rkr](int32 v) { rkr->efx_Ring->setpreset(v); }});
 
+		// Reverb (only Reverb, per real-world testing -- runaway volume,
+		// clicking/popping, confirmed reproducible from simply enabling it,
+		// no parameter touched) is unstable above 48kHz on Haiku, root
+		// cause not identified (not the SliderW/changepar() data race fixed
+		// elsewhere, not the comb-filter realloc's own cost -- see that
+		// code's own comments). This used to be a plain warning dialog at
+		// startup (jack.C's JACKstart(), removed) telling the user to
+		// switch Haiku's Media preferences or expect trouble; now the
+		// checkbox itself is disabled instead, so it's simply not possible
+		// to hit the bug rather than being warned and left to hit it
+		// anyway. static: SAMPLE_RATE is fixed for the process's lifetime
+		// (every effect sizes its own buffers from it once, at
+		// construction -- see HaikuDetectAudioSettingsEarly()'s own
+		// comment), so this only needs computing once, and disabledReason
+		// is captured by BuildEffectBox's lambdas for the life of the
+		// session -- it must outlive this function call, which a stack
+		// buffer wouldn't.
+		static char reverbDisabledMsg[192];
+		const char* reverbDisabledReason = nullptr;
+		if (SAMPLE_RATE > 48000) {
+			snprintf(reverbDisabledMsg, sizeof(reverbDisabledMsg),
+				"Disabled: Reverb is unstable above 48 kHz on Haiku (runaway "
+				"volume, clicking/popping). Your audio is running at %u Hz -- "
+				"set Haiku's Media preferences to 48000 Hz to use it.",
+				SAMPLE_RATE);
+			reverbDisabledReason = reverbDisabledMsg;
+		}
+
 		BuildEffectBox(col, "Reverb", rkr, 8, &rkr->Reverb_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Rev->changepar(n, v); },
 			[rkr](int32 n) { return rkr->efx_Rev->getpar(n); },
@@ -2815,7 +2883,8 @@ private:
 				{"Damp", 64, 127, 9, 0},
 				{"R.Size", 1, 127, 11, 0},
 			}, {}, {}, nullptr,
-			{&kReverbPresetNames, [rkr](int32 v) { rkr->efx_Rev->setpreset(v); }});
+			{&kReverbPresetNames, [rkr](int32 v) { rkr->efx_Rev->setpreset(v); }},
+			reverbDisabledReason);
 
 		std::vector<ParamDef> chorusFlangerParams = {
 			{"Tempo", 1, 600, 2, 0},

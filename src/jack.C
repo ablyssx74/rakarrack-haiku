@@ -702,26 +702,21 @@ int JACKstart(RKR * rkr_, jack_client_t * jackclient_) {
         rtAlert->Go();
     }
 
-    // Several effects (Reverb in particular) have shown instability --
-    // runaway/exploding output, clicking/popping -- at sample rates above
-    // 48kHz on Haiku that we have not been able to root-cause (it is not
-    // the SliderW/changepar() data race already fixed elsewhere in this
-    // file and rakarrack.cxx; it reproduces from simply enabling Reverb,
-    // no parameter touched). Rather than let users hit that blind, warn
-    // up front when the detected device rate isn't 48kHz so they know to
-    // either switch Haiku's Media preferences to 48kHz or expect trouble
-    // from rate-sensitive effects.
-    if (g_HaikuDetectedRate != 48000) {
-        char rateMsg[256];
-        snprintf(rateMsg, sizeof(rateMsg),
-            "Your audio device is running at %u Hz instead of 48000 Hz. Some effects "
-            "(especially Reverb) are known to become unstable -- runaway volume, clicking "
-            "and popping -- at rates other than 48kHz. If you hear this, set Haiku's Media "
-            "preferences to 48000 Hz.", g_HaikuDetectedRate);
-        BAlert* rateAlert = new BAlert("Audio Sample Rate", rateMsg, "OK", NULL, NULL,
-            B_WIDTH_AS_USUAL, B_WARNING_ALERT);
-        rateAlert->Go();
-    }
+    // Reverb has shown instability -- runaway/exploding output, clicking/
+    // popping -- at sample rates above 48kHz on Haiku that we have not
+    // been able to root-cause (it is not the SliderW/changepar() data race
+    // already fixed elsewhere in this file and rakarrack.cxx; it
+    // reproduces from simply enabling Reverb, no parameter touched).
+    // Real-world testing narrowed this down to Reverb specifically, not
+    // "some effects" generally, and to rates *above* 48kHz specifically
+    // (not merely "not equal to" -- 44100Hz is fine). Used to be a plain
+    // warning dialog here telling the user to switch Haiku's Media
+    // preferences or expect trouble; native mode's Reverb box now disables
+    // its own "On" checkbox instead (see BuildColumn3's
+    // reverbDisabledReason in haiku_native/haiku-rakarrack.cpp), covering
+    // every way it could be turned on -- manually, a Load Preset, a Bank
+    // preset, or Random Preset -- so there is nothing left to warn about
+    // here.
 
     int final_rate = (int)g_HaikuDetectedRate;
     int final_frames = (int)g_HaikuDetectedFrames;
