@@ -6,30 +6,30 @@ SHELL := /bin/bash
 PACKAGE_DIR := build/package
 NAME = rakarrack
 VERSION = 0.6.1
-REVISION = 9
+REVISION = 11
 
 UNAME_M := $(shell uname -m)
 ifeq ($(UNAME_M), BePC)
 CXX = g++-x86
 CC = gcc-x86
 ARCH = x86_gcc2
-LDFLAGS = -L/boot/system/develop/lib/x86 -L/boot/system/lib/x86 
+LDFLAGS = -L/boot/system/develop/lib/x86 -L/boot/system/lib/x86
 CPPFLAGS = -I/boot/system/develop/headers/x86 -I$(PWD)
 PackageInfo = PackageInfo.tpl
 is32bit = _x86
 MAKE := setarch x86 $(MAKE)
-REQUIRED_PKGS =	fltk_x86_devel fontconfig_x86_devel freetype_x86_devel libxfont2_x86_devel libsndfile_x86_devel libsamplerate_x86_devel libxpm_x86_devel 
+REQUIRED_PKGS =	fltk_x86_devel lib:libcurl_x86 fontconfig_x86_devel freetype_x86_devel libxfont2_x86_devel libsndfile_x86_devel libsamplerate_x86_devel libxpm_x86_devel
 else
 CXX = g++
 CC = gcc
 ARCH = x86_64
 LDFLAGS = -L/boot/system/develop/lib/
 CPPFLAGS = -I$(PWD)
-is32bit = 
+is32bit =
 PackageInfo = PackageInfo.tpl
-REQUIRED_PKGS = fltk_devel fontconfig_devel freetype_devel libxfont2_devel libsndfile_devel libsamplerate_devel libxpm_devel
+REQUIRED_PKGS = fltk_devel lib:libcurl fontconfig_devel freetype_devel libxfont2_devel libsndfile_devel libsamplerate_devel libxpm_devel
 endif
-     
+
 
 #----------------------------------------------------------
 # Default buffer and rame rate. Can be changed later in the UI
@@ -38,9 +38,9 @@ FRAMES ?= 1024
 RATE   ?= 48000
 #----------------------------------------------------------
 
-	
+
 #----------------------------------------------------------
-# CPU Features - Use native if building for personal use and maximum local speed	
+# CPU Features - Use native if building for personal use and maximum local speed
 # SIMD_FLAGS :=  -O3 -march=native
 #----------------------------------------------------------
 SIMD_FLAGS ?= -O3 -mtune=generic -msse2 # Public Build Default
@@ -56,7 +56,7 @@ HAIKU_FIXES = -include $(PWD)/haiku_fixes.h
 # libtracker.so on Haiku, not libbe.so, even though it's declared as part
 # of the public Storage Kit API.
 HAIKU_LIBS = -lmedia -lbe -lmidi2 -ltranslation -lnetwork -lroot -lpthread -ltracker
-EXTRA_LIBS = -lsamplerate -lsndfile -lfltk_images -lfltk -lfltk_forms -lpng -lz
+EXTRA_LIBS = -lsamplerate -lsndfile -lfltk_images -lfltk -lfltk_forms -lpng -lz -lcurl
 #----------------------------------------------------------
 
 
@@ -99,7 +99,7 @@ config:
 	--enable-docdir --docdir="/boot/system/data/rakarrack/share/doc/rakarrack/html" \
 	--with-frame-rate=$(RATE) \
 	--with-buffer-frames="$(FRAMES)"
-	
+
 haiku_native/haiku-rakarrack.o: haiku_native/haiku-rakarrack.cpp
 	$(CXX) -c $< -o $@ -I$(PWD)/jack -I. -I./src $(FLTK_CXX) $(BUILD_FLAGS) -fpermissive $(HAIKU_FIXES)
 
@@ -108,10 +108,9 @@ build: haiku_stubs.o haiku_native/haiku-rakarrack.o
 	@echo "      Building Rakarrack for Haiku $(SIMD_FLAGS)"
 	@echo "=========================================================="
 	touch configure.in aclocal.m4 Makefile.am Makefile.in configure config.status
-	$(MAKE) -j4 \
+	-$(MAKE) -j4 -k \
 		CXXFLAGS="-include $(PWD)/jack/jack.h $(HAIKU_FIXES) $(FLTK_CXX) $(BUILD_FLAGS) -fpermissive -I. -I$(PWD)/jack" \
 		LIBS="$(PWD)/haiku_native/haiku-rakarrack.o $(FLTK_LD) $(EXTRA_LIBS) $(HAIKU_LIBS) $(LD_OPTIMIZE) $(PWD)/haiku_stubs.o -Wno-int-to-pointer-cast -Wno-write-strings"
-	
 	# The final link now combines everything correctly
 	$(CXX) -o rakarrack src/*.o haiku_stubs.o haiku_native/haiku-rakarrack.o \
 		$(BUILD_FLAGS) \
@@ -121,6 +120,28 @@ build: haiku_stubs.o haiku_native/haiku-rakarrack.o
 	rc -o rakarrack.rsrc rakarrack.rdef
 	xres -o rakarrack rakarrack.rsrc
 	mimeset -f rakarrack
+
+	# extra/'s CLI utilities (rakconvert, rakverb, rakverb2, rakgit2new) have no
+	# LDADD of their own in extra/Makefile.am, so the recursive build above
+	# always fails to link them -- they only get whatever the global LIBS above
+	# says, which (correctly, for src's own internal rakarrack target) doesn't
+	# include src/*.o. That failure is expected and harmless (tolerated by the
+	# leading '-' and -k above, so it doesn't abort this target); relink them
+	# here explicitly instead, the same way rakarrack itself is relinked above.
+	# Each extra/ tool has its own main()/show_help(), which collides with
+	# src/main.o's -- but src/main.o also defines globals (rk, gDebugMode,
+	# rakgui) that other src/*.o files need via extern, so it can't just be
+	# dropped from the link either. Instead: list the tool's own object FIRST
+	# and pass --allow-multiple-definition, so ld keeps the first (the tool's
+	# own) definition of main()/show_help() and silently discards main.o's,
+	# while every other (non-conflicting) symbol from main.o still links in
+	# normally.
+	for tool in rakconvert rakverb rakverb2 rakgit2new; do \
+		$(CXX) -o extra/$$tool extra/$$tool.o src/*.o haiku_stubs.o haiku_native/haiku-rakarrack.o \
+			$(BUILD_FLAGS) \
+			-include $(PWD)/jack/jack.h \
+			$(EXTRA_LIBS) $(HAIKU_LIBS) $(LD_OPTIMIZE) -Wl,--allow-multiple-definition; \
+	done
 
 
 haiku_stubs.o: haiku_stubs.cpp
@@ -138,7 +159,7 @@ clean:
 	       doc/help/Makefile doc/help/imagenes/Makefile doc/help/css/Makefile extra/Makefile
 	autoreconf -vif
 	@echo "Deep clean complete."
-	
+
 
 release: config build package
 
@@ -155,7 +176,7 @@ package: all
 	#mkdir -p $(PACKAGE_DIR)/data/$(NAME)/share/pixmaps
 	mkdir -p $(PACKAGE_DIR)/data/$(NAME)/share/man/man1
 	mkdir -p $(PACKAGE_DIR)/data/$(NAME)/share/$(NAME)
-	
+
 	cp man/$(NAME).1 $(PACKAGE_DIR)/data/$(NAME)/share/man/man1
 	#cp icons/*.png $(PACKAGE_DIR)/data/$(NAME)/share/pixmaps
 	# Removed png background files as they crash 32bit likey due to pixel 4 byte misalignment
@@ -171,18 +192,18 @@ package: all
 	ln -s ../apps/$(NAME) $(PACKAGE_DIR)/bin/rakarrack
 	ln -s ../../../../apps/$(NAME) $(PACKAGE_DIR)/data/deskbar/menu/Applications/Rakarrack
 	package create -C $(PACKAGE_DIR) $(NAME)-$(VERSION)-$(REVISION)-$(ARCH).hpkg
-	
-	
+
+
 #----------------------------------------------------------
-# Required packages- Informational purposes 
+# Required packages- Informational purposes
 #----------------------------------------------------------
 
-         
+
 deps:
 	@echo "Install these via pkgman to build source:"
-	@echo "pkgman install $(REQUIRED_PKGS)"     	
+	@echo "pkgman install $(REQUIRED_PKGS)"
 
-#----------------------------------------------------------	
+#----------------------------------------------------------
 # Help
 #----------------------------------------------------------
 help:
@@ -202,4 +223,4 @@ help:
 	@echo ""
 	@echo " 4. List Required Libs:. . . . : make -f haiku.makefile deps"
 	@echo ""
-	@echo "============================================================================"	
+	@echo "============================================================================"

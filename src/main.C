@@ -43,12 +43,14 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string>
+#include <curl/curl.h>
 #include <Notification.h>
 
 bool gDebugMode = false;
 
 namespace AppInfo {
-    static const char* const VERSION_STRING = "Rakarrack v9 (Haiku OS)";
+    static const char* const VERSION_STRING = "Rakarrack v11 (Haiku OS)";
 }
 
 
@@ -68,33 +70,36 @@ bool haiku_mode = false;
 // =============================================================================
 // NATIVE ASYNCHRONOUS UPDATE ENGINE IMPLEMENTATION (CURL ENGINE PASS)
 // =============================================================================
+static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
+    ((std::string*)userp)->append((char*)contents, size * nmemb);
+    return size * nmemb;
+}
+
 static int32 BackgroundUpdateChecker(void* data) {
     // Wait a brief 5 seconds after application boot to allow UI rendering to finalize completely
-    snooze(5000000); 
+    snooze(5000000);
 
     if (gDebugMode) printf("[DEBUG_UPDATE] Asynchronous curl update checker running...\n");
 
     const char* targetUrl = "https://raw.githubusercontent.com/ablyssx74/rakarrack-haiku/refs/heads/main/VERSION";
 
-    BString shellCmdString;
-    #if defined(__x86_64__)
-        shellCmdString.SetToFormat("curl -sL \"%s\"", targetUrl);
-    #else
-        shellCmdString.SetToFormat("curl-x86 -sL \"%s\"", targetUrl);
-    #endif
-
+    std::string responseBuffer;
     BString remoteVersionStr = "";
-    
-    FILE* pipeStream = popen(shellCmdString.String(), "r");
-    if (pipeStream != nullptr) {
-        char buffer[128] = {0};
-        if (fgets(buffer, sizeof(buffer), pipeStream) != nullptr) {
-            remoteVersionStr = buffer;
-        }
-        pclose(pipeStream);
+
+    CURL* curlHandle = curl_easy_init();
+    if (curlHandle != nullptr) {
+        curl_easy_setopt(curlHandle, CURLOPT_URL, targetUrl);
+        curl_easy_setopt(curlHandle, CURLOPT_WRITEFUNCTION, WriteCallback);
+        curl_easy_setopt(curlHandle, CURLOPT_WRITEDATA, &responseBuffer);
+        curl_easy_setopt(curlHandle, CURLOPT_USERAGENT, "rakarrack-haiku-update-checker/1.0");
+        curl_easy_setopt(curlHandle, CURLOPT_TIMEOUT, 10L);
+        curl_easy_setopt(curlHandle, CURLOPT_FOLLOWLOCATION, 1L);
+        curl_easy_perform(curlHandle);
+        curl_easy_cleanup(curlHandle);
+        remoteVersionStr = responseBuffer.c_str();
     }
 
-    remoteVersionStr.Trim(); 
+    remoteVersionStr.Trim();
     if (gDebugMode) printf("[DEBUG_UPDATE] Raw text received from GitHub: '%s'\n", remoteVersionStr.String());
     
     if (remoteVersionStr.Length() > 0) {
@@ -329,6 +334,12 @@ AppThreadEntry(void*)
 int
 main (int argc, char *argv[])
 {
+	// libcurl's global init is not thread-safe against other concurrently
+	// running threads, so it's done explicitly here, first thing, before
+	// any other thread (e.g. BackgroundUpdateChecker) can trigger an
+	// implicit lazy global init and race with it.
+	curl_global_init(CURL_GLOBAL_DEFAULT);
+
 	BApplication* myApp = nullptr;
 
 	// See AppThreadEntry()'s own comment.
@@ -384,6 +395,7 @@ main (int argc, char *argv[])
 
     if (exitwithhelp) {
         show_help();
+        curl_global_cleanup();
         return 0;
     }
 
@@ -506,6 +518,7 @@ main (int argc, char *argv[])
             myApp->Unlock();
         }
     }
+  curl_global_cleanup();
   _exit(0);
 }
   

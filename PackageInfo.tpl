@@ -23,6 +23,7 @@ requires {
 	libsndfile$(is32bit)
 	libsamplerate$(is32bit)
 	libxpm$(is32bit)
+	lib:libcurl$(is32bit)
 }	
 urls {
 	"https://github.com/ablyssx74/rakarrack-haiku"
