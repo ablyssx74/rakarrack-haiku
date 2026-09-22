@@ -881,14 +881,24 @@ private:
 		ThemeRole barRole;
 	};
 
+	// Always sets BOTH the view color and the low color explicitly, even
+	// when the caller only named one of them. Anything left unset would
+	// keep whatever it copied from its parent when it was first attached
+	// (AdoptParentColors()) -- right at startup, but never updated after
+	// that -- which is exactly what went wrong on a live color change:
+	// every BStringView (it paints its background with its view color) and
+	// every BSlider (it fills around the bar with its low color) kept a
+	// stale background until the app was restarted.
 	static void _Apply(const Entry& e)
 	{
-		if (e.viewRole != kRoleNone)
-			e.view->SetViewColor(ThemeColor(e.viewRole));
+		ThemeRole bgRole = e.viewRole != kRoleNone ? e.viewRole : e.lowRole;
+		ThemeRole lowRole = e.lowRole != kRoleNone ? e.lowRole : e.viewRole;
+		if (bgRole != kRoleNone)
+			e.view->SetViewColor(ThemeColor(bgRole));
+		if (lowRole != kRoleNone)
+			e.view->SetLowColor(ThemeColor(lowRole));
 		if (e.highRole != kRoleNone)
 			e.view->SetHighColor(ThemeColor(e.highRole));
-		if (e.lowRole != kRoleNone)
-			e.view->SetLowColor(ThemeColor(e.lowRole));
 		if (e.slider != NULL && e.barRole != kRoleNone)
 			e.slider->SetBarColor(ThemeColor(e.barRole));
 	}
@@ -3923,12 +3933,17 @@ public:
 			// system colors on their own; this covers every color this file
 			// sets itself. Deliberately outside jmutex -- nothing here
 			// touches engine state.
+			//
+			// ApplyTheme() runs even when the theme itself didn't change
+			// (e.g. only menu or tooltip colors were edited): Haiku has just
+			// pushed the new system colors to any view still tied to one,
+			// so this puts every themed view back on the theme's colors.
 			Theme theme = gTheme;
 			if (DeriveThemeFromSystemColors(msg, &theme)) {
 				gTheme = theme;
 				SaveThemeSettings();
-				fMainView->ApplyTheme();
 			}
+			fMainView->ApplyTheme();
 			return;
 		}
 
