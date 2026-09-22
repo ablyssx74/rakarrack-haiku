@@ -33,8 +33,11 @@
 #include <Box.h>
 #include <Button.h>
 #include <CheckBox.h>
+#include <ControlLook.h>
 #include <Entry.h>
+#include <File.h>
 #include <FilePanel.h>
+#include <FindDirectory.h>
 #include <Font.h>
 #include <ListItem.h>
 #include <ListView.h>
@@ -619,22 +622,322 @@ struct PresetMenuDef {
 	std::function<void(int32)> apply = nullptr;
 };
 
-// Dark theme, chosen to read close to src/rakarrack.cxx's own black
-// background / gold titles / cyan labels look. Native BControls (BSlider,
-// BCheckBox, BMenuField) render their frames, knobs and native text with
-// the system's current UI theme rather than fully custom drawing the way
-// FLTK's SliderW does, so this covers what Haiku's API actually exposes:
-// view/panel backgrounds and the text we draw ourselves (titles, labels,
-// values) -- not a pixel-exact reproduction of rakarrack.cxx's skin.
-// Same value as kPanelColor on purpose -- the empty space around the effect
-// boxes (columns, master bar, scroll area) is meant to read as one
+// Color theme. Every themed color in this file is looked up by role
+// (ThemeRole) from gTheme instead of being a hard-coded constant, so it can
+// follow the user's system colors (Appearance preferences) at runtime -- see
+// DeriveThemeFromSystemColors() and RakarrackWindow's B_COLORS_UPDATED
+// handling.
+//
+// kDefaultTheme is the baseline: a dark theme chosen to read close to
+// src/rakarrack.cxx's own black background / gold titles / cyan labels look.
+// It's what the app uses until the user changes their system colors, and
+// whenever the settings file (see ThemeSettingsPath()) has no saved theme.
+// Native BControls (BSlider, BCheckBox, BMenuField) render their frames,
+// knobs and native text with the system's current UI theme rather than fully
+// custom drawing the way FLTK's SliderW does, so this covers what Haiku's API
+// actually exposes: view/panel backgrounds and the text we draw ourselves
+// (titles, labels, values) -- not a pixel-exact reproduction of
+// rakarrack.cxx's skin.
+enum ThemeRole {
+	kRoleNone = -1,
+	kRoleBg = 0,   // window/column background
+	kRolePanel,    // effect box / slider row background
+	kRoleTitle,    // effect box titles (gold)
+	kRoleLabel,    // parameter labels (cyan)
+	kRoleValue,    // numeric readouts (near-white)
+	kRoleAccent,   // slider fill, scope trace
+	kThemeRoleCount
+};
+
+struct Theme {
+	rgb_color colors[kThemeRoleCount];
+
+	rgb_color operator[](ThemeRole role) const { return colors[role]; }
+};
+
+// Bg and Panel are the same value on purpose -- the empty space around the
+// effect boxes (columns, master bar, scroll area) is meant to read as one
 // continuous surface with the boxes themselves, not a separate shade.
-static const rgb_color kBgColor = { 30, 30, 30, 255 };      // window/column background
-static const rgb_color kPanelColor = { 30, 30, 30, 255 };   // effect box / slider row background
-static const rgb_color kTitleColor = { 224, 196, 132, 255 };// effect box titles (gold)
-static const rgb_color kLabelColor = { 140, 200, 224, 255 }; // parameter labels (cyan)
-static const rgb_color kValueColor = { 235, 235, 235, 255 };// numeric readouts (near-white)
-static const rgb_color kAccentColor = { 90, 170, 200, 255 };// slider fill
+static const Theme kDefaultTheme = {{
+	{ 30, 30, 30, 255 },    // kRoleBg
+	{ 30, 30, 30, 255 },    // kRolePanel
+	{ 224, 196, 132, 255 }, // kRoleTitle
+	{ 140, 200, 224, 255 }, // kRoleLabel
+	{ 235, 235, 235, 255 }, // kRoleValue
+	{ 90, 170, 200, 255 },  // kRoleAccent
+}};
+
+// Field names in the settings BMessage, indexed by ThemeRole.
+static const char* kThemeSettingNames[kThemeRoleCount] = {
+	"theme:background", "theme:panel", "theme:title", "theme:label",
+	"theme:value", "theme:accent"
+};
+
+// The theme currently in effect. Written only by the main window's thread
+// (LoadThemeSettings() before it exists, then its B_COLORS_UPDATED
+// handling); OrderWindow reads it from its own thread, but only right after
+// being told the theme changed (MSG_THEME_CHANGED) or while building itself,
+// and a torn read of a plain rgb_color would only ever be a momentarily
+// wrong shade anyway, never a crash.
+static Theme gTheme = kDefaultTheme;
+
+static rgb_color ThemeColor(ThemeRole role)
+{
+	return gTheme[role];
+}
+
+// WCAG relative luminance/contrast ratio -- used so a theme derived from the
+// user's system colors keeps every piece of text we draw ourselves readable:
+// a dark background choice pushes text lighter, a light one pushes it darker.
+static float LinearChannel(uint8 value)
+{
+	float c = value / 255.0f;
+	return c <= 0.03928f ? c / 12.92f : powf((c + 0.055f) / 1.055f, 2.4f);
+}
+
+static float Luminance(rgb_color c)
+{
+	return 0.2126f * LinearChannel(c.red) + 0.7152f * LinearChannel(c.green)
+		+ 0.0722f * LinearChannel(c.blue);
+}
+
+static float ContrastRatio(rgb_color a, rgb_color b)
+{
+	float la = Luminance(a);
+	float lb = Luminance(b);
+	if (la < lb) {
+		float tmp = la;
+		la = lb;
+		lb = tmp;
+	}
+	return (la + 0.05f) / (lb + 0.05f);
+}
+
+// Linear blend of a toward b; t in [0, 1].
+static rgb_color MixColors(rgb_color a, rgb_color b, float t)
+{
+	rgb_color c;
+	c.red = (uint8)(a.red + (b.red - a.red) * t + 0.5f);
+	c.green = (uint8)(a.green + (b.green - a.green) * t + 0.5f);
+	c.blue = (uint8)(a.blue + (b.blue - a.blue) * t + 0.5f);
+	c.alpha = 255;
+	return c;
+}
+
+// Returns fg unchanged if it already reads well enough on bg; otherwise
+// blends it toward white (dark bg) or black (light bg) just far enough to
+// reach minRatio, so it keeps as much of its original hue as possible.
+static rgb_color EnsureContrast(rgb_color fg, rgb_color bg, float minRatio)
+{
+	if (ContrastRatio(fg, bg) >= minRatio)
+		return fg;
+	// 0.179 is the luminance at which white and black give equal contrast.
+	rgb_color target = Luminance(bg) < 0.179f
+		? make_color(255, 255, 255) : make_color(0, 0, 0);
+	for (int step = 1; step <= 20; step++) {
+		rgb_color c = MixColors(fg, target, step / 20.0f);
+		if (ContrastRatio(c, bg) >= minRatio)
+			return c;
+	}
+	return target;
+}
+
+// /boot/home/config/settings/haikurack_settings -- a flattened BMessage.
+// Only the theme lives there so far, but LoadThemeSettings()/
+// SaveThemeSettings() read-modify-write it so other settings can share the
+// file later without clobbering each other.
+static status_t ThemeSettingsPath(BPath* path)
+{
+	status_t status = find_directory(B_USER_SETTINGS_DIRECTORY, path);
+	if (status != B_OK)
+		return status;
+	return path->Append("haikurack_settings");
+}
+
+static void ReadSettingsMessage(BMessage* settings)
+{
+	settings->MakeEmpty();
+	BPath path;
+	if (ThemeSettingsPath(&path) != B_OK)
+		return;
+	BFile file(path.Path(), B_READ_ONLY);
+	if (file.InitCheck() != B_OK || settings->Unflatten(&file) != B_OK)
+		settings->MakeEmpty();
+}
+
+// Starts from kDefaultTheme and overrides each role the settings file has a
+// saved color for, so a missing file (first run) or a missing field falls
+// back to the baseline theme.
+static void LoadThemeSettings()
+{
+	gTheme = kDefaultTheme;
+	BMessage settings;
+	ReadSettingsMessage(&settings);
+	for (int i = 0; i < kThemeRoleCount; i++) {
+		rgb_color c;
+		if (settings.FindColor(kThemeSettingNames[i], &c) == B_OK)
+			gTheme.colors[i] = c;
+	}
+}
+
+static void SaveThemeSettings()
+{
+	BMessage settings;
+	ReadSettingsMessage(&settings);
+	for (int i = 0; i < kThemeRoleCount; i++) {
+		settings.RemoveName(kThemeSettingNames[i]);
+		settings.AddColor(kThemeSettingNames[i], gTheme.colors[i]);
+	}
+	BPath path;
+	if (ThemeSettingsPath(&path) != B_OK)
+		return;
+	BFile file(path.Path(), B_WRITE_ONLY | B_CREATE_FILE | B_ERASE_FILE);
+	if (file.InitCheck() == B_OK)
+		settings.Flatten(&file);
+}
+
+// Builds a theme from the user's system colors in a B_COLORS_UPDATED
+// message (fields are named by ui_color_name()). Returns false, leaving
+// *theme alone, if none of the colors the theme is derived from changed --
+// e.g. only the tooltip or menu colors were edited -- so an unrelated tweak
+// in Appearance doesn't replace the current theme.
+//
+// Background comes straight from the panel background. Numeric readouts use
+// the panel text color; titles and labels keep the baseline gold/cyan hues;
+// the slider fill uses the control highlight color. Every one of those is
+// then run through EnsureContrast() against the new background, so text on
+// a dark choice gets lighter and text on a light choice gets darker.
+static bool DeriveThemeFromSystemColors(const BMessage* msg, Theme* theme)
+{
+	rgb_color panelBg = ui_color(B_PANEL_BACKGROUND_COLOR);
+	rgb_color panelText = ui_color(B_PANEL_TEXT_COLOR);
+	rgb_color highlight = ui_color(B_CONTROL_HIGHLIGHT_COLOR);
+
+	bool relevant = false;
+	if (msg != NULL) {
+		relevant |= msg->FindColor(ui_color_name(B_PANEL_BACKGROUND_COLOR),
+			&panelBg) == B_OK;
+		relevant |= msg->FindColor(ui_color_name(B_PANEL_TEXT_COLOR),
+			&panelText) == B_OK;
+		relevant |= msg->FindColor(ui_color_name(B_CONTROL_HIGHLIGHT_COLOR),
+			&highlight) == B_OK;
+	}
+	if (!relevant)
+		return false;
+
+	panelBg.alpha = 255;
+	theme->colors[kRoleBg] = panelBg;
+	theme->colors[kRolePanel] = panelBg;
+	// Readouts are the main body text, so they get the stricter 7:1 target;
+	// the colored titles/labels 4.5:1, and the slider fill (not text) 3:1.
+	theme->colors[kRoleValue] = EnsureContrast(panelText, panelBg, 7.0f);
+	theme->colors[kRoleTitle]
+		= EnsureContrast(kDefaultTheme[kRoleTitle], panelBg, 4.5f);
+	theme->colors[kRoleLabel]
+		= EnsureContrast(kDefaultTheme[kRoleLabel], panelBg, 4.5f);
+	theme->colors[kRoleAccent] = EnsureContrast(highlight, panelBg, 3.0f);
+	return true;
+}
+
+// Remembers which theme role(s) each view was colored with, so the whole
+// window can be recolored in place when the theme changes instead of being
+// rebuilt. One per window (RakarrackView owns the main window's, OrderWindow
+// its own), and only ever touched from that window's thread.
+class ThemeRegistry {
+public:
+	// Colors v now and remembers how. Any role may be kRoleNone to leave
+	// that color alone.
+	void Add(BView* v, ThemeRole viewRole, ThemeRole highRole = kRoleNone,
+		ThemeRole lowRole = kRoleNone)
+	{
+		Entry e = { v, NULL, viewRole, highRole, lowRole, kRoleNone };
+		_Apply(e);
+		fEntries.push_back(e);
+	}
+
+	void AddSlider(BSlider* s, ThemeRole viewRole, ThemeRole barRole)
+	{
+		Entry e = { s, s, viewRole, kRoleNone, kRoleNone, barRole };
+		_Apply(e);
+		fEntries.push_back(e);
+	}
+
+	// Recolors every registered view from gTheme and redraws it.
+	void Apply()
+	{
+		for (const Entry& e : fEntries) {
+			_Apply(e);
+			e.view->Invalidate();
+		}
+	}
+
+private:
+	struct Entry {
+		BView* view;
+		BSlider* slider;
+		ThemeRole viewRole;
+		ThemeRole highRole;
+		ThemeRole lowRole;
+		ThemeRole barRole;
+	};
+
+	static void _Apply(const Entry& e)
+	{
+		if (e.viewRole != kRoleNone)
+			e.view->SetViewColor(ThemeColor(e.viewRole));
+		if (e.highRole != kRoleNone)
+			e.view->SetHighColor(ThemeColor(e.highRole));
+		if (e.lowRole != kRoleNone)
+			e.view->SetLowColor(ThemeColor(e.lowRole));
+		if (e.slider != NULL && e.barRole != kRoleNone)
+			e.slider->SetBarColor(ThemeColor(e.barRole));
+	}
+
+	std::vector<Entry> fEntries;
+};
+
+// A BCheckBox whose label is drawn in the theme's title color. Used as the
+// label view of every effect box (and the MIDI box) -- BBox accepts any view
+// as its label, so the effect's name and its on/off switch share the box's
+// top edge, the same way Haiku's Notifications preferences do it, instead
+// of a title plus a separate "On" row inside the box. A stock BCheckBox
+// always draws its label in the system's panel text color, which would lose
+// the gold titles, so Draw() is reimplemented with the same BControlLook
+// calls BCheckBox::Draw() makes, only passing an explicit text color.
+class TitleCheckBox : public BCheckBox {
+public:
+	TitleCheckBox(const char* name, const char* label, BMessage* message)
+		:
+		BCheckBox(name, label, message)
+	{
+		BFont font(be_bold_font);
+		SetFont(&font);
+	}
+
+	virtual void Draw(BRect updateRect)
+	{
+		rgb_color base = ui_color(B_PANEL_BACKGROUND_COLOR);
+		uint32 flags = be_control_look->Flags(this);
+
+		// Same geometry as BCheckBox's own (private) _CheckBoxFrame().
+		font_height fh;
+		GetFontHeight(&fh);
+		BRect boxRect(0.0f, 2.0f, ceilf(3.0f + fh.ascent),
+			ceilf(5.0f + fh.ascent));
+		be_control_look->DrawCheckBox(this, boxRect, updateRect, base, flags);
+
+		// As in BCheckBox::Draw(), the label isn't drawn as a control.
+		flags &= ~BControlLook::B_IS_CONTROL;
+
+		BRect labelRect(Bounds());
+		labelRect.left = boxRect.right + 1
+			+ be_control_look->DefaultLabelSpacing();
+		rgb_color textColor = ThemeColor(kRoleTitle);
+		be_control_look->DrawLabel(this, Label(), NULL, labelRect, updateRect,
+			ViewColor(), flags,
+			BAlignment(B_ALIGN_LEFT, B_ALIGN_VERTICAL_CENTER), &textColor);
+	}
+};
 
 // The shared audio engine (process.C) only ever walks the first 10 slots
 // of rkr->efx_order[] per callback -- an effect's own Bypass flag is
@@ -941,7 +1244,13 @@ static const char* EffectName(int effectId) {
 enum {
 	MSG_ORDER_UP = 'RKOu',
 	MSG_ORDER_DOWN = 'RKOd',
-	MSG_ORDER_CLOSE = 'RKOc'
+	MSG_ORDER_CLOSE = 'RKOc',
+	// Sent by the main window to this one after gTheme changes (see
+	// RakarrackWindow's B_COLORS_UPDATED handling) -- this window only
+	// recolors itself once the main window has finished deriving and
+	// saving the new theme, not on its own copy of B_COLORS_UPDATED,
+	// whose arrival order relative to the main window's isn't defined.
+	MSG_THEME_CHANGED = 'RKTc'
 };
 
 class OrderWindow : public BWindow {
@@ -968,21 +1277,18 @@ public:
 		// blank white window instead of the rack's dark theme.
 		SetLayout(new BGroupLayout(B_VERTICAL));
 		BView* background = new BView("bg", B_WILL_DRAW);
-		background->SetViewColor(kBgColor);
+		fTheme.Add(background, kRoleBg);
 		AddChild(background);
 
 		fList = new BListView("order_list", B_SINGLE_SELECTION_LIST);
-		fList->SetViewColor(kPanelColor);
-		fList->SetLowColor(kPanelColor);
-		fList->SetHighColor(kValueColor);
+		fTheme.Add(fList, kRolePanel, kRoleValue, kRolePanel);
 		BScrollView* listScroll = new BScrollView("order_scroll", fList, 0,
 			false, true);
 
 		BStringView* hint = new BStringView("hint",
 			"Only effects you've turned on appear here. This is the order "
 			"they process your signal in, top to bottom.");
-		hint->SetHighColor(kLabelColor);
-		hint->SetLowColor(kBgColor);
+		fTheme.Add(hint, kRoleNone, kRoleLabel, kRoleBg);
 		hint->SetFontSize(10.5f);
 
 		BButton* upBtn = new BButton("up", "Move Up",
@@ -1021,6 +1327,9 @@ public:
 			// Hide rather than Quit()/destroy -- see QuitRequested() below
 			// for why.
 			Hide();
+			break;
+		case MSG_THEME_CHANGED:
+			fTheme.Apply();
 			break;
 		default:
 			BWindow::MessageReceived(msg);
@@ -1127,6 +1436,7 @@ private:
 	RKR* fRkr;
 	BListView* fList;
 	std::vector<int> fSlotIndices;
+	ThemeRegistry fTheme;
 };
 
 // A stereo waveform view for the header -- a native port of src/rakarrack.cxx's
@@ -1151,7 +1461,9 @@ public:
 		BView("scope", B_WILL_DRAW | B_PULSE_NEEDED),
 		fRkr(rkr)
 	{
-		SetViewColor(kPanelColor);
+		// No SetViewColor() -- Draw() fills the whole bounds itself from
+		// gTheme on every frame, so it follows a theme change for free.
+		SetViewColor(B_TRANSPARENT_COLOR);
 		SetExplicitMinSize(BSize(220, 60));
 		SetExplicitMaxSize(BSize(220, 60));
 	}
@@ -1164,11 +1476,16 @@ public:
 	virtual void Draw(BRect updateRect)
 	{
 		BRect b = Bounds();
-		SetHighColor(kPanelColor);
+		// Frame and center line are faint tints of the value color over the
+		// panel color, so they stay visible on light and dark themes alike
+		// (on the baseline theme these land at the old fixed 70/50 grays).
+		rgb_color panel = ThemeColor(kRolePanel);
+		rgb_color value = ThemeColor(kRoleValue);
+		SetHighColor(panel);
 		FillRect(b);
-		SetHighColor(70, 70, 70, 255);
+		SetHighColor(MixColors(panel, value, 0.2f));
 		StrokeRect(b);
-		SetHighColor(50, 50, 50, 255);
+		SetHighColor(MixColors(panel, value, 0.1f));
 		StrokeLine(BPoint(b.Width() / 2.0f, b.top + 1),
 			BPoint(b.Width() / 2.0f, b.bottom - 1));
 
@@ -1186,7 +1503,7 @@ public:
 private:
 	void DrawChannel(float* samples, BRect area)
 	{
-		SetHighColor(kAccentColor);
+		SetHighColor(ThemeColor(kRoleAccent));
 		float midY = (area.top + area.bottom) / 2.0f;
 		float halfH = area.Height() / 2.0f;
 		float stepX = area.Width() / (float)PERIOD;
@@ -1278,7 +1595,7 @@ public:
 		// native mode, any of the 46, not just 0-9) immediately has a
 		// slot to steal. See the comment above ActivateEffectSlot() for
 		// why there's no "clear to empty" step the way there used to be.
-		SetViewColor(kBgColor);
+		fTheme.Add(this, kRoleBg);
 
 		// Four scrollable columns of effect racks (was five -- with each
 		// slider now ~2x as wide, four fits comfortably on more screens),
@@ -1292,10 +1609,10 @@ public:
 		col2->GroupLayout()->SetInsets(5);
 		col3->GroupLayout()->SetInsets(5);
 		col4->GroupLayout()->SetInsets(5);
-		col1->SetViewColor(kBgColor);
-		col2->SetViewColor(kBgColor);
-		col3->SetViewColor(kBgColor);
-		col4->SetViewColor(kBgColor);
+		fTheme.Add(col1, kRoleBg);
+		fTheme.Add(col2, kRoleBg);
+		fTheme.Add(col3, kRoleBg);
+		fTheme.Add(col4, kRoleBg);
 
 		BuildColumn1(col1);
 		BuildColumn2(col2);
@@ -1309,7 +1626,7 @@ public:
 
 		BGroupView* columns = new BGroupView(B_HORIZONTAL, 8);
 		columns->GroupLayout()->SetInsets(10);
-		columns->SetViewColor(kBgColor);
+		fTheme.Add(columns, kRoleBg);
 		columns->AddChild(col1);
 		columns->AddChild(col2);
 		columns->AddChild(col3);
@@ -1337,8 +1654,7 @@ public:
 		RKR* rkr = fRkr;
 
 		BStringView* logo = new BStringView("logo", "Haikurack");
-		logo->SetHighColor(kTitleColor);
-		logo->SetLowColor(kBgColor);
+		fTheme.Add(logo, kRoleNone, kRoleTitle, kRoleBg);
 		BFont logoFont(be_bold_font);
 		logoFont.SetSize(28.0f);
 		logoFont.SetFace(B_ITALIC_FACE | B_BOLD_FACE);
@@ -1346,8 +1662,7 @@ public:
 		logo->SetExplicitAlignment(BAlignment(B_ALIGN_LEFT, B_ALIGN_MIDDLE));
 
 		fCpuDisplay = new BStringView("cpu", "CPU: 0.00%");
-		fCpuDisplay->SetHighColor(kValueColor);
-		fCpuDisplay->SetLowColor(kBgColor);
+		fTheme.Add(fCpuDisplay, kRoleNone, kRoleValue, kRoleBg);
 		// Fixed width so the header doesn't reflow (a visible bounce/jitter
 		// in everything to its right) every time the text changes length as
 		// the percentage itself changes -- e.g. "0.37%" vs. "12.34%" are
@@ -1377,12 +1692,11 @@ public:
 				if (fHideInactiveEffects)
 					ScrollTo(BPoint(0, 0));
 			})));
-		fHideInactive->SetViewColor(kBgColor);
+		fTheme.Add(fHideInactive, kRoleBg);
 
 		fMaxEffectsLabel = new BStringView("max_effects",
 			"Max Concurrent Effects Allowed: 0 of 10");
-		fMaxEffectsLabel->SetHighColor(kLabelColor);
-		fMaxEffectsLabel->SetLowColor(kBgColor);
+		fTheme.Add(fMaxEffectsLabel, kRoleNone, kRoleLabel, kRoleBg);
 		BFont maxEffectsFont(be_plain_font);
 		maxEffectsFont.SetSize(10.0f);
 		maxEffectsFont.SetFace(B_ITALIC_FACE);
@@ -1397,16 +1711,14 @@ public:
 		// ApplyRandomPreset() below for what selecting from these actually
 		// does.
 		fPresetNameLabel = new BStringView("preset_name", "Current Preset: ");
-		fPresetNameLabel->SetHighColor(kLabelColor);
-		fPresetNameLabel->SetLowColor(kBgColor);
+		fTheme.Add(fPresetNameLabel, kRoleNone, kRoleLabel, kRoleBg);
 		fPresetNameLabel->SetFont(&maxEffectsFont);
 
 		// "|" separators, same font/color as fMaxEffectsLabel/
 		// fPresetNameLabel, so the whole row reads as one status line.
 		auto makeSeparator = [&]() -> BStringView* {
 			BStringView* sep = new BStringView("sep", "|");
-			sep->SetHighColor(kLabelColor);
-			sep->SetLowColor(kBgColor);
+			fTheme.Add(sep, kRoleNone, kRoleLabel, kRoleBg);
 			sep->SetFont(&maxEffectsFont);
 			return sep;
 		};
@@ -1440,18 +1752,18 @@ public:
 			// just repeated that redundantly ("Bank 1 [Bank 1 v]") and
 			// widened this already-wide row for nothing.
 			BMenuField* field = new BMenuField(label, NULL, menu);
-			field->SetViewColor(kBgColor);
+			fTheme.Add(field, kRoleBg);
 			field->SetFont(&maxEffectsFont);
 			return field;
 		};
 
 		BButton* randomBtn = new BButton("random_preset", "Random",
 			new BMessage(MSG_RANDOM_PRESET));
-		randomBtn->SetViewColor(kBgColor);
+		fTheme.Add(randomBtn, kRoleBg);
 		randomBtn->SetFont(&maxEffectsFont);
 
 		BGroupView* maxEffectsRow = new BGroupView(B_HORIZONTAL, 6);
-		maxEffectsRow->SetViewColor(kBgColor);
+		fTheme.Add(maxEffectsRow, kRoleBg);
 		maxEffectsRow->AddChild(fMaxEffectsLabel);
 		maxEffectsRow->AddChild(makeSeparator());
 		maxEffectsRow->AddChild(fPresetNameLabel);
@@ -1508,7 +1820,7 @@ public:
 				}
 			})));
 		fMasterFX->SetValue(rkr->Bypass ? B_CONTROL_ON : B_CONTROL_OFF);
-		fMasterFX->SetViewColor(kBgColor);
+		fTheme.Add(fMasterFX, kRoleBg);
 		BFont boldFont(be_bold_font);
 		fMasterFX->SetFont(&boldFont);
 
@@ -1517,7 +1829,7 @@ public:
 				rkr->booster = v ? dB2rap(10.0f) : 1.0f;
 			})));
 		boost->SetValue(rkr->booster > 1.0f ? B_CONTROL_ON : B_CONTROL_OFF);
-		boost->SetViewColor(kBgColor);
+		fTheme.Add(boost, kRoleBg);
 
 		// Opens (or, if already built, just refreshes, un-hides and raises)
 		// the Effects Order window -- see OrderWindow above. This window is
@@ -1536,11 +1848,11 @@ public:
 
 		BButton* savePresetBtn = new BButton("save_preset", "Save Preset",
 			new BMessage(MSG_SAVE_PRESET));
-		savePresetBtn->SetViewColor(kPanelColor);
+		fTheme.Add(savePresetBtn, kRolePanel);
 
 		BButton* loadPresetBtn = new BButton("load_preset", "Load Preset",
 			new BMessage(MSG_LOAD_PRESET));
-		loadPresetBtn->SetViewColor(kPanelColor);
+		fTheme.Add(loadPresetBtn, kRolePanel);
 
 		// FX Engine/Boost/Effects Order/Save/Load Preset, left-aligned on
 		// their own row -- kept off of maxEffectsRow (already wide from
@@ -1548,7 +1860,7 @@ public:
 		// (no glue pushing this one over, unlike the previous layout) so
 		// neither row's width drags the other's content around.
 		BGroupView* fxRow = new BGroupView(B_HORIZONTAL, 10);
-		fxRow->SetViewColor(kBgColor);
+		fTheme.Add(fxRow, kRoleBg);
 		fxRow->AddChild(fMasterFX);
 		fxRow->AddChild(boost);
 		fxRow->AddChild(orderBtn);
@@ -1558,7 +1870,7 @@ public:
 
 		BGroupView* controls = new BGroupView(B_VERTICAL, 2);
 		controls->GroupLayout()->SetInsets(10, 0, 10, 4);
-		controls->SetViewColor(kBgColor);
+		fTheme.Add(controls, kRoleBg);
 		controls->AddChild(fCpuDisplay);
 		controls->AddChild(fHideInactive);
 		controls->AddChild(maxEffectsRow);
@@ -1571,7 +1883,7 @@ public:
 		// wider than it needed to be next to the compact scope/MIDI panel.
 		static const int32 kHeaderSliderWidth = 95;
 		BGroupView* volumeGroup = new BGroupView(B_HORIZONTAL, 10);
-		volumeGroup->SetViewColor(kBgColor);
+		fTheme.Add(volumeGroup, kRoleBg);
 		AddSlider(volumeGroup, "in_gain", "Input Gain", -50, 50,
 			(int32)(rkr->Input_Gain * 100.0f) - 50,
 			[rkr](int32 v) {
@@ -1606,26 +1918,24 @@ public:
 		// of through BuildEffectBox/BuildColumnN. Its own row, below Input
 		// Gain/Master Volume/the scope, rather than crowding them.
 		BBox* midiBox = new BBox("midi_box");
-		midiBox->SetViewColor(kPanelColor);
-		BStringView* midiTitle = new BStringView("midi_title", "MIDI");
-		midiTitle->SetHighColor(kTitleColor);
-		midiTitle->SetLowColor(kBgColor);
-		BFont midiTitleFont(be_bold_font);
-		midiTitle->SetFont(&midiTitleFont);
-		midiBox->SetLabel(midiTitle);
+		fTheme.Add(midiBox, kRolePanel);
 
-		BGroupView* midiContent = new BGroupView(B_VERTICAL, 6);
-		midiContent->GroupLayout()->SetInsets(8);
-		midiContent->SetViewColor(kPanelColor);
+		// Zero insets, same reason as BuildEffectBox's content group: with
+		// midiBody hidden, the box collapses to just its label row.
+		BGroupView* midiContent = new BGroupView(B_VERTICAL, 0);
+		fTheme.Add(midiContent, kRolePanel);
 
-		// Everything below the "On" checkbox -- hidden whenever MIDI is off,
-		// the same way each effect box's body collapses to just its title
-		// bar in BuildEffectBox. Built before midiOn since its callback
-		// below needs to reach it.
+		// Every MIDI control -- hidden whenever MIDI is off, the same way
+		// each effect box's body collapses to just its title bar in
+		// BuildEffectBox. Built before midiOn since its callback below
+		// needs to reach it.
 		BGroupView* midiBody = new BGroupView(B_VERTICAL, 4);
-		midiBody->SetViewColor(kPanelColor);
+		midiBody->GroupLayout()->SetInsets(8);
+		fTheme.Add(midiBody, kRolePanel);
 
-		BCheckBox* midiOn = new BCheckBox("midi_on", "On",
+		// The "MIDI" on/off switch is the box's label, same as every effect
+		// box -- see TitleCheckBox.
+		BCheckBox* midiOn = new TitleCheckBox("midi_on", "MIDI",
 			MakeMessage(Bind([rkr, midiBody](int32 v) {
 				// Mirrors cb_nidi_activar_i: silence any note the converter
 				// currently thinks is held before switching it off, so
@@ -1639,8 +1949,8 @@ public:
 					midiBody->Hide();
 			})));
 		midiOn->SetValue(rkr->MIDIConverter_Bypass ? B_CONTROL_ON : B_CONTROL_OFF);
-		midiOn->SetViewColor(kPanelColor);
-		midiContent->AddChild(midiOn);
+		fTheme.Add(midiOn, kRolePanel, kRoleNone, kRolePanel);
+		midiBox->SetLabel(midiOn);
 		if (rkr->MIDIConverter_Bypass == 0)
 			midiBody->Hide();
 		midiContent->AddChild(midiBody);
@@ -1704,7 +2014,7 @@ public:
 		// either side that trailing slider was easy to misread as
 		// belonging to whichever label came right after it instead.
 		BGroupView* midiRow1 = new BGroupView(B_HORIZONTAL, 24);
-		midiRow1->SetViewColor(kPanelColor);
+		fTheme.Add(midiRow1, kRolePanel);
 		midiBody->AddChild(midiRow1);
 
 		// "Out Ch" -- named to distinguish it from "In Ch" below; this is
@@ -1736,7 +2046,7 @@ public:
 		// "On" toggle): the checkbox itself always stays visible, only
 		// advancedBody's Show()/Hide() toggles.
 		BGroupView* advancedBody = new BGroupView(B_VERTICAL, 6);
-		advancedBody->SetViewColor(kPanelColor);
+		fTheme.Add(advancedBody, kRolePanel);
 
 		BCheckBox* midiAdvanced = new BCheckBox("midi_advanced", "Advanced",
 			MakeMessage(Bind([advancedBody](int32 v) {
@@ -1745,7 +2055,7 @@ public:
 				else
 					advancedBody->Hide();
 			})));
-		midiAdvanced->SetViewColor(kPanelColor);
+		fTheme.Add(midiAdvanced, kRolePanel);
 		midiBody->AddChild(midiAdvanced);
 		advancedBody->Hide();
 		midiBody->AddChild(advancedBody);
@@ -1766,7 +2076,7 @@ public:
 		// decimal-display slider variant just for this one control, with
 		// the /100 conversion happening in the callback.
 		BGroupView* midiRow2 = new BGroupView(B_HORIZONTAL, 24);
-		midiRow2->SetViewColor(kPanelColor);
+		fTheme.Add(midiRow2, kRolePanel);
 		advancedBody->AddChild(midiRow2);
 
 		AddSlider(midiRow2, "midi_trigsens", "Trig Sens", 10, 100,
@@ -1811,7 +2121,7 @@ public:
 		// either way) is the built-in CC map real rakarrack ships with,
 		// and needs no extra setup.
 		BGroupView* midiRow3 = new BGroupView(B_HORIZONTAL, 24);
-		midiRow3->SetViewColor(kPanelColor);
+		fTheme.Add(midiRow3, kRolePanel);
 		advancedBody->AddChild(midiRow3);
 
 		AddSlider(midiRow3, "midi_in_ch", "In Ch", 1, 16,
@@ -1833,7 +2143,7 @@ public:
 		// Row 3: Input Gain/Master Volume next to the scope.
 		BGroupView* meterRow = new BGroupView(B_HORIZONTAL, 10);
 		meterRow->GroupLayout()->SetInsets(10, 0, 10, 6);
-		meterRow->SetViewColor(kBgColor);
+		fTheme.Add(meterRow, kRoleBg);
 		meterRow->AddChild(volumeGroup);
 		meterRow->AddChild(scope);
 		meterRow->GroupLayout()->AddItem(BSpaceLayoutItem::CreateGlue());
@@ -1842,13 +2152,13 @@ public:
 		// on one line.
 		BGroupView* midiRow = new BGroupView(B_HORIZONTAL, 10);
 		midiRow->GroupLayout()->SetInsets(10, 0, 10, 10);
-		midiRow->SetViewColor(kBgColor);
+		fTheme.Add(midiRow, kRoleBg);
 		midiRow->AddChild(midiBox);
 		midiRow->GroupLayout()->AddItem(BSpaceLayoutItem::CreateGlue());
 
 		BGroupView* logoRow = new BGroupView(B_HORIZONTAL, 10);
 		logoRow->GroupLayout()->SetInsets(10, 10, 10, 4);
-		logoRow->SetViewColor(kBgColor);
+		fTheme.Add(logoRow, kRoleBg);
 		logoRow->AddChild(logo);
 		logoRow->GroupLayout()->AddItem(BSpaceLayoutItem::CreateGlue());
 
@@ -1954,6 +2264,20 @@ public:
 		fActions[aidx](value);
 	}
 
+	ThemeRegistry& Themes() { return fTheme; }
+
+	// Recolors the whole main window from gTheme (already updated by the
+	// caller -- see RakarrackWindow's B_COLORS_UPDATED handling), then
+	// tells the Effects Order window, if it's been built yet, to do the
+	// same on its own thread.
+	void ApplyTheme()
+	{
+		fTheme.Apply();
+		Invalidate();
+		if (fOrderWindow != nullptr)
+			BMessenger(fOrderWindow).SendMessage(MSG_THEME_CHANGED);
+	}
+
 	// Called by RakarrackWindow::MessageReceived for MSG_OPEN_ORDER --
 	// deliberately NOT under jmutex (see that message's declaration for
 	// why). Opens the Effects Order window, building it the first time and
@@ -2015,18 +2339,16 @@ private:
 		std::vector<std::function<void()>>* refreshers = nullptr)
 	{
 		BGroupView* row = new BGroupView(B_HORIZONTAL, 6);
-		row->SetViewColor(kPanelColor);
+		fTheme.Add(row, kRolePanel);
 
 		BStringView* labelView = new BStringView("lbl", label);
-		labelView->SetHighColor(kLabelColor);
-		labelView->SetLowColor(kPanelColor);
+		fTheme.Add(labelView, kRoleNone, kRoleLabel, kRolePanel);
 		labelView->SetExplicitMinSize(BSize(72, B_SIZE_UNSET));
 		labelView->SetExplicitMaxSize(BSize(72, B_SIZE_UNSET));
 		labelView->SetFontSize(10.5f);
 
 		BStringView* valueView = new BStringView("val", "");
-		valueView->SetHighColor(kValueColor);
-		valueView->SetLowColor(kPanelColor);
+		fTheme.Add(valueView, kRoleNone, kRoleValue, kRolePanel);
 		valueView->SetExplicitMinSize(BSize(32, B_SIZE_UNSET));
 		valueView->SetExplicitMaxSize(BSize(32, B_SIZE_UNSET));
 		valueView->SetExplicitAlignment(
@@ -2047,8 +2369,7 @@ private:
 			B_HORIZONTAL);
 		s->SetValue(initial);
 		s->SetHashMarks(B_HASH_MARKS_NONE);
-		s->SetViewColor(kPanelColor);
-		s->SetBarColor(kAccentColor);
+		fTheme.AddSlider(s, kRolePanel, kRoleAccent);
 		// Roughly doubles the effect boxes' width over the default track
 		// size -- cramped sliders were hard to drag precisely.
 		s->SetExplicitMinSize(BSize(width, B_SIZE_UNSET));
@@ -2083,18 +2404,16 @@ private:
 		std::vector<std::function<void()>>* refreshers = nullptr)
 	{
 		BGroupView* row = new BGroupView(B_HORIZONTAL, 6);
-		row->SetViewColor(kPanelColor);
+		fTheme.Add(row, kRolePanel);
 
 		BStringView* labelView = new BStringView("lbl", label);
-		labelView->SetHighColor(kLabelColor);
-		labelView->SetLowColor(kPanelColor);
+		fTheme.Add(labelView, kRoleNone, kRoleLabel, kRolePanel);
 		labelView->SetExplicitMinSize(BSize(72, B_SIZE_UNSET));
 		labelView->SetExplicitMaxSize(BSize(72, B_SIZE_UNSET));
 		labelView->SetFontSize(10.5f);
 
 		BStringView* valueView = new BStringView("val", "");
-		valueView->SetHighColor(kValueColor);
-		valueView->SetLowColor(kPanelColor);
+		fTheme.Add(valueView, kRoleNone, kRoleValue, kRolePanel);
 		valueView->SetExplicitMinSize(BSize(32, B_SIZE_UNSET));
 		valueView->SetExplicitMaxSize(BSize(32, B_SIZE_UNSET));
 		valueView->SetExplicitAlignment(
@@ -2125,8 +2444,7 @@ private:
 			B_HORIZONTAL);
 		s->SetValue(initial);
 		s->SetHashMarks(B_HASH_MARKS_NONE);
-		s->SetViewColor(kPanelColor);
-		s->SetBarColor(kAccentColor);
+		fTheme.AddSlider(s, kRolePanel, kRoleAccent);
 		s->SetExplicitMinSize(BSize(190, B_SIZE_UNSET));
 
 		row->AddChild(labelView);
@@ -2159,7 +2477,7 @@ private:
 		int32 idx = Bind(fn);
 		BCheckBox* c = new BCheckBox(name, label, MakeMessage(idx));
 		c->SetValue(initial ? B_CONTROL_ON : B_CONTROL_OFF);
-		c->SetViewColor(kPanelColor);
+		fTheme.Add(c, kRolePanel);
 		parent->AddChild(c);
 
 		if (refreshers && refreshValue) {
@@ -2180,7 +2498,7 @@ private:
 	{
 		int32 idx = Bind(fn);
 		BButton* b = new BButton(name, label, MakeMessage(idx, pressValue));
-		b->SetViewColor(kPanelColor);
+		fTheme.Add(b, kRolePanel);
 		parent->AddChild(b);
 		return b;
 	}
@@ -2202,7 +2520,7 @@ private:
 		}
 		fMenus.push_back(menu);
 		BMenuField* field = new BMenuField(name, label, menu);
-		field->SetViewColor(kPanelColor);
+		fTheme.Add(field, kRolePanel);
 		parent->AddChild(field);
 
 		if (refreshers && refreshValue) {
@@ -2249,26 +2567,20 @@ private:
 		const char* disabledReason = nullptr)
 	{
 		BBox* box = new BBox(title);
-		box->SetViewColor(kPanelColor);
-		// A plain SetLabel(title) draws the title in the system theme's
-		// label color; a BStringView label lets it use the gold accent
-		// color instead, matching rakarrack.cxx's titles.
-		BStringView* titleView = new BStringView("title", title);
-		titleView->SetHighColor(kTitleColor);
-		titleView->SetLowColor(kBgColor);
-		BFont titleFont(be_bold_font);
-		titleView->SetFont(&titleFont);
-		box->SetLabel(titleView);
+		fTheme.Add(box, kRolePanel);
 
-		BGroupView* content = new BGroupView(B_VERTICAL, 4);
-		content->GroupLayout()->SetInsets(8);
-		content->SetViewColor(kPanelColor);
+		// The box's only child. Deliberately zero insets -- the padding lives
+		// on body instead -- so that with body hidden this collapses to
+		// nothing and an inactive effect is just its label row.
+		BGroupView* content = new BGroupView(B_VERTICAL, 0);
+		fTheme.Add(content, kRolePanel);
 
-		// Everything but the "On" checkbox itself -- hidden whenever the
-		// effect is off, so an inactive effect collapses to just its title
-		// bar instead of eating vertical space in the rack.
+		// Every control of the effect -- hidden whenever the effect is off,
+		// so an inactive effect collapses to just its title bar instead of
+		// eating vertical space in the rack.
 		BGroupView* body = new BGroupView(B_VERTICAL, 4);
-		body->SetViewColor(kPanelColor);
+		body->GroupLayout()->SetInsets(8);
+		fTheme.Add(body, kRolePanel);
 
 		// A permanently-disabled effect (see disabledReason's own comment)
 		// never gets to claim a slot at all -- force it off before even
@@ -2285,13 +2597,15 @@ private:
 		if (*bypass != 0 && !ActivateEffectSlot(rkr, effectId))
 			*bypass = 0;
 
-		// Built directly (not through AddToggle) because the callback below
-		// needs to reach back into the checkbox itself to revert it when
-		// ActivateEffectSlot() fails -- AddToggle hands back its BCheckBox*
-		// only after the callback that would need it is already built.
-		BCheckBox* onToggle = new BCheckBox("on", "On", nullptr);
+		// The effect's on/off switch doubles as the box's label (title) --
+		// see TitleCheckBox. Built directly (not through AddToggle) because
+		// the callback below needs to reach back into the checkbox itself
+		// to revert it when ActivateEffectSlot() fails -- AddToggle hands
+		// back its BCheckBox* only after the callback that would need it is
+		// already built.
+		BCheckBox* onToggle = new TitleCheckBox("on", title, nullptr);
 		onToggle->SetValue(*bypass != 0 ? B_CONTROL_ON : B_CONTROL_OFF);
-		onToggle->SetViewColor(kPanelColor);
+		fTheme.Add(onToggle, kRolePanel, kRoleNone, kRolePanel);
 		int32 onIdx = Bind([rkr, effectId, bypass, body, onToggle, disabledReason](int32 v) {
 			if (disabledReason) {
 				// Shouldn't be reachable -- the checkbox itself is disabled
@@ -2321,7 +2635,7 @@ private:
 			onToggle->SetToolTip(disabledReason);
 			box->SetToolTip(disabledReason);
 		}
-		content->AddChild(onToggle);
+		box->SetLabel(onToggle);
 		if (*bypass == 0)
 			body->Hide();
 		content->AddChild(body);
@@ -3219,7 +3533,7 @@ private:
 				// just a changepar(npar, 1) call) rather than sliders,
 				// toggles, or dropdowns -- see AddButton().
 				BGroupView* transport = new BGroupView(B_HORIZONTAL, 4);
-				transport->SetViewColor(kPanelColor);
+				fTheme.Add(transport, kRolePanel);
 				body->AddChild(transport);
 				AddButton(transport, "play", "Play", 1,
 					[rkr](int32) { rkr->efx_Looper->changepar(1, 1); });
@@ -3338,6 +3652,10 @@ private:
 	}
 
 	RKR* fRkr;
+	// Every themed view in the main window -- the rack, the header
+	// RakarrackWindow builds through BuildHeader(), and the header/scroller
+	// views RakarrackWindow colors itself via Themes(). See ApplyTheme().
+	ThemeRegistry fTheme;
 	BStringView* fCpuDisplay;
 	BCheckBox* fMasterFX;
 	OrderWindow* fOrderWindow = nullptr;
@@ -3542,14 +3860,14 @@ public:
 		// entirely, as its own sibling view, so none of it scrolls away
 		// with the effect racks -- see RakarrackView::BuildHeader().
 		BGroupView* header = new BGroupView(B_VERTICAL, 0);
-		header->SetViewColor(kBgColor);
+		fMainView->Themes().Add(header, kRoleBg);
 		fMainView->BuildHeader(header);
 
 		// No visible scroll bars -- see RakarrackView::MessageReceived()
 		// for how scrolling still works (mouse wheel) without them.
 		BScrollView* scroller = new BScrollView("rack_scroll", fMainView, 0,
 			false, false);
-		scroller->SetViewColor(kBgColor);
+		fMainView->Themes().Add(scroller, kRoleBg);
 
 		BLayoutBuilder::Group<>(this, B_VERTICAL, 0)
 			.Add(header)
@@ -3594,6 +3912,23 @@ public:
 
 		if (msg->what == MSG_RANDOM_PRESET) {
 			fMainView->ApplyRandomPreset();
+			return;
+		}
+
+		if (msg->what == B_COLORS_UPDATED) {
+			// The user changed their system colors (Appearance
+			// preferences). Derive a new theme from them, remember it for
+			// next launch, and recolor everything in place. Native controls
+			// (checkbox/menu/button text and frames) already follow the
+			// system colors on their own; this covers every color this file
+			// sets itself. Deliberately outside jmutex -- nothing here
+			// touches engine state.
+			Theme theme = gTheme;
+			if (DeriveThemeFromSystemColors(msg, &theme)) {
+				gTheme = theme;
+				SaveThemeSettings();
+				fMainView->ApplyTheme();
+			}
 			return;
 		}
 
@@ -3707,6 +4042,10 @@ private:
 
 extern "C" void start_haiku_native_interface(void* rkr_ptr) {
     RKR* rkr = (RKR*)rkr_ptr;
+    // Last-used colors from the settings file, or the baseline theme if
+    // there are none yet -- must happen before any view is built, since
+    // every view takes its initial colors from gTheme.
+    LoadThemeSettings();
     RakarrackWindow *win = new RakarrackWindow(BRect(80, 60, 1080, 760), rkr);
     win->Show();
 }
