@@ -6,7 +6,7 @@ SHELL := /bin/bash
 PACKAGE_DIR := build/package
 NAME = rakarrack
 VERSION = 0.6.1
-REVISION = 11
+REVISION = 12
 
 UNAME_M := $(shell uname -m)
 ifeq ($(UNAME_M), BePC)
