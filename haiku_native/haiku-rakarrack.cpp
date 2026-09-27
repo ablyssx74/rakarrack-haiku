@@ -35,9 +35,7 @@
 #include <CheckBox.h>
 #include <ControlLook.h>
 #include <Entry.h>
-#include <File.h>
 #include <FilePanel.h>
-#include <FindDirectory.h>
 #include <Font.h>
 #include <ListItem.h>
 #include <ListView.h>
@@ -623,15 +621,12 @@ struct PresetMenuDef {
 };
 
 // Color theme. Every themed color in this file is looked up by role
-// (ThemeRole) from gTheme instead of being a hard-coded constant, so it can
-// follow the user's system colors (Appearance preferences) at runtime -- see
-// DeriveThemeFromSystemColors() and RakarrackWindow's B_COLORS_UPDATED
-// handling.
+// (ThemeRole) from gTheme instead of being a hard-coded constant. gTheme is
+// always built from the user's current system colors (Appearance
+// preferences) -- at startup (start_haiku_native_interface()) and again on
+// every live change (RakarrackWindow's B_COLORS_UPDATED handling). Nothing
+// is saved between runs: the app always just follows the system theme.
 //
-// kDefaultTheme is the baseline: a dark theme chosen to read close to
-// src/rakarrack.cxx's own black background / gold titles / cyan labels look.
-// It's what the app uses until the user changes their system colors, and
-// whenever the settings file (see ThemeSettingsPath()) has no saved theme.
 // Native BControls (BSlider, BCheckBox, BMenuField) render their frames,
 // knobs and native text with the system's current UI theme rather than fully
 // custom drawing the way FLTK's SliderW does, so this covers what Haiku's API
@@ -655,31 +650,19 @@ struct Theme {
 	rgb_color operator[](ThemeRole role) const { return colors[role]; }
 };
 
-// Bg and Panel are the same value on purpose -- the empty space around the
-// effect boxes (columns, master bar, scroll area) is meant to read as one
-// continuous surface with the boxes themselves, not a separate shade.
-static const Theme kDefaultTheme = {{
-	{ 30, 30, 30, 255 },    // kRoleBg
-	{ 30, 30, 30, 255 },    // kRolePanel
-	{ 224, 196, 132, 255 }, // kRoleTitle
-	{ 140, 200, 224, 255 }, // kRoleLabel
-	{ 235, 235, 235, 255 }, // kRoleValue
-	{ 90, 170, 200, 255 },  // kRoleAccent
-}};
-
-// Field names in the settings BMessage, indexed by ThemeRole.
-static const char* kThemeSettingNames[kThemeRoleCount] = {
-	"theme:background", "theme:panel", "theme:title", "theme:label",
-	"theme:value", "theme:accent"
-};
+// The gold titles / cyan labels of src/rakarrack.cxx's own look. Titles and
+// labels start from these hues on any background; EnsureContrast() only
+// lightens or darkens them as far as needed to stay readable.
+static const rgb_color kTitleHue = { 224, 196, 132, 255 };
+static const rgb_color kLabelHue = { 140, 200, 224, 255 };
 
 // The theme currently in effect. Written only by the main window's thread
-// (LoadThemeSettings() before it exists, then its B_COLORS_UPDATED
-// handling); OrderWindow reads it from its own thread, but only right after
+// (BuildThemeFromSystemColors() before it exists, then its
+// B_COLORS_UPDATED handling); OrderWindow reads it from its own thread, but only right after
 // being told the theme changed (MSG_THEME_CHANGED) or while building itself,
 // and a torn read of a plain rgb_color would only ever be a momentarily
 // wrong shade anyway, never a crash.
-static Theme gTheme = kDefaultTheme;
+static Theme gTheme;
 
 static rgb_color ThemeColor(ThemeRole role)
 {
@@ -742,88 +725,28 @@ static rgb_color EnsureContrast(rgb_color fg, rgb_color bg, float minRatio)
 	return target;
 }
 
-// /boot/home/config/settings/haikurack_settings -- a flattened BMessage.
-// Only the theme lives there so far, but LoadThemeSettings()/
-// SaveThemeSettings() read-modify-write it so other settings can share the
-// file later without clobbering each other.
-static status_t ThemeSettingsPath(BPath* path)
-{
-	status_t status = find_directory(B_USER_SETTINGS_DIRECTORY, path);
-	if (status != B_OK)
-		return status;
-	return path->Append("haikurack_settings");
-}
-
-static void ReadSettingsMessage(BMessage* settings)
-{
-	settings->MakeEmpty();
-	BPath path;
-	if (ThemeSettingsPath(&path) != B_OK)
-		return;
-	BFile file(path.Path(), B_READ_ONLY);
-	if (file.InitCheck() != B_OK || settings->Unflatten(&file) != B_OK)
-		settings->MakeEmpty();
-}
-
-// Starts from kDefaultTheme and overrides each role the settings file has a
-// saved color for, so a missing file (first run) or a missing field falls
-// back to the baseline theme.
-static void LoadThemeSettings()
-{
-	gTheme = kDefaultTheme;
-	BMessage settings;
-	ReadSettingsMessage(&settings);
-	for (int i = 0; i < kThemeRoleCount; i++) {
-		rgb_color c;
-		if (settings.FindColor(kThemeSettingNames[i], &c) == B_OK)
-			gTheme.colors[i] = c;
-	}
-}
-
-static void SaveThemeSettings()
-{
-	BMessage settings;
-	ReadSettingsMessage(&settings);
-	for (int i = 0; i < kThemeRoleCount; i++) {
-		settings.RemoveName(kThemeSettingNames[i]);
-		settings.AddColor(kThemeSettingNames[i], gTheme.colors[i]);
-	}
-	BPath path;
-	if (ThemeSettingsPath(&path) != B_OK)
-		return;
-	BFile file(path.Path(), B_WRITE_ONLY | B_CREATE_FILE | B_ERASE_FILE);
-	if (file.InitCheck() == B_OK)
-		settings.Flatten(&file);
-}
-
-// Builds a theme from the user's system colors in a B_COLORS_UPDATED
-// message (fields are named by ui_color_name()). Returns false, leaving
-// *theme alone, if none of the colors the theme is derived from changed --
-// e.g. only the tooltip or menu colors were edited -- so an unrelated tweak
-// in Appearance doesn't replace the current theme.
+// Builds the theme from the user's system colors. When called for a
+// B_COLORS_UPDATED message, colors carried in it (fields are named by
+// ui_color_name()) take precedence over ui_color(), in case the latter
+// hasn't caught up yet when the message arrives.
 //
-// Background comes straight from the panel background. Numeric readouts use
-// the panel text color; titles and labels keep the baseline gold/cyan hues;
-// the slider fill uses the control highlight color. Every one of those is
-// then run through EnsureContrast() against the new background, so text on
-// a dark choice gets lighter and text on a light choice gets darker.
-static bool DeriveThemeFromSystemColors(const BMessage* msg, Theme* theme)
+// Background comes straight from the panel background (Bg and Panel are the
+// same on purpose -- the space around the effect boxes reads as one
+// continuous surface with the boxes). Numeric readouts use the panel text
+// color, titles and labels the gold/cyan hues above, and the slider fill
+// the control highlight color. Every one of those is run through
+// EnsureContrast() against the background, so text on a dark theme gets
+// lighter and text on a light theme gets darker.
+static void BuildThemeFromSystemColors(Theme* theme, const BMessage* msg = NULL)
 {
 	rgb_color panelBg = ui_color(B_PANEL_BACKGROUND_COLOR);
 	rgb_color panelText = ui_color(B_PANEL_TEXT_COLOR);
 	rgb_color highlight = ui_color(B_CONTROL_HIGHLIGHT_COLOR);
-
-	bool relevant = false;
 	if (msg != NULL) {
-		relevant |= msg->FindColor(ui_color_name(B_PANEL_BACKGROUND_COLOR),
-			&panelBg) == B_OK;
-		relevant |= msg->FindColor(ui_color_name(B_PANEL_TEXT_COLOR),
-			&panelText) == B_OK;
-		relevant |= msg->FindColor(ui_color_name(B_CONTROL_HIGHLIGHT_COLOR),
-			&highlight) == B_OK;
+		msg->FindColor(ui_color_name(B_PANEL_BACKGROUND_COLOR), &panelBg);
+		msg->FindColor(ui_color_name(B_PANEL_TEXT_COLOR), &panelText);
+		msg->FindColor(ui_color_name(B_CONTROL_HIGHLIGHT_COLOR), &highlight);
 	}
-	if (!relevant)
-		return false;
 
 	panelBg.alpha = 255;
 	theme->colors[kRoleBg] = panelBg;
@@ -831,12 +754,9 @@ static bool DeriveThemeFromSystemColors(const BMessage* msg, Theme* theme)
 	// Readouts are the main body text, so they get the stricter 7:1 target;
 	// the colored titles/labels 4.5:1, and the slider fill (not text) 3:1.
 	theme->colors[kRoleValue] = EnsureContrast(panelText, panelBg, 7.0f);
-	theme->colors[kRoleTitle]
-		= EnsureContrast(kDefaultTheme[kRoleTitle], panelBg, 4.5f);
-	theme->colors[kRoleLabel]
-		= EnsureContrast(kDefaultTheme[kRoleLabel], panelBg, 4.5f);
+	theme->colors[kRoleTitle] = EnsureContrast(kTitleHue, panelBg, 4.5f);
+	theme->colors[kRoleLabel] = EnsureContrast(kLabelHue, panelBg, 4.5f);
 	theme->colors[kRoleAccent] = EnsureContrast(highlight, panelBg, 3.0f);
-	return true;
 }
 
 // Remembers which theme role(s) each view was colored with, so the whole
@@ -3974,22 +3894,13 @@ public:
 
 		if (msg->what == B_COLORS_UPDATED) {
 			// The user changed their system colors (Appearance
-			// preferences). Derive a new theme from them, remember it for
-			// next launch, and recolor everything in place. Native controls
-			// (checkbox/menu/button text and frames) already follow the
-			// system colors on their own; this covers every color this file
-			// sets itself. Deliberately outside jmutex -- nothing here
-			// touches engine state.
-			//
-			// ApplyTheme() runs even when the theme itself didn't change
-			// (e.g. only menu or tooltip colors were edited): Haiku has just
-			// pushed the new system colors to any view still tied to one,
-			// so this puts every themed view back on the theme's colors.
-			Theme theme = gTheme;
-			if (DeriveThemeFromSystemColors(msg, &theme)) {
-				gTheme = theme;
-				SaveThemeSettings();
-			}
+			// preferences). Rebuild the theme from them and recolor
+			// everything in place. Native controls (checkbox/menu/button
+			// text and frames) already follow the system colors on their
+			// own; this covers every color this file sets itself.
+			// Deliberately outside jmutex -- nothing here touches engine
+			// state.
+			BuildThemeFromSystemColors(&gTheme, msg);
 			fMainView->ApplyTheme();
 			return;
 		}
@@ -4104,10 +4015,9 @@ private:
 
 extern "C" void start_haiku_native_interface(void* rkr_ptr) {
     RKR* rkr = (RKR*)rkr_ptr;
-    // Last-used colors from the settings file, or the baseline theme if
-    // there are none yet -- must happen before any view is built, since
-    // every view takes its initial colors from gTheme.
-    LoadThemeSettings();
+    // The user's current system colors -- must happen before any view is
+    // built, since every view takes its initial colors from gTheme.
+    BuildThemeFromSystemColors(&gTheme);
     RakarrackWindow *win = new RakarrackWindow(BRect(80, 60, 1080, 760), rkr);
     win->Show();
 }
