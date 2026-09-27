@@ -1047,7 +1047,7 @@ static int* BypassPtrForId(RKR* rkr, int effectId) {
 static const std::vector<int> kPresetRefreshEffectIds = {
 	0,	// Equalizer
 	1,	// Compressor
-	2,	// Distorsion
+	2,	// Distortion
 	3,	// Overdrive
 	4,	// Echo
 	5,	// Chorus
@@ -1062,7 +1062,7 @@ static const std::vector<int> kPresetRefreshEffectIds = {
 	14,	// Harmonizer
 	15,	// MusDelay
 	16,	// Noise Gate
-	17,	// Distortion (Overdrive's NewDist sibling)
+	17,	// Derelict (NewDist)
 	18,	// Analog Phaser
 	19,	// Valve
 	20,	// DFlange
@@ -1196,7 +1196,7 @@ static const char* EffectName(int effectId) {
 	switch (effectId) {
 	case 0: return "Equalizer";
 	case 1: return "Compressor";
-	case 2: return "Distorsion";
+	case 2: return "Distortion";
 	case 3: return "Overdrive";
 	case 4: return "Echo";
 	case 5: return "Chorus";
@@ -1211,7 +1211,7 @@ static const char* EffectName(int effectId) {
 	case 14: return "Harmonizer";
 	case 15: return "MusDelay";
 	case 16: return "Noise Gate";
-	case 17: return "Distortion";
+	case 17: return "Derelict";
 	case 18: return "Analog Phaser";
 	case 19: return "Valve";
 	case 20: return "DFlange";
@@ -2210,13 +2210,56 @@ public:
 			msg->FindFloat("be:wheel_delta_x", &dx);
 			msg->FindFloat("be:wheel_delta_y", &dy);
 			const float kStep = 32.0f;
-			if (dx != 0.0f)
-				ScrollBy(dx * kStep, 0.0f);
-			if (dy != 0.0f)
-				ScrollBy(0.0f, dy * kStep);
+			ScrollClamped(dx * kStep, dy * kStep);
 			return;
 		}
 		BView::MessageReceived(msg);
+	}
+
+	// ScrollBy() alone has no idea where the content ends -- with no scroll
+	// bars there's no range limiting it -- so the wheel could scroll the
+	// racks arbitrarily far out of view. Clamp to the content's extent
+	// instead: the farther of this view's own edge and its only child's
+	// (the "columns" group from the constructor -- Frame() is in this
+	// view's unscrolled coordinates), minus the visible area, which is the
+	// enclosing BScrollView's size if this view is bigger than it. Also
+	// pulls the position back in if the content has shrunk since (e.g.
+	// "Hide Inactive Effects").
+	void ScrollClamped(float dx, float dy)
+	{
+		BRect bounds = Bounds();
+		float extentRight = bounds.Width();
+		float extentBottom = bounds.Height();
+		if (BView* content = ChildAt(0)) {
+			BRect contentFrame = content->Frame();
+			if (contentFrame.right > extentRight)
+				extentRight = contentFrame.right;
+			if (contentFrame.bottom > extentBottom)
+				extentBottom = contentFrame.bottom;
+		}
+		float visibleW = bounds.Width();
+		float visibleH = bounds.Height();
+		if (BView* parent = Parent()) {
+			BRect parentBounds = parent->Bounds();
+			if (parentBounds.Width() < visibleW)
+				visibleW = parentBounds.Width();
+			if (parentBounds.Height() < visibleH)
+				visibleH = parentBounds.Height();
+		}
+		float maxX = extentRight - visibleW;
+		float maxY = extentBottom - visibleH;
+		float x = bounds.left + dx;
+		float y = bounds.top + dy;
+		if (x > maxX)
+			x = maxX;
+		if (y > maxY)
+			y = maxY;
+		if (x < 0.0f)
+			x = 0.0f;
+		if (y < 0.0f)
+			y = 0.0f;
+		if (x != bounds.left || y != bounds.top)
+			ScrollTo(BPoint(x, y));
 	}
 
 	virtual void Pulse()
@@ -3100,7 +3143,7 @@ private:
 				rkr->efx_Echotron->setpresetCommit();
 			}});
 
-		BuildEffectBox(col, "Distorsion", rkr, 2, &rkr->Distorsion_Bypass,
+		BuildEffectBox(col, "Distortion", rkr, 2, &rkr->Distorsion_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_Distorsion->changepar(n, v); },
 			[rkr](int32 n) { return rkr->efx_Distorsion->getpar(n); },
 			{
@@ -3463,7 +3506,7 @@ private:
 			{"L/R Cr.", -64, 63, 9, 64},
 		};
 
-		BuildEffectBox(col, "Distortion", rkr, 17, &rkr->NewDist_Bypass,
+		BuildEffectBox(col, "Derelict", rkr, 17, &rkr->NewDist_Bypass,
 			[rkr](int32 n, int32 v) { rkr->efx_NewDist->changepar(n, v); },
 			[rkr](int32 n) { return rkr->efx_NewDist->getpar(n); },
 			{
