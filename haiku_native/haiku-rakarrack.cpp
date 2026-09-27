@@ -1927,25 +1927,29 @@ public:
 		// occupies an efx_order[] slot), so it's built directly here instead
 		// of through BuildEffectBox/BuildColumnN. Its own row, below Input
 		// Gain/Master Volume/the scope, rather than crowding them.
+		// Unlike the effect boxes (see BuildEffectBox/TitleCheckBox), the
+		// MIDI box keeps a plain title plus a separate "On" checkbox inside
+		// it: with its on/off switch in the label, a switched-off MIDI box
+		// in the header collapsed to a tall, narrow, empty frame instead of
+		// a compact box.
 		BBox* midiBox = new BBox("midi_box");
 		fTheme.Add(midiBox, kRolePanel);
+		BStringView* midiTitle = new BStringView("midi_title", "MIDI");
+		fTheme.Add(midiTitle, kRoleNone, kRoleTitle, kRolePanel);
+		BFont midiTitleFont(be_bold_font);
+		midiTitle->SetFont(&midiTitleFont);
+		midiBox->SetLabel(midiTitle);
 
-		// Zero insets, same reason as BuildEffectBox's content group: with
-		// midiBody hidden, the box collapses to just its label row.
-		BGroupView* midiContent = new BGroupView(B_VERTICAL, 0);
+		BGroupView* midiContent = new BGroupView(B_VERTICAL, 6);
+		midiContent->GroupLayout()->SetInsets(8);
 		fTheme.Add(midiContent, kRolePanel);
 
-		// Every MIDI control -- hidden whenever MIDI is off, the same way
-		// each effect box's body collapses to just its title bar in
-		// BuildEffectBox. Built before midiOn since its callback below
-		// needs to reach it.
+		// Everything below the "On" checkbox -- hidden whenever MIDI is off.
+		// Built before midiOn since its callback below needs to reach it.
 		BGroupView* midiBody = new BGroupView(B_VERTICAL, 4);
-		midiBody->GroupLayout()->SetInsets(8);
 		fTheme.Add(midiBody, kRolePanel);
 
-		// The "MIDI" on/off switch is the box's label, same as every effect
-		// box -- see TitleCheckBox.
-		BCheckBox* midiOn = new TitleCheckBox("midi_on", "MIDI",
+		BCheckBox* midiOn = new BCheckBox("midi_on", "On",
 			MakeMessage(Bind([rkr, midiBody](int32 v) {
 				// Mirrors cb_nidi_activar_i: silence any note the converter
 				// currently thinks is held before switching it off, so
@@ -1959,8 +1963,8 @@ public:
 					midiBody->Hide();
 			})));
 		midiOn->SetValue(rkr->MIDIConverter_Bypass ? B_CONTROL_ON : B_CONTROL_OFF);
-		fTheme.Add(midiOn, kRolePanel, kRoleNone, kRolePanel);
-		midiBox->SetLabel(midiOn);
+		fTheme.Add(midiOn, kRolePanel);
+		midiContent->AddChild(midiOn);
 		if (rkr->MIDIConverter_Bypass == 0)
 			midiBody->Hide();
 		midiContent->AddChild(midiBody);
