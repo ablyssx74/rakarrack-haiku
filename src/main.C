@@ -50,7 +50,7 @@
 bool gDebugMode = false;
 
 namespace AppInfo {
-    static const char* const VERSION_STRING = "Rakarrack v12 (Haiku OS)";
+    static const char* const VERSION_STRING = "Rakarrack v13 (Haiku OS)";
 }
 
 
