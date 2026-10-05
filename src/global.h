@@ -101,6 +101,23 @@ typedef unsigned char uchar;
 
 
 #include "config.h"
+
+#ifdef __HAIKU__
+// The data/doc paths compiled in by configure point at /boot/system, which is
+// wrong when the package is installed in the user's /boot/home/config. Resolve
+// them at runtime from wherever this binary's package is actually installed,
+// falling back to the compiled-in paths (see HaikuDataDir() in haiku_stubs.cpp).
+extern const char *HaikuDataDir(const char *compiledDefault);
+extern const char *HaikuDocDir(const char *compiledDefault);
+static const char kHaikuCompiledDataDir[] = DATADIR;
+#undef DATADIR
+#define DATADIR HaikuDataDir(kHaikuCompiledDataDir)
+#ifdef HELPDIR
+static const char kHaikuCompiledDocDir[] = HELPDIR;
+#undef HELPDIR
+#define HELPDIR HaikuDocDir(kHaikuCompiledDocDir)
+#endif
+#endif
 #include <pthread.h>
 #include <signal.h>
 #include <dirent.h>

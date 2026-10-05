@@ -1168,9 +1168,59 @@ RKR::Actualizar_Audio ()
   Bypass = 0;
   for (i = 0; i < 12; i++)
   efx_order[i] = lv[10][i];
-  Harmonizer_Bypass=0;
+
+  // Release every effect the previously loaded bank/preset left switched
+  // on. Only the (up to) 10 effects named in the new efx_order are
+  // restored below; without this, an effect that was on in the old preset
+  // but is absent from the new one kept its Bypass flag set -- still shown
+  // as active and still receiving Tap Tempo updates -- on top of the new
+  // preset.
+  Reverb_Bypass = 0;
+  Chorus_Bypass = 0;
+  Flanger_Bypass = 0;
+  Phaser_Bypass = 0;
+  Overdrive_Bypass = 0;
+  Distorsion_Bypass = 0;
+  Echo_Bypass = 0;
+  EQ1_Bypass = 0;
+  EQ2_Bypass = 0;
+  Compressor_Bypass = 0;
+  WhaWha_Bypass = 0;
+  Alienwah_Bypass = 0;
+  Cabinet_Bypass = 0;
+  Pan_Bypass = 0;
+  Harmonizer_Bypass = 0;
+  MusDelay_Bypass = 0;
+  Gate_Bypass = 0;
+  NewDist_Bypass = 0;
+  APhaser_Bypass = 0;
+  Valve_Bypass = 0;
+  DFlange_Bypass = 0;
   Ring_Bypass = 0;
+  Exciter_Bypass = 0;
+  MBDist_Bypass = 0;
+  Arpie_Bypass = 0;
+  Expander_Bypass = 0;
+  Shuffle_Bypass = 0;
+  Synthfilter_Bypass = 0;
+  MBVvol_Bypass = 0;
+  Convol_Bypass = 0;
+  Looper_Bypass = 0;
+  RyanWah_Bypass = 0;
+  RBEcho_Bypass = 0;
+  CoilCrafter_Bypass = 0;
+  ShelfBoost_Bypass = 0;
+  Vocoder_Bypass = 0;
+  Sustainer_Bypass = 0;
+  Sequence_Bypass = 0;
+  Shifter_Bypass = 0;
+  StompBox_Bypass = 0;
+  Reverbtron_Bypass = 0;
+  Echotron_Bypass = 0;
   StereoHarm_Bypass = 0;
+  CompBand_Bypass = 0;
+  Opticaltrem_Bypass = 0;
+  Vibe_Bypass = 0;
   
 
   for (j=0;j<10; j++)

@@ -67,6 +67,7 @@
 #include <string>
 #include <deque>
 #include <vector>
+#include <algorithm>
 #include <map>
 
 // Pulls in the full RKR engine class (global.h) so we can call the real
@@ -1544,6 +1545,11 @@ public:
 		fTheme.Add(col3, kRoleBg);
 		fTheme.Add(col4, kRoleBg);
 
+		fColumns[0] = col1;
+		fColumns[1] = col2;
+		fColumns[2] = col3;
+		fColumns[3] = col4;
+
 		BuildColumn1(col1);
 		BuildColumn2(col2);
 		BuildColumn3(col3);
@@ -2672,7 +2678,11 @@ private:
 
 		box->AddChild(content);
 		column->AddChild(box);
-		fEffectBoxes.push_back({box, bypass});
+		fEffectBoxes.push_back({box, bypass, effectId, -1});
+		for (int c = 0; c < 4; c++) {
+			if (fColumns[c] == column)
+				fEffectBoxes.back().homeColumn = c;
+		}
 
 		// Re-primes this box's "On" state and every control above from the
 		// engine's CURRENT values -- exactly the same reads BuildEffectBox
@@ -3652,7 +3662,15 @@ private:
 	struct EffectBoxEntry {
 		BBox* box;
 		int* bypass;
+		int effectId;
+		int homeColumn;	// which of fColumns[] BuildColumnN put it in
 	};
+	BGroupView* fColumns[4] = { nullptr, nullptr, nullptr, nullptr };
+	// Last arrangement ApplyRackLayout() produced, as one entry per box
+	// (column * 100 + position) -- compared against the wanted arrangement
+	// so Pulse() can call it every tick without touching the layout unless
+	// something actually changed.
+	std::vector<int> fLayoutSignature;
 	std::vector<EffectBoxEntry> fEffectBoxes;
 	BCheckBox* fHideInactive = nullptr;
 	BStringView* fMaxEffectsLabel = nullptr;
@@ -3670,6 +3688,89 @@ private:
 			bool active = (*e.bypass != 0);
 			SetViewVisible(e.box, !fHideInactiveEffects || active);
 		}
+		ApplyRackLayout();
+	}
+
+	// Arranges the effect boxes across the four columns.
+	//  - Hide Inactive Effects off: every box sits in the column
+	//    BuildColumnN put it in, in the order it was built (the full rack).
+	//  - Hide Inactive Effects on: the active effects are dealt out
+	//    left-to-right across the four columns in signal-chain order
+	//    (efx_order), so effect 1-4 form the first row, 5-8 the second, and
+	//    so on, with no gaps where hidden boxes used to be. Hidden boxes
+	//    stay parked at the bottom of their home column (they take no
+	//    space while hidden).
+	// Safe to call every Pulse(): it only moves views when the wanted
+	// arrangement differs from the current one.
+	void ApplyRackLayout()
+	{
+		const int n = (int)fEffectBoxes.size();
+		std::vector<int> column(n, 0), position(n, 0);
+
+		if (!fHideInactiveEffects) {
+			int count[4] = { 0, 0, 0, 0 };
+			for (int i = 0; i < n; i++) {
+				int c = fEffectBoxes[i].homeColumn;
+				column[i] = c;
+				position[i] = count[c]++;
+			}
+		} else {
+			// Active boxes, ordered by their slot in the signal chain.
+			std::vector<int> active;
+			for (int i = 0; i < n; i++) {
+				if (*fEffectBoxes[i].bypass != 0)
+					active.push_back(i);
+			}
+			auto chainPos = [this](int i) {
+				for (int slot = 0; slot < kOrderSlotCount; slot++) {
+					if (fRkr->efx_order[slot] == fEffectBoxes[i].effectId)
+						return slot;
+				}
+				return 100 + fEffectBoxes[i].effectId;
+			};
+			std::stable_sort(active.begin(), active.end(),
+				[&](int a, int b) { return chainPos(a) < chainPos(b); });
+
+			int count[4] = { 0, 0, 0, 0 };
+			for (size_t k = 0; k < active.size(); k++) {
+				int c = (int)(k % 4);
+				column[active[k]] = c;
+				position[active[k]] = count[c]++;
+			}
+			// Hidden boxes: home column, after that column's active boxes.
+			for (int i = 0; i < n; i++) {
+				if (*fEffectBoxes[i].bypass == 0) {
+					int c = fEffectBoxes[i].homeColumn;
+					column[i] = c;
+					position[i] = count[c]++;
+				}
+			}
+		}
+
+		std::vector<int> signature(n);
+		for (int i = 0; i < n; i++)
+			signature[i] = column[i] * 100 + position[i];
+		if (signature == fLayoutSignature)
+			return;
+		fLayoutSignature = signature;
+
+		for (int i = 0; i < n; i++)
+			fEffectBoxes[i].box->RemoveSelf();
+		// Per column, in position order. AddView(index, ...) keeps the
+		// trailing glue item last.
+		for (int c = 0; c < 4; c++) {
+			std::vector<std::pair<int, int> > inColumn; // position, box index
+			for (int i = 0; i < n; i++) {
+				if (column[i] == c)
+					inColumn.push_back(std::make_pair(position[i], i));
+			}
+			std::sort(inColumn.begin(), inColumn.end());
+			for (size_t k = 0; k < inColumn.size(); k++) {
+				fColumns[c]->GroupLayout()->AddView((int32)k,
+					fEffectBoxes[inColumn[k].second].box);
+			}
+		}
+		InvalidateLayout();
 	}
 
 public:

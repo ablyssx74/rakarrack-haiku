@@ -7,6 +7,8 @@
 #include <string.h>
 #include <SupportDefs.h>
 #include <OS.h>
+#include <FindDirectory.h>
+#include <sys/stat.h>
 
 
 // Planar buffers for Rakarrack to write into
@@ -153,3 +155,43 @@ char *strsep(char **stringp, const char *delim) {
 #endif
 
 
+
+
+// Resolve a data sub-directory relative to where this binary's package is
+// installed (system or user), so the app works from both /boot/system and
+// /boot/home/config. Falls back to the path compiled in by configure.
+static const char *
+HaikuResolveDir(const char *subPath, const char *compiledDefault, char *buf, size_t size)
+{
+	struct stat st;
+	if (find_path((const void *)&HaikuResolveDir, B_FIND_PATH_DATA_DIRECTORY,
+			subPath, buf, size) == B_OK
+		&& stat(buf, &st) == 0 && S_ISDIR(st.st_mode))
+		return buf;
+	strlcpy(buf, compiledDefault, size);
+	return buf;
+}
+
+const char *
+HaikuDataDir(const char *compiledDefault)
+{
+	static char buf[B_PATH_NAME_LENGTH];
+	static bool resolved = false;
+	if (!resolved) {
+		HaikuResolveDir("rakarrack/share/rakarrack", compiledDefault, buf, sizeof(buf));
+		resolved = true;
+	}
+	return buf;
+}
+
+const char *
+HaikuDocDir(const char *compiledDefault)
+{
+	static char buf[B_PATH_NAME_LENGTH];
+	static bool resolved = false;
+	if (!resolved) {
+		HaikuResolveDir("rakarrack/share/doc/rakarrack/html", compiledDefault, buf, sizeof(buf));
+		resolved = true;
+	}
+	return buf;
+}
