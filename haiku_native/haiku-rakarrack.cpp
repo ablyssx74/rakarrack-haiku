@@ -1,5 +1,5 @@
 /*
- * Copyright 2026, Kris Beazley hakarrack@epluribusunix.net
+ * Copyright 2026, ablyss hakarrack@epluribusunix.net
  * All rights reserved. Distributed under the terms of the MIT license.
  *
  * Native Haiku GUI for Rakarrack.

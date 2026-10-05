@@ -20,7 +20,7 @@
   Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
   
   
-  Updated by Kris Beazley aka ablyss for Haiku OS with the help of AI
+  Updated by ablyss for Haiku OS with the help of AI
   Copyright 2026
 */
 #include <app/Looper.h>
