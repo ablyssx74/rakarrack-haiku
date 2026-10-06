@@ -1612,8 +1612,12 @@ public:
 		// -- see fEffectBoxes/RefreshEffectVisibility() and Pulse() below.
 		fHideInactive = new BCheckBox("hide_inactive", "Hide Inactive Effects",
 			MakeMessage(Bind([this](int32 v) {
+				// Runs with jmutex held (like every GUI action), and the
+				// audio callback needs that same lock -- so this only
+				// records the new state. Pulse() (which holds no lock)
+				// does the actual show/hide and the layout rebuild, which
+				// are slow enough to underrun the audio otherwise.
 				fHideInactiveEffects = v != 0;
-				RefreshEffectVisibility();
 				// Collapsing down to just the active boxes can leave the
 				// scroll position (unchanged by any of the above) pointing
 				// at empty space below the now-much-shorter content -- e.g.
@@ -1625,8 +1629,7 @@ public:
 				// (fMainView == this -- see RakarrackWindow's constructor,
 				// which hands this same RakarrackView to BScrollView as the
 				// view it scrolls.)
-				if (fHideInactiveEffects)
-					ScrollTo(BPoint(0, 0));
+				fScrollToTopPending = fHideInactiveEffects;
 			})));
 		fTheme.Add(fHideInactive, kRoleBg);
 
@@ -2211,6 +2214,10 @@ public:
 			"Max Concurrent Effects Allowed: %d of 10", activeCount);
 		fMaxEffectsLabel->SetText(maxEffectsBuf);
 		RefreshEffectVisibility();
+		if (fScrollToTopPending) {
+			fScrollToTopPending = false;
+			ScrollTo(BPoint(0, 0));
+		}
 
 		// Apply any AddDebouncedSlider() value that's settled -- no further
 		// drag movement for kDebounceUsec -- since the last check. Locked
@@ -3675,6 +3682,7 @@ private:
 	BCheckBox* fHideInactive = nullptr;
 	BStringView* fMaxEffectsLabel = nullptr;
 	bool fHideInactiveEffects = false;
+	bool fScrollToTopPending = false;
 	BStringView* fPresetNameLabel = nullptr;
 
 	// Shows/hides every registered effect box to match fHideInactiveEffects
@@ -3754,10 +3762,22 @@ private:
 			return;
 		fLayoutSignature = signature;
 
-		for (int i = 0; i < n; i++)
-			fEffectBoxes[i].box->RemoveSelf();
-		// Per column, in position order. AddView(index, ...) keeps the
-		// trailing glue item last.
+		// Move the boxes with layout invalidation and window updates held off,
+		// then invalidate once at the end.
+		for (int c = 0; c < 4; c++)
+			fColumns[c]->DisableLayoutInvalidation();
+		DisableLayoutInvalidation();
+		BWindow* window = Window();
+		if (window != NULL)
+			window->DisableUpdates();
+
+		// Per column, put the wanted boxes into position and leave everything
+		// that is already in the right place alone: detaching and
+		// re-attaching a box (and all the widgets in it) is the expensive
+		// part, and in compact mode only the few active boxes actually move.
+		// A box wanted here that currently sits elsewhere (another column,
+		// or later in this one) is pulled out of its old place first.
+		// AddView(index, ...) keeps the trailing glue item last.
 		for (int c = 0; c < 4; c++) {
 			std::vector<std::pair<int, int> > inColumn; // position, box index
 			for (int i = 0; i < n; i++) {
@@ -3765,11 +3785,25 @@ private:
 					inColumn.push_back(std::make_pair(position[i], i));
 			}
 			std::sort(inColumn.begin(), inColumn.end());
+			BGroupLayout* layout = fColumns[c]->GroupLayout();
 			for (size_t k = 0; k < inColumn.size(); k++) {
-				fColumns[c]->GroupLayout()->AddView((int32)k,
-					fEffectBoxes[inColumn[k].second].box);
+				BView* wanted = fEffectBoxes[inColumn[k].second].box;
+				BLayoutItem* item = layout->ItemAt((int32)k);
+				if (item != NULL && item->View() == wanted)
+					continue;
+				if (wanted->Parent() != NULL)
+					wanted->RemoveSelf();
+				layout->AddView((int32)k, wanted);
 			}
 		}
+
+		for (int c = 0; c < 4; c++)
+			fColumns[c]->EnableLayoutInvalidation();
+		EnableLayoutInvalidation();
+		if (window != NULL)
+			window->EnableUpdates();
+		for (int c = 0; c < 4; c++)
+			fColumns[c]->InvalidateLayout();
 		InvalidateLayout();
 	}
 
