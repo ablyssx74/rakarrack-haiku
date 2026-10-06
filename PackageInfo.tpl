@@ -9,7 +9,8 @@ licenses {
 	"GNU GPL v2"
 }
 copyrights {
-	"$(YEAR) Rakarrack project"
+	"2008-2010 Josep Andreu, Ryan Billing and others"
+	"$(YEAR) ablyss (Haiku port)"
 }
 provides {
 	$(NAME) = $(VERSION)-$(REVISION)
@@ -30,5 +31,5 @@ urls {
 }
 source-urls {
 # Download
-	"https://github.com/ablyssx74/rakarrack-haiku/archive/refs/tags/v1.0.0.tar.gz"
+	"https://github.com/ablyssx74/rakarrack-haiku/archive/refs/tags/v$(REVISION).tar.gz"
 }
