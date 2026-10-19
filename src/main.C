@@ -50,7 +50,7 @@
 bool gDebugMode = false;
 
 namespace AppInfo {
-    static const char* const VERSION_STRING = "Rakarrack v16 (Haiku OS)";
+    static const char* const VERSION_STRING = "Rakarrack v17 (Haiku OS)";
 }
 
 
@@ -331,6 +331,17 @@ AppThreadEntry(void*)
 	return 0;
 }
 
+
+// FLTK on Haiku draws a window that is only repainted in part, as it is when a level meter, the spectrum analyzer or the value of a
+// slider changes, with blurred and left-over pieces of what was there before; a repaint of the whole window does not show that
+// (a resize clears it too). So every window that has something to repaint is repainted whole.
+static void RepaintDamagedWindowsInFull()
+{
+  for (Fl_Window *window = Fl::first_window(); window; window = Fl::next_window(window))
+  {
+    if (window->damage() && window->damage() != FL_DAMAGE_ALL) window->redraw();
+  }
+}
 int
 main (int argc, char *argv[])
 {
@@ -485,6 +496,8 @@ main (int argc, char *argv[])
       if (gui) {
           // Standard FLTK event handling for Haiku
           Fl::wait(0.1); 
+          // what the events and timers of that wait have damaged is drawn by the next one, whole (see above)
+          RepaintDamagedWindowsInFull();
           
           if (Fl::first_window() == NULL) {
               Pexitprogram = 1;

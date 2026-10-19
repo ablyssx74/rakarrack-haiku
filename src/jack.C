@@ -77,6 +77,9 @@ extern bool gDebugMode;
 
 
 #include <Path.h>          // BPath -- settings-dir resolution
+#include <Entry.h>         // BEntry -- the real-time warning's marker file
+#include <File.h>          // BFile -- same
+#include <Directory.h>     // create_directory() -- same
 #include <FindDirectory.h> // find_directory()/B_USER_SETTINGS_DIRECTORY
 #include <dirent.h>        // opendir()/readdir() -- /dev/audio/hmulti scan
 #include <string>
@@ -696,10 +699,26 @@ int JACKstart(RKR * rkr_, jack_client_t * jackclient_) {
         printf("[Rakarrack] Real-time audio not detected -- using %u Hz / %d frames "
             "(buffer scaled to your detected rate).\n", g_HaikuDetectedRate, g_HaikuDetectedFrames);
 
-        BAlert* rtAlert = new BAlert("Real-Time Audio",
-            "Rakarrack works best when real-time configuration is enabled. Please enable "
-            "real-time audio.", "OK", NULL, NULL, B_WIDTH_AS_USUAL, B_INFO_ALERT);
-        rtAlert->Go();
+        // "Don't remind me again" leaves a marker file in the settings folder, and the warning is not shown while it is there.
+        BPath rtMarker;
+        bool showRtAlert = true;
+        if (find_directory(B_USER_SETTINGS_DIRECTORY, &rtMarker) == B_OK) {
+            rtMarker.Append("rakarrack");
+            create_directory(rtMarker.Path(), 0755);
+            rtMarker.Append("no_realtime_warning");
+            if (BEntry(rtMarker.Path()).Exists())
+                showRtAlert = false;
+        } else
+            rtMarker.Unset();
+        if (showRtAlert) {
+            BAlert* rtAlert = new BAlert("Real-Time Audio",
+                "Rakarrack works best when real-time configuration is enabled. Please enable "
+                "real-time audio.", "OK", "Don't remind me again", NULL, B_WIDTH_AS_USUAL, B_INFO_ALERT);
+            rtAlert->SetShortcut(0, B_ESCAPE);
+            if (rtAlert->Go() == 1 && rtMarker.InitCheck() == B_OK) {
+                BFile rtFile(rtMarker.Path(), B_WRITE_ONLY | B_CREATE_FILE);
+            }
+        }
     }
 
     // Reverb has shown instability -- runaway/exploding output, clicking/
