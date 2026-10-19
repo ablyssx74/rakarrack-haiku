@@ -50,7 +50,10 @@
 bool gDebugMode = false;
 
 namespace AppInfo {
-    static const char* const VERSION_STRING = "Rakarrack v17 (Haiku OS)";
+    // The port's revision comes from the VERSION file at build time (haiku.makefile passes it in).
+    #define RKR_STR2(x) #x
+    #define RKR_STRINGIFY(x) RKR_STR2(x)
+    static const char* const VERSION_STRING = "Rakarrack v" RKR_STRINGIFY(HAIKU_PORT_REVISION) " (Haiku OS)";
 }
 
 
