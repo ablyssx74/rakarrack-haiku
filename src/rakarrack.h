@@ -3982,15 +3982,9 @@ private:
 public:
   Fl_Group *MIDI_SET;
   Fl_Box *Fondo8;
-  Fl_Check_Button *D_A_Connect;
 private:
-  void cb_D_A_Connect_i(Fl_Check_Button*, void*);
-  static void cb_D_A_Connect(Fl_Check_Button*, void*);
 public:
-  Fl_Browser *BMidiIn;
 private:
-  void cb_BMidiIn_i(Fl_Browser*, void*);
-  static void cb_BMidiIn(Fl_Browser*, void*);
 public:
   Fl_Counter *Midi_In_Counter;
   Fl_Counter *Conv_Trig_Counter;

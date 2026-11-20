@@ -10882,36 +10882,6 @@ void RKRGUI::cb_Wave_Up_Qua(Fl_Choice* o, void* v) {
   ((RKRGUI*)(o->parent()->parent()->parent()->user_data()))->cb_Wave_Up_Qua_i(o,v);
 }
 
-void RKRGUI::cb_D_A_Connect_i(Fl_Check_Button* o, void*) {
-    rkr->aconnect_MI = (int) o->value();
-
-    if (rkr->aconnect_MI) {
-        BMidiIn->activate();
-        // HAIKU FIX: Trigger the connection immediately
-        rkr->Conecta(); 
-    } else {
-        // HAIKU FIX: Disconnect if the user unchecks it
-        rkr->disconectaaconnect();
-        BMidiIn->deactivate();
-    }
-}
-
-void RKRGUI::cb_D_A_Connect(Fl_Check_Button* o, void* v) {
-  ((RKRGUI*)(o->parent()->parent()->parent()->user_data()))->cb_D_A_Connect_i(o,v);
-}
-
-void RKRGUI::cb_BMidiIn_i(Fl_Browser* o, void*) {
-  int valor;
-valor = (int) o->value();
-if(o->text(valor) != NULL)
-strcpy(rkr->MID,o->text(valor));
-else return;
-o->select(valor,1);
-rkr->Conecta();
-}
-void RKRGUI::cb_BMidiIn(Fl_Browser* o, void* v) {
-  ((RKRGUI*)(o->parent()->parent()->parent()->user_data()))->cb_BMidiIn_i(o,v);
-}
 
 void RKRGUI::cb_Midi_In_Counter_i(Fl_Counter* o, void*) {
   rkr->MidiCh=(int)o->value()-1;
@@ -21573,26 +21543,9 @@ R average.");
   MIDI_SET->hide();
   { Fondo8 = new Fl_Box(5, 26, 630, 502);
   } // Fl_Box* Fondo8
-  { D_A_Connect = new Fl_Check_Button(10, 60, 25, 20, "Show Haiku MIDI Devices");
-    D_A_Connect->down_box(FL_DOWN_BOX);
-    D_A_Connect->labelsize(11);
-    D_A_Connect->labelcolor(FL_BACKGROUND2_COLOR);
-    D_A_Connect->callback((Fl_Callback*)cb_D_A_Connect);
-    D_A_Connect->align(FL_ALIGN_TOP_LEFT); 
-  } 
-   { BMidiIn = new Fl_Browser(10, 110, 200, 70, "Haiku Midi Ports");
-    BMidiIn->type(2);
-    BMidiIn->selection_color(FL_FOREGROUND_COLOR);
-    BMidiIn->labelsize(11);
-    BMidiIn->labelcolor(FL_BACKGROUND2_COLOR);
-    BMidiIn->textsize(12);
-    BMidiIn->textcolor(0);
-    BMidiIn->callback((Fl_Callback*)cb_BMidiIn);
-    BMidiIn->align(FL_ALIGN_TOP_LEFT);
-  }
  
     // --- COLUMN 1: TRACKING ENGINE ENGINE PARAMETERS (LEFT) ---
-  { Conv_Trig_Counter = new Fl_Counter(185, 195, 80, 22, "Trigger Sensitivity");
+  { Conv_Trig_Counter = new Fl_Counter(185, 45, 80, 22, "Trigger Sensitivity");
     Conv_Trig_Counter->type(1);
     Conv_Trig_Counter->labelsize(10);
     Conv_Trig_Counter->labelcolor(FL_BACKGROUND2_COLOR);
@@ -21603,7 +21556,7 @@ R average.");
     Conv_Trig_Counter->align(FL_ALIGN_LEFT);
   }
 
-  { Conv_Stable_Counter = new Fl_Counter(185, 225, 80, 22, "Stability Threshold");
+  { Conv_Stable_Counter = new Fl_Counter(185, 75, 80, 22, "Stability Threshold");
     Conv_Stable_Counter->type(0);
     Conv_Stable_Counter->labelsize(10);
     Conv_Stable_Counter->labelcolor(FL_BACKGROUND2_COLOR);
@@ -21614,7 +21567,7 @@ R average.");
     Conv_Stable_Counter->align(FL_ALIGN_LEFT);
   }
 
-  { Conv_Off_Counter = new Fl_Counter(185, 255, 80, 22, "Note-Off Grace");
+  { Conv_Off_Counter = new Fl_Counter(185, 105, 80, 22, "Note-Off Grace");
     Conv_Off_Counter->type(1);
     Conv_Off_Counter->labelsize(10);
     Conv_Off_Counter->labelcolor(FL_BACKGROUND2_COLOR);
@@ -21627,7 +21580,7 @@ R average.");
 
     // --- COLUMN 2: FREQUENCY WALL FILTERS (RIGHT) ---
     // Placed side-by-side with Column 1 starting at X=420. Labels use clean FL_ALIGN_LEFT.
-   { Conv_Freq_Ceiling_Counter = new Fl_Counter(420, 195, 80, 22, "Freq Ceiling Filter");
+   { Conv_Freq_Ceiling_Counter = new Fl_Counter(420, 45, 80, 22, "Freq Ceiling Filter");
     Conv_Freq_Ceiling_Counter->type(1); 
     Conv_Freq_Ceiling_Counter->labelsize(10);
     Conv_Freq_Ceiling_Counter->labelcolor(FL_BACKGROUND2_COLOR);
@@ -21637,7 +21590,7 @@ R average.");
     Conv_Freq_Ceiling_Counter->callback((Fl_Callback*)cb_Conv_Freq_Ceiling_Counter, (void*)this);
     Conv_Freq_Ceiling_Counter->align(FL_ALIGN_LEFT);
   }
-  { Conv_Freq_Floor_Counter = new Fl_Counter(420, 225, 80, 22, "Freq Floor Filter"); 
+  { Conv_Freq_Floor_Counter = new Fl_Counter(420, 75, 80, 22, "Freq Floor Filter"); 
     Conv_Freq_Floor_Counter->type(1); 
     Conv_Freq_Floor_Counter->labelsize(10);
     Conv_Freq_Floor_Counter->labelcolor(FL_BACKGROUND2_COLOR);
@@ -21651,7 +21604,7 @@ R average.");
 
         // --- MIDI Channel Selection ---
         // Shifted Y back up slightly to 300 to close the empty gap safely
-        { Midi_In_Counter = new Fl_Counter(185, 300, 80, 24, "Receive Channel");
+        { Midi_In_Counter = new Fl_Counter(185, 150, 80, 24, "Receive Channel");
           Midi_In_Counter->type(1);
           Midi_In_Counter->color((Fl_Color)25);
           Midi_In_Counter->labelsize(10);
@@ -21665,7 +21618,7 @@ R average.");
           Midi_In_Counter->align(FL_ALIGN_LEFT);
         } 
         
-        { Har_In_Counter = new Fl_Counter(185, 335, 80, 24, "Harmonizer Receive Channel");
+        { Har_In_Counter = new Fl_Counter(185, 185, 80, 24, "Harmonizer Receive Channel");
           Har_In_Counter->type(1);
           Har_In_Counter->color((Fl_Color)25);
           Har_In_Counter->labelsize(10);
@@ -21680,13 +21633,13 @@ R average.");
         }
 
         // --- MIDI Implementation Group ---
-        { wMIDI = new Fl_Group(10, 375, 273, 25, "MIDI implementation");
+        { wMIDI = new Fl_Group(10, 225, 273, 25, "MIDI implementation");
           wMIDI->box(FL_PLASTIC_DOWN_FRAME);
           wMIDI->labelsize(10);
           wMIDI->labelcolor(FL_BACKGROUND2_COLOR);
           wMIDI->align(FL_ALIGN_TOP_LEFT);
           
-          { Mw0 = new Fl_Check_Button(65, 378, 18, 18, "Default"); 
+          { Mw0 = new Fl_Check_Button(65, 228, 18, 18, "Default"); 
             Mw0->type(102);
             Mw0->down_box(FL_DOWN_BOX);
             Mw0->labelsize(11);
@@ -21694,7 +21647,7 @@ R average.");
             Mw0->callback((Fl_Callback*)cb_Mw0);
             Mw0->align(FL_ALIGN_LEFT);
           } 
-          { Mw1 = new Fl_Check_Button(175, 378, 18, 18, "MIDI Learn"); 
+          { Mw1 = new Fl_Check_Button(175, 228, 18, 18, "MIDI Learn"); 
             Mw1->type(102);
             Mw1->down_box(FL_DOWN_BOX);
             Mw1->labelsize(11);
@@ -21706,7 +21659,7 @@ R average.");
         } 
 
         // --- Bottom Checkboxes ---
-        { AAssign = new Fl_Check_Button(185, 405, 16, 15, "Auto Assign MIDI Learn");
+        { AAssign = new Fl_Check_Button(185, 255, 16, 15, "Auto Assign MIDI Learn");
           AAssign->down_box(FL_DOWN_BOX);
           AAssign->labelsize(10);
           AAssign->labelcolor(FL_BACKGROUND2_COLOR);
@@ -21714,7 +21667,7 @@ R average.");
           AAssign->align(FL_ALIGN_LEFT);
         } 
         
-        { MTable = new Fl_Check_Button(185, 425, 16, 15, "MIDI Program Change Table");
+        { MTable = new Fl_Check_Button(185, 275, 16, 15, "MIDI Program Change Table");
           MTable->down_box(FL_DOWN_BOX);
           MTable->labelsize(10);
           MTable->labelcolor(FL_BACKGROUND2_COLOR);
@@ -21723,7 +21676,7 @@ R average.");
         } 
 
         // --- Scroll Area ---
-        { scroll = new Fl_Scroll(10, 450, 585, 72); 
+        { scroll = new Fl_Scroll(10, 300, 585, 222); 
           scroll->type(6);
           scroll->user_data((void*)(5000));
           scroll->end();
@@ -22874,11 +22827,9 @@ rakarrack.set(rkr->PrefNom("MIDI Implementation"),rkr->MIDIway);
 rakarrack.set(rkr->PrefNom("MIDI Table"),rkr->midi_table);
 //Haiku Was Here !
 
-i = BMidiIn->value();
-char *temp;
-temp = (char*) BMidiIn->text(i);
-if (temp!=NULL)
-rakarrack.set(rkr->PrefNom("MIDI IN Device"),temp);
+// (the MIDI device that earlier versions let the user choose in the window stays as it was read)
+if (rkr->MID[0] != 0)
+rakarrack.set(rkr->PrefNom("MIDI IN Device"),rkr->MID);
 rakarrack.set(rkr->PrefNom("MIDI IN Channel"),rkr->MidiCh+1);
 rakarrack.set(rkr->PrefNom("MIDI IN Harmonizer"),rkr->HarCh+1);
 rakarrack.set(rkr->PrefNom("Harmonizer Quality"),rkr->HarQual);
@@ -24154,48 +24105,14 @@ visor->show();
 }
 
 void RKRGUI::MiraClientes() {
-  int i;
-  char temp[128];
-  char temp1[128];
-  char *masque;
-  char *name;
-  FILE *fp;
-
-  // Keep the MIDI part as it seems separate from the Jack UI browsers
-  BMidiIn->clear();
-
-  if ((fp = fopen ("/proc/asound/seq/clients", "r")) != NULL)
-  {
-      memset (temp, 0, sizeof (temp));
-      while (fgets (temp, sizeof temp, fp) != NULL)
-      {
-          if (strstr(temp,"Port") != NULL)
-          {  
-              strcpy(temp1,temp);
-              strtok(temp1,"\"");
-              name=strtok(NULL,"\"");
-              masque=strtok(NULL,")");
-              
-              if ((masque[2]=='R') && (strstr(name,"rakarrack MC OUT")==0)) 
-                  BMidiIn->add(name);
-          } 
-      } 
-      fclose(fp);
-  }   
-
+  // (it filled the list of MIDI devices of the window, which is gone: rakarrack publishes itself, other programs connect to it)
 }
 
 
 void RKRGUI::MiraConfig() {
   int i = 1;
 int k;
-while (BMidiIn->text(i) != NULL)
-{
-if (strcmp(BMidiIn->text(i),rkr->MID)==0 ) BMidiIn->select(i,1);
-i++; 
-}
 
-i=1;
 
 
 

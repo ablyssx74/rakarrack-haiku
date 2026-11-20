@@ -528,25 +528,15 @@ void RKR::Conecta() {
     BMidiRoster* roster = BMidiRoster::MidiRoster();
     if (!roster) return;
 
-    // Clear the UI browser list using the rakgui pointer
-    if (rakgui && rakgui->BMidiIn) {
-        rakgui->BMidiIn->clear();
-    }
-
     int32 id = 0;
     BMidiProducer* prod = NULL;
 
     // We use a cleaner loop to ensure Release() is always reachable
     while ((prod = roster->NextProducer(&id)) != NULL) {
         
-        // 1. Update UI
-        if (rakgui && rakgui->BMidiIn) {
-            rakgui->BMidiIn->add(prod->Name());
-        }
-
         // 2. Search for target hardware
         // We only take the FIRST one that matches and skip our own 'OUT' port
-        if (fMidiProd == NULL && MID != NULL && 
+        if (fMidiProd == NULL && aconnect_MI && MID != NULL && 
             strstr(prod->Name(), MID) != NULL &&
             strcmp(prod->Name(), "rakarrack OUT") != 0) 
         {

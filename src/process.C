@@ -955,10 +955,13 @@ RKR::ConnectMIDI ()
 // Get config settings and init settings
 // Get MIDI IN Setting
 
+  // Auto Connect MIDI IN / MIDI IN Device are what earlier versions saved from the MIDI settings window (a check box and a list of the
+  // MIDI devices): the device that was chosen there is still connected when it was on. Nothing of that is in the window any more.
   rakarrack.get (PrefNom ("Auto Connect MIDI IN"), aconnect_MI, 0);
   rakarrack.get (PrefNom ("MIDI IN Device"), MID, "", 40);
-  if (aconnect_MI)
-    Conecta ();
+
+  // rakarrack is always a MIDI device (Rakarrack IN, Rakarrack OUT) for the programs that connect MIDI programs (PatchBay, Ardour)
+  Conecta ();
 
 
 }
