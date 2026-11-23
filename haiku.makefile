@@ -103,7 +103,7 @@ config:
 	--with-buffer-frames="$(FRAMES)"
 
 haiku_native/haiku-rakarrack.o: haiku_native/haiku-rakarrack.cpp
-	$(CXX) -c $< -o $@ -I$(PWD)/jack -I. -I./src $(FLTK_CXX) $(BUILD_FLAGS) -fpermissive $(HAIKU_FIXES)
+	$(CXX) -c $< -o $@ -I./compat -I$(PWD)/jack -I. -I./src $(FLTK_CXX) $(BUILD_FLAGS) -fpermissive $(HAIKU_FIXES)
 
 build: haiku_stubs.o haiku_native/haiku-rakarrack.o
 	@echo "=========================================================="
