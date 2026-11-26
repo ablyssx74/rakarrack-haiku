@@ -6,6 +6,9 @@ SHELL := /bin/bash
 PACKAGE_DIR := build/package
 NAME = rakarrack
 VERSION = 0.6.1
+# The package's name. It differs from the program's because the 0.6.2 version (rakarrack-haiku-2011) is the package
+# "rakarrack", and a package repository holds one name only once. Both install the same files, so they conflict.
+PKG_NAME = rakarrack_$(VERSION)
 # The one place a release changes is the VERSION file (e.g. v17): the package and the program's own version (which the
 # update check compares with the VERSION file on GitHub) take it from there.
 REVISION := $(shell tr -d 'v \r\n' < VERSION)
@@ -170,7 +173,7 @@ package: all
 	@[ -n "$(PACKAGE_DIR)" ] || { echo "PACKAGE_DIR is undefined"; exit 1; }
 	rm -rf "./$(PACKAGE_DIR)"
 	mkdir -p $(PACKAGE_DIR)
-	sed -e 's/$$(NAME)/$(NAME)/g' -e 's/$$(REVISION)/$(REVISION)/g' -e 's/$$(VERSION)/$(VERSION)/g' -e 's/$$(is32bit)/$(is32bit)/g' -e 's/$$(ARCH)/$(ARCH)/' -e 's/$$(YEAR)/$(shell date +%Y)/' $(PackageInfo) > $(PACKAGE_DIR)/.PackageInfo
+	sed -e 's/$$(NAME)/$(NAME)/g' -e 's/$$(PKG_NAME)/$(PKG_NAME)/g' -e 's/$$(REVISION)/$(REVISION)/g' -e 's/$$(VERSION)/$(VERSION)/g' -e 's/$$(is32bit)/$(is32bit)/g' -e 's/$$(ARCH)/$(ARCH)/' -e 's/$$(YEAR)/$(shell date +%Y)/' $(PackageInfo) > $(PACKAGE_DIR)/.PackageInfo
 	mkdir -p $(PACKAGE_DIR)/apps
 	mkdir -p $(PACKAGE_DIR)/bin
 	mkdir -p $(PACKAGE_DIR)/data/deskbar/menu/Applications
@@ -194,7 +197,7 @@ package: all
 	cp $(NAME) $(PACKAGE_DIR)/apps/$(NAME)
 	ln -s ../apps/$(NAME) $(PACKAGE_DIR)/bin/rakarrack
 	ln -s ../../../../apps/$(NAME) $(PACKAGE_DIR)/data/deskbar/menu/Applications/Rakarrack
-	package create -C $(PACKAGE_DIR) $(NAME)-$(VERSION)-$(REVISION)-$(ARCH).hpkg
+	package create -C $(PACKAGE_DIR) $(PKG_NAME)-$(VERSION)-$(REVISION)-$(ARCH).hpkg
 
 
 #----------------------------------------------------------

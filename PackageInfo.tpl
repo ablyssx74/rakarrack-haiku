@@ -1,4 +1,4 @@
-name			$(NAME)
+name			$(PKG_NAME)
 version			$(VERSION)-$(REVISION)
 architecture	$(ARCH)
 summary		"Rakarrack is a richly featured multi-effects processor emulating a guitar effects pedalboard."
@@ -13,7 +13,10 @@ copyrights {
 	"$(YEAR) ablyss (Haiku port)"
 }
 provides {
-	$(NAME) = $(VERSION)-$(REVISION)
+	$(PKG_NAME) = $(VERSION)-$(REVISION)
+}
+conflicts {
+	$(NAME)
 }
 requires {
 	haiku
